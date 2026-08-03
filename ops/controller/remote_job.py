@@ -18,6 +18,7 @@ from ops.controller.contract import (
     ContractError,
     QualificationEvidence,
     RunMode,
+    SourceVerification,
     build_artifact_manifest,
     evaluate_qualification,
     verify_qualification_binding,
@@ -36,6 +37,7 @@ RUN_ID_PATTERN = re.compile(
     r"g1-100hz-(?P<mode>smoke|full)-seed-(?P<seed>[0-9]+)-"
     r"(?P<timestamp>[0-9]{8}T[0-9]{6}Z)"
 )
+LOCAL_CPU_BACKEND_PATTERN = re.compile(r"local-macos-cpu-(?P<devices>[1-9][0-9]*)-device")
 
 
 def validate_run_id(run_id: str, *, mode: RunMode | None = None, seed: int | None = None) -> None:
@@ -52,6 +54,22 @@ def validate_run_id(run_id: str, *, mode: RunMode | None = None, seed: int | Non
 
 def _timestamp() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _is_local_cpu_backend(execution_backend: str) -> bool:
+    return LOCAL_CPU_BACKEND_PATTERN.fullmatch(execution_backend) is not None
+
+
+def _execution_configuration(execution_backend: str) -> dict[str, object]:
+    match = LOCAL_CPU_BACKEND_PATTERN.fullmatch(execution_backend)
+    if match is not None:
+        return {
+            "jax_platform": "cpu",
+            "host_platform_device_count": int(match.group("devices")),
+        }
+    if execution_backend == "modal-l4":
+        return {"jax_platform": "gpu", "accelerator": "L4"}
+    raise ContractError(f"unsupported controller execution backend: {execution_backend}")
 
 
 def _atomic_write_json(path: Path, payload: object) -> None:
@@ -112,7 +130,7 @@ def _new_contract(
     run_id: str,
     mode: RunMode,
     seed: int,
-    source: object,
+    source: SourceVerification,
     execution_backend: str = "modal-l4",
 ) -> dict[str, Any]:
     return {
@@ -121,6 +139,7 @@ def _new_contract(
         "mode": mode.value,
         "seed": seed,
         "execution_backend": execution_backend,
+        "execution_configuration": _execution_configuration(execution_backend),
         "source": asdict(source),
         "training_plan": asdict(TRAINING_PLANS[mode]),
         "environment": {
@@ -152,7 +171,7 @@ def _load_or_create_contract(
     run_id: str,
     mode: RunMode,
     seed: int,
-    source: object,
+    source: SourceVerification,
     execution_backend: str,
 ) -> dict[str, Any]:
     contract_path = run_root / "training-contract.json"
@@ -244,6 +263,7 @@ def _recover_attempts(run_root: Path, contract: dict[str, Any]) -> Path | None:
         checkpoint_path = _attempt_checkpoint(run_root, raw_attempt)
         completed = checkpoint_path is not None and _log_has_training_completion(log_path)
         if completed:
+            assert checkpoint_path is not None
             if status != "training_complete":
                 raw_attempt["status"] = "training_complete"
                 raw_attempt["recovered_after_restart"] = True
@@ -318,7 +338,7 @@ def _execute_attempt(
         {
             "JAX_DEFAULT_MATMUL_PRECISION": "highest",
             "PYTHONHASHSEED": str(seed),
-            "MUJOCO_GL": "cgl" if execution_backend == "local-macos-cpu" else "egl",
+            "MUJOCO_GL": "cgl" if _is_local_cpu_backend(execution_backend) else "egl",
             "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
             "PYTHONUNBUFFERED": "1",
         }

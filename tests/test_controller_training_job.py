@@ -48,6 +48,7 @@ from ops.controller.export_onnx import (  # noqa: E402
     verify_onnx_parity,
 )
 from ops.controller.remote_job import (  # noqa: E402
+    _is_local_cpu_backend,
     _new_contract,
     _recover_attempts,
     _training_command,
@@ -138,10 +139,15 @@ def test_modal_copy_path_matches_ops_import_namespace() -> None:
 
 def test_local_entrypoint_uses_explicit_backend_and_runtime_paths(tmp_path: Path) -> None:
     source = LOCAL_ENTRYPOINT.read_text(encoding="utf-8")
-    assert 'execution_backend="local-macos-cpu"' in source
+    assert 'execution_backend=f"local-macos-cpu-{args.cpu_devices}-device"' in source
+    assert '"--xla_force_host_platform_device_count=' in source
     assert 'os.environ["MM_CONTROLLER_CHECKOUT"]' in source
+    assert 'os.environ["PYTHONPATH"] = REPOSITORY_ROOT.as_posix()' in source
     remote_source = REMOTE_JOB.read_text(encoding="utf-8")
-    assert '"cgl" if execution_backend == "local-macos-cpu" else "egl"' in remote_source
+    assert '"cgl" if _is_local_cpu_backend(execution_backend) else "egl"' in remote_source
+    assert _is_local_cpu_backend("local-macos-cpu-7-device")
+    assert not _is_local_cpu_backend("local-macos-cpu")
+    backend = "local-macos-cpu-7-device"
     contract = _new_contract(
         "g1-100hz-full-seed-1-20260803T070102Z",
         RunMode.FULL,
@@ -154,9 +160,13 @@ def test_local_entrypoint_uses_explicit_backend_and_runtime_paths(tmp_path: Path
             joystick_sha256=PATCHED_JOYSTICK_SHA256,
             patched=True,
         ),
-        "local-macos-cpu",
+        backend,
     )
-    assert contract["execution_backend"] == "local-macos-cpu"
+    assert contract["execution_backend"] == backend
+    assert contract["execution_configuration"] == {
+        "jax_platform": "cpu",
+        "host_platform_device_count": 7,
+    }
 
     environment = os.environ.copy()
     environment.update(

@@ -53,4 +53,4 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-packages = ["muscle_memory"]
+files = ["src/muscle_memory"]
