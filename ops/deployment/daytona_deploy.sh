@@ -101,11 +101,19 @@ daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" clean -ffdx
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" checkout --detach "$RESOLVED_REVISION"
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" reset --hard "$RESOLVED_REVISION"
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" clean -ffdx
-daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" -- sh -eu -c '
-  test "$(git rev-parse HEAD)" = "$1"
-  test -z "$(git status --porcelain --untracked-files=all)"
-  test -z "$(git clean -ndx)"
-' sh "$RESOLVED_REVISION"
+CHECKED_OUT_REVISION=$(daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" -- git rev-parse HEAD)
+if [ "$CHECKED_OUT_REVISION" != "$RESOLVED_REVISION" ]; then
+  printf '%s\n' "Daytona checkout does not match the requested revision" >&2
+  exit 1
+fi
+if [ -n "$(daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" -- git status --porcelain --untracked-files=all)" ]; then
+  printf '%s\n' "Daytona checkout is dirty after exact revision selection" >&2
+  exit 1
+fi
+if [ -n "$(daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" -- git clean -ndx)" ]; then
+  printf '%s\n' "Daytona checkout contains ignored deployment drift" >&2
+  exit 1
+fi
 
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 900 -- uv sync --frozen --no-dev
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR/frontend" --timeout 300 -- \
