@@ -1,0 +1,114 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: muscle-memory-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify revision
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@v5
+
+      - name: Install Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install locked Python dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Verify frozen robot bundle
+        run: uv run mm-verify-robot
+
+      - name: Lint and type-check Python
+        run: |
+          uv run ruff check .
+          uv run mypy src
+
+      - name: Run Python tests
+        run: uv run pytest
+
+      - name: Install Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint and build frontend
+        working-directory: frontend
+        run: |
+          npm run lint
+          npm run build
+
+  deploy:
+    name: Deploy Daytona production
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://musclememory.space
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@v5
+
+      - name: Install Node.js for the edge proxy
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Deploy Cloudflare edge proxy
+        working-directory: ops/cloudflare
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4.118.0 deploy --config wrangler.toml
+
+      - name: Install Daytona CLI
+        env:
+          DAYTONA_VERSION: v0.203.0
+          DAYTONA_SHA256: e6bf8ad4e805730d41175b0d2707656dcd2b1805594b2d7a784882bd0fd7f032
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://github.com/daytona/clients/releases/download/${DAYTONA_VERSION}/daytona-linux-amd64" \
+            --output /tmp/daytona
+          echo "${DAYTONA_SHA256}  /tmp/daytona" | sha256sum --check --strict
+          chmod +x /tmp/daytona
+          sudo install /tmp/daytona /usr/local/bin/daytona
+          daytona --version
+
+      - name: Deploy exact commit to Daytona
+        env:
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          MM_DAYTONA_SANDBOX: muscle-memory-backend
+          MM_PRODUCTION_HEALTH_URL: https://musclememory.space/api/v1/health
+        run: ./ops/deployment/daytona_deploy.sh "${GITHUB_SHA}"
+
+      - name: Verify public product routes
+        run: |
+          curl --fail --location --retry 12 --retry-delay 5 --retry-all-errors \
+            --output /dev/null https://musclememory.space/
+          curl --fail --location --retry 12 --retry-delay 5 --retry-all-errors \
+            --output /dev/null https://musclememory.space/console

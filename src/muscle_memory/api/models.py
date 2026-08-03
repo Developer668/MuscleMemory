@@ -319,6 +319,7 @@ class SpecialistReview(ApiModel):
     ]
     recommendation: Literal["proceed", "revise", "block"]
     summary: str = Field(min_length=1, max_length=4_000)
+    provider_session_id: str | None = Field(default=None, min_length=1, max_length=256)
 
     @field_validator("summary")
     @classmethod
@@ -348,6 +349,11 @@ class WorkflowStepResult(ApiModel):
     step: WorkflowStep
     state: Literal["completed", "failed", "blocked"]
     output_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    provider_task_receipt_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    provider_run_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class WorkflowRun(ApiModel):

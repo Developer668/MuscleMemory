@@ -1,133 +1,331 @@
+<div align="center">
+
 # Muscle Memory
 
 **One robot. Many worlds. Experience that compounds.**
 
-Muscle Memory is an adaptive simulation and training platform for household robots.
+<a href="https://musclememory.space">
+  <img src="frontend/public/assets/mm01-household-hero.webp" alt="MM-01 navigating a household while carrying a medicine pouch" width="100%">
+</a>
 
-A user describes a household task and environment. Muscle Memory generates the required 3D obstacles, assembles a physics-valid world, trains one fixed robot across many variations, remembers why it failed, and produces progressively improved policy versions.
+<br>
 
-The robot never changes. Only its training worlds, experience, and learned policy improve.
+[![Live experience](https://img.shields.io/badge/TRY_THE_LIVE_EXPERIENCE-musclememory.space-16c79a?style=for-the-badge)](https://musclememory.space)
 
-Muscle Memory doesn't just teach a robot to complete one route. It helps the same robot accumulate experience that transfers across unfamiliar homes.
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)
+![React 19](https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=61DAFB)
+![MuJoCo 3.6](https://img.shields.io/badge/MuJoCo-3.6-E87500?style=flat-square)
+![Built for measurable learning](https://img.shields.io/badge/evidence-measured_not_assumed-252525?style=flat-square)
 
----
+### [Open Muscle Memory at musclememory.space](https://musclememory.space)
 
-## The fixed robot: MM-01
+[See the idea](#the-idea) | [Explore the architecture](#how-it-works) | [Meet MM-01](#meet-mm-01) | [Run it locally](#run-the-app)
 
-The application uses one permanently fixed humanoid called **MM-01**.
-
-MM-01 is independently inspired by the sensor and control architecture publicly described for the 1X NEO household robot. It is not affiliated with, endorsed by, or validated by 1X, which has not published its complete robot model, controller, or sensor API.
-
-For stability, MM-01 is built from validated public components:
-
-| Concern | Source |
-| --- | --- |
-| Articulated mechanical skeleton | Unitree G1 from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) |
-| Low-level walking controller | Frozen controller from [MuJoCo Playground](https://github.com/google-deepmind/mujoco_playground) |
-| Visual design | One fixed design; TRELLIS used at most once for non-colliding head/torso styling |
-
-The robot's body, mass, dimensions, joints, sensors, and gait policy are **frozen**. A checksum is stored with every episode proving the same robot was used.
-
-Muscle Memory trains only the robot's **high-level task policy**. It does not attempt to relearn standing, balance, or bipedal walking.
+</div>
 
 ---
 
-## Demonstration goal: Safe Household Delivery
+## The idea
 
-> MM-01 must carry a medicine pouch from its charging area to a resident elsewhere in the apartment while avoiding household clutter and keeping the package stable.
+A household robot should not have to relearn the same lesson every time the furniture moves.
 
-The medicine pouch begins secured to a tray already held by the robot. **Grasping is excluded from the MVP.**
+**Muscle Memory** is an adaptive simulation and training platform for household robots. You
+describe a task and a home environment; the system builds a physics-valid world, runs one fixed
+robot through it, remembers what went wrong, and uses that experience to train the next policy.
 
-A run succeeds only if all of the following hold:
+The important constraint is simple:
 
-- Reaches the resident within **30 seconds**
-- Stops within **0.5 m** while facing them
-- No falls
-- No body collisions
-- Minimum obstacle clearance of **0.25 m**
-- Tray tilt below **12°**
-- No simulated package slip
-- No human intervention
+> **The robot never changes. Its worlds, experience, and learned high-level policy do.**
 
----
+That turns isolated simulation runs into a growing body of experience that can transfer across
+unfamiliar homes.
 
-## Changing worlds
-
-Muscle Memory generates new versions of the same bounded apartment environment.
-
-The MVP supports:
-
-- One **8 × 6 m** single-floor template
-- Chairs, boxes, tables, stools, and laundry baskets
-- Different obstacle arrangements
-- Different start and destination positions
-- Lighting and texture variations
-- Floor-friction changes
-- Camera and IMU noise
-- One TRELLIS-generated hero obstacle
-
-Every generated world must pass validation **before** training:
-
-- No overlapping objects
-- Start and destination are connected
-- All passages meet minimum robot clearance
-- Obstacles have approved colliders
-- A valid baseline path exists
-- Physical parameters remain within safe limits
-
-Doors, stairs, grasping, moving pets, and multiple rooms are stretch goals.
-
----
-
-## Asset-generation system
-
-When the user requests a new obstacle:
-
-1. An image model creates a clean isolated reference image.
-2. **Microsoft TRELLIS.2-4B** converts it into a textured GLB.
-3. The GLB is preserved for the browser visualization.
-4. It is converted into an OBJ or compatible MuJoCo asset.
-5. A **Physics Agent** proposes dimensions, mass, friction, static/movable status, semantic category, and collision shape.
-6. A deterministic processor generates a primitive or convex collider.
-7. The user approves uncertain physical properties.
-8. The validated asset enters Muscle Memory's obstacle library.
-
-The detailed generated mesh is for **appearance only**. Physics always uses simplified collision geometry.
-
----
-
-## MM-01 sensor profile
-
-MM-01 targets the sensor modalities publicly described for 1X NEO.
-
-| Sensor | Muscle Memory implementation | Application usage |
+| Fixed foundation | Changing experience | Proof before promotion |
 | --- | --- | --- |
-| Stereo vision | Two head-relative rendered RGB views with a fixed 0.07 m baseline | Robot POV and obstacle perception |
+| One permanently identified MM-01 robot | Seeded apartments, obstacles, corrections, and lessons | Candidate policies face 20 structurally isolated held-out worlds |
+| Frozen 100 Hz walking controller | A learned 5-10 Hz task policy | Success, collisions, falls, clearance, efficiency, and package stability are measured |
+| The same body, sensors, and gait policy in every episode | New immutable policy versions | Failed candidates remain rollback evidence |
+
+## The mission
+
+The demonstration task is **safe household delivery**:
+
+> MM-01 carries a medicine pouch from its charging area to a resident elsewhere in an apartment,
+> avoiding clutter while keeping the package stable.
+
+The pouch starts secured to a tray already held by the robot. Grasping is intentionally outside
+the MVP so the project can focus on navigation, safety, memory, and measurable improvement.
+
+A run succeeds only when every condition is satisfied:
+
+| Goal | Required result |
+| --- | --- |
+| Delivery | Reach the resident within 30 seconds |
+| Final pose | Stop within 0.5 m while facing the resident |
+| Stability | No falls and tray tilt below 12 degrees |
+| Safety | No body collisions and at least 0.25 m obstacle clearance |
+| Package | No simulated slip |
+| Autonomy | No human intervention during the run |
+
+## How it works
+
+```mermaid
+flowchart LR
+    U["Task and home description"] --> W["Validated seeded world"]
+    W --> S["MM-01 simulation"]
+    S --> L["LaserData<br/>live experience"]
+    S --> F["FalkorDB<br/>experience graph"]
+    L --> G["Guild.ai<br/>specialist review"]
+    F --> G
+    G --> H{"Human approval<br/>when required"}
+    H --> R["RocketRide<br/>fixed execution pipeline"]
+    R --> E["Candidate policy"]
+    E --> V["Held-out evaluation"]
+    V --> P{"Promotion gate"}
+    P -->|pass| N["New immutable policy version"]
+    P -->|fail| B["Rollback evidence"]
+```
+
+The loop has deliberately separate responsibilities:
+
+1. Generate a deterministic apartment world and reject it unless every validation check passes.
+2. Run MM-01 with its frozen locomotion controller and current high-level policy.
+3. Record operational telemetry and convert episode outcomes into explicit experience.
+4. Find recurring failure patterns and propose a targeted curriculum.
+5. Require human approval for uncertain physics, reward changes, curriculum changes, and policy decisions.
+6. Train a new version, evaluate it on unseen worlds, then promote or roll it back using numeric gates.
+
+## Meet MM-01
+
+MM-01 is the project's permanently fixed humanoid. It is independently inspired by the sensor
+and control architecture publicly described for the 1X NEO household robot. Muscle Memory is not
+affiliated with, endorsed by, or validated by 1X, which has not published its complete robot
+model, controller, or sensor API.
+
+| Concern | Validated source |
+| --- | --- |
+| Articulated skeleton | Unitree G1 from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie) |
+| Low-level locomotion | Frozen controller from [MuJoCo Playground](https://github.com/google-deepmind/mujoco_playground) |
+| Visual styling | One fixed design; TRELLIS may be used once for non-colliding head and torso appearance |
+
+MM-01's body, mass, dimensions, joints, sensors, and gait policy are frozen. Every episode carries
+the robot checksum, making robot identity part of the evidence rather than an assumption.
+
+### Hierarchical control
+
+```mermaid
+flowchart TD
+    S["Vision, stereo-derived depth, IMU, proprioception"] --> P["Learned task policy<br/>5-10 Hz"]
+    P -->|"forward speed, turning rate, stop probability"| C["Frozen walking controller<br/>100 Hz"]
+    C --> M["MuJoCo physics<br/>500-1,000 Hz"]
+    M --> S
+```
+
+The learned policy chooses only **forward speed**, **turning rate**, and **stop probability**.
+Standing, balance, foot placement, torque control, and fall prevention remain the responsibility
+of the frozen walking controller.
+
+A* creates expert paths for behavior cloning during training. It is a teacher only and is
+unreachable from evaluation, where the policy acts from sensor input alone.
+
+<details>
+<summary><strong>Open the complete sensor profile</strong></summary>
+
+| Sensor category | MM-01 implementation | Product use |
+| --- | --- | --- |
+| Stereo vision | Two head-relative RGB views with a fixed 0.07 m baseline | Robot POV and obstacle perception |
 | Stereo-derived depth | 48 OpenCV SGBM sectors calculated from the RGB pair | Primary navigation input |
-| Linkwise IMUs | Existing pelvis and torso acceleration, angular velocity, and orientation; head and limb channels unavailable | Balance and motion awareness |
-| Joint proprioception | Joint position, velocity, actuator effort | Low-level control and diagnostics |
-| Foot contacts | Existing left/right force and floor-contact state; centre of pressure unavailable | Stability monitoring |
-| Wrist and tray | Tray tilt from external payload physics; force-torque channel unavailable | Tray balance |
-| Hand and package | Relative-pose slip state; pressure and shear channels unavailable | Package-slip detection |
-| Audio | Unavailable in the current fixed profile | Logged-only placeholder |
-| Battery | Actuator power and integrated energy; charge percentage unavailable | System monitoring |
+| Linkwise IMUs | Pelvis and torso acceleration, angular velocity, and orientation | Balance and motion awareness |
+| Joint proprioception | Position, velocity, and actuator effort | Low-level control and diagnostics |
+| Foot contacts | Left and right force plus floor-contact state | Stability monitoring |
+| Wrist and tray | Tray tilt from external payload physics | Package stability |
+| Hand and package | Relative-pose slip state | Slip detection |
+| Audio | Unavailable in the fixed profile | Visible logged-only placeholder |
+| Battery | Actuator power and integrated energy | System monitoring |
 
-Official 1X information describes dual stereo fisheye cameras, linkwise IMUs, four beamforming microphones, joint positions and applied forces, and tactile hand sensing. Those public descriptions motivate the category rail, but unavailable MM-01 channels remain visibly unavailable rather than simulated as working signals. See [NEO specifications](https://www.1x.tech/neo), [Redwood AI](https://www.1x.tech/discover/redwood-ai), and [NEO hands](https://www.1x.tech/discover/neos-hands).
+Every UI signal is labeled **Used by policy**, **Logged only**, or **Simulator ground truth**.
+Unavailable channels stay visible as unavailable instead of being presented as working data.
 
-### Recommended simulation rates
+### Runtime rates
 
 | Layer | Rate |
 | --- | --- |
-| Physics | 500–1,000 Hz |
+| Physics | 500-1,000 Hz |
 | Frozen walking controller | 100 Hz |
-| Learned task policy | 5–10 Hz |
+| Learned task policy | 5-10 Hz |
 | Numeric telemetry | 20 Hz |
 | Dashboard charts | 10 Hz |
 | Robot POV | 30 FPS |
 
-### Run the verified simulator
+</details>
 
-Python 3.12 is pinned by `.python-version`, and `uv.lock` fixes the environment.
+## Worlds that change safely
+
+The MVP generates versions of a bounded 8 x 6 m, single-floor apartment. Chairs, boxes, tables,
+stools, laundry baskets, start positions, destinations, lighting, textures, friction, and sensor
+noise can vary while the robot remains identical.
+
+No world reaches training or evaluation until it proves:
+
+- Objects do not overlap.
+- Start and destination remain connected.
+- Every passage meets minimum robot clearance.
+- Every obstacle uses an approved collider.
+- A valid baseline path exists.
+- Physical parameters remain inside safe bounds.
+
+When a new obstacle is requested, an image model creates an isolated reference and Microsoft
+TRELLIS.2-4B produces a textured GLB. That detailed mesh is visual only. A deterministic
+processor creates the primitive or convex collider used by MuJoCo, and uncertain physical
+properties require human approval before admission.
+
+## The memory stack
+
+The platform treats memory as three different things, each with a clear boundary:
+
+| Technology | What it remembers | Why it matters |
+| --- | --- | --- |
+| **LaserData** | Ordered sensor readings, actions, rewards, collisions, interventions, frame metadata, and episode closure | Supplies the append-only operational record behind live monitoring and exact replay |
+| **FalkorDB** | Worlds, obstacles, failures, corrections, lessons, evaluations, and immutable policy versions | Connects one failure to related experience and makes multi-hop curriculum queries possible |
+| **Policy checkpoints** | The learned behavior itself | Gives every evaluated behavior a versioned, immutable identity |
+
+Video can travel directly to the interface, while LaserData carries synchronized event metadata.
+`frame_id` is the single join key between those two streams. FalkorDB stays outside the robot's
+control path; it informs later curriculum decisions but never directly moves MM-01.
+
+## Sponsor-powered orchestration
+
+| Sponsor technology | Responsibility in Muscle Memory |
+| --- | --- |
+| **LaserData** | The live nervous system for append-only episode telemetry and provider-confirmed replay |
+| **FalkorDB** | The long-term experience graph linking failures, lessons, worlds, and policy evidence |
+| **Guild.ai** | Three distinct specialist agents for world physics, failure curriculum, and safety evaluation |
+| **RocketRide** | The fixed executor that runs reviewed steps in order and stops at blocking human gates |
+
+The operating principle is: **Guild.ai decides who reasons; RocketRide executes the approved
+tools.** Neither is allowed to silently take the other's role.
+
+```text
+validate world -> run episode -> summarize telemetry -> query graph memory
+-> select curriculum -> train candidate -> evaluate candidate -> promote or roll back
+```
+
+Live asset generation and training both have timeouts and verified cached fallbacks. The demo can
+finish even when an external generation or training call cannot.
+
+## The product experience
+
+The website has two connected surfaces:
+
+- **Landing experience:** an interactive Three.js household scene that introduces the task and
+  shows how experience changes behavior.
+- **Operator console:** live simulation, third-person view, robot POV, policy selection, world
+  selection, episode progress, approvals, replay, and provider health.
+
+The console keeps all eight sensor categories visible. Its bottom timeline combines LaserData
+events, completion progress, safety markers, retrieved FalkorDB lessons, the current RocketRide
+step, and replay controls.
+
+## Improvement must be measured
+
+Twenty validation worlds are frozen before training and structurally isolated from curriculum
+generation, failure mining, and hyperparameter selection. Baseline and candidate policies run on
+identical seeds.
+
+### Promotion gate
+
+A candidate needs all of the following:
+
+- At least 80% held-out success.
+- Zero falls.
+- No more than a 10% collision-episode rate.
+- Median clearance of at least 0.25 m.
+- At least 20 percentage points more success or 50% fewer collisions than the baseline.
+- No more than 15% regression in path efficiency.
+
+Different actions on identical input are not evidence of learning. Only measured improvement on
+the held-out worlds can promote a policy.
+
+<details>
+<summary><strong>Current policy evidence</strong></summary>
+
+No learned checkpoint is promoted yet.
+
+- `delivery-v1` was rejected after its paired held-out evaluation. It matched V0 at 45% success,
+  produced a 25% collision-episode rate, and recorded five falls.
+- `delivery-v2-sensor-fusion-hysteresis` improved over V0 on its final disjoint development audit
+  (66.7% versus 25% success, 8.3% collision episodes, and 0.315 m median clearance), but two falls
+  and sub-80% success rejected it before held-out access.
+
+Those failures are retained as immutable rollback evidence, not rewritten into a success story.
+
+</details>
+
+## Repository map
+
+```text
+frontend/          React, Three.js, landing experience, and operator console
+src/muscle_memory/ Simulation, policy, telemetry, memory, orchestration, and API domains
+config/            Frozen robot, world, service, and evaluation contracts
+integrations/      Reviewed external integration artifacts
+ops/               Verification, deployment, evidence, and maintenance commands
+tests/             Contract, safety, provider, API, and simulation coverage
+docs/              Deeper architectural and operational documentation
+```
+
+Useful deep dives:
+
+- [System architecture](docs/architecture.md)
+- [Live simulation](docs/live-simulation.md)
+- [Sponsor orchestration](docs/sponsor-orchestration.md)
+- [Policy evidence integrity](docs/policy-evidence-integrity.md)
+- [HTTP API](docs/http-api.md)
+- [Production deployment](docs/daytona-deployment.md)
+
+## Run the app
+
+### Prerequisites
+
+- Docker Desktop with Docker Compose
+- Node.js 22 or newer with npm
+- Python 3.12 and [`uv`](https://docs.astral.sh/uv/) for verification and development commands
+
+### 1. Start the API and local provider stack
+
+From the repository root:
+
+```bash
+./ops/deployment/start.sh
+```
+
+The script creates an ignored, permission-restricted `.env.backend.local` when needed, then starts
+the FastAPI service, a local LaserData-compatible data plane, and FalkorDB. It verifies the
+provider handoffs before reporting the backend ready at `http://127.0.0.1:8000`.
+
+### 2. Start the web interface
+
+In a second terminal:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Open **[http://127.0.0.1:4173](http://127.0.0.1:4173)**. Vite proxies API and WebSocket traffic to
+the backend, so the landing page and operator console work from one browser origin.
+
+For authenticated operator actions, read the generated local credential and enter it in the
+console's **Operator credential** field:
+
+```bash
+sed -n 's/^MM_API_OPERATOR_TOKEN=//p' .env.backend.local
+```
+
+The browser keeps that value in the current tab's `sessionStorage`; it is not written into a URL
+or persistent browser storage.
+
+### 3. Verify the project
 
 ```bash
 uv sync --frozen --group dev
@@ -136,213 +334,14 @@ uv run mm-smoke
 uv run ruff check .
 uv run mypy src
 uv run pytest
+cd frontend && npm run lint && npm run build
 ```
 
-`mm-verify-robot` fails closed unless the qualified 100 Hz controller, complete frozen robot
-identity, physical qualification measurements, raw trials, parity record, and completed
-training contract all match `config/robot/mm01-v1.json` byte for byte.
+`mm-verify-robot` fails closed if the frozen robot identity, controller, qualification evidence,
+or training contract differs from the checked-in MM-01 bundle.
 
----
+### 4. Stop the local stack
 
-## Hierarchical control system
-
-```mermaid
-flowchart TD
-    S["Vision, depth, IMU and proprioception"] --> P["Learned task policy"]
-    P --> G["Frozen walking controller"]
-    G --> M["MuJoCo physics"]
-    M --> S
-    M --> D["Episode data"]
-    D --> A["Muscle Memory improvement loop"]
-    A --> P
+```bash
+docker compose --env-file .env.backend.local down
 ```
-
-### Frozen walking controller
-
-Responsible for standing, balance, walking, turning, foot placement, joint-torque control, and fall prevention.
-
-### Learned task policy
-
-**Inputs:** stereo-derived depth sectors · destination distance and bearing · torso orientation and angular velocity · base velocity · joint-effort summary · foot-contact state · tray orientation · package-slip status · previous action
-
-**Outputs:** forward speed · turning rate · stop probability
-
-During evaluation, agents do not control the robot. The trained policy receives sensor data and acts independently.
-
----
-
-## Training method
-
-Imitation learning first, reinforcement learning optionally after it is stable.
-
-1. Generate validated apartment worlds.
-2. Use A* to create expert paths.
-3. Convert those paths into training actions.
-4. Allow the user to draw a safer route or keep-out region.
-5. Add that demonstration to the training dataset.
-6. Behavior-clone a small navigation policy.
-7. Evaluate it **without** access to A*.
-8. Identify recurring failure patterns.
-9. Generate targeted worlds containing similar challenges.
-10. Fine-tune the policy.
-11. Optionally use PPO after the behavior-cloning system is stable.
-
-A* acts only as a teacher and is unavailable during final evaluation.
-
----
-
-## What "memory" means
-
-| Memory | Location | Purpose |
-| --- | --- | --- |
-| Live experience | **LaserData** | Sensor readings, actions, rewards, collisions, interventions |
-| Explicit experience | **FalkorDB** | Relationships between worlds, obstacles, failures, lessons, policy versions |
-| Behavioral memory | **Policy checkpoint** | Neural-network weights controlling the robot |
-
-FalkorDB does not directly move the robot. It helps the agents decide which experiences matter and what the robot should practise next.
-
----
-
-## Sponsor architecture
-
-### LaserData — live nervous system
-
-Streams camera-frame metadata, IMU readings, joint positions and effort, foot contacts, hand tactile state, tray orientation, audio activity, policy actions, collisions, training metrics, and episode completion.
-
-Video can stream directly to the interface, while LaserData carries synchronized frame IDs and event metadata.
-
-### FalkorDB — long-term experience graph
-
-Stores MM-01, sensor configuration, policy versions, worlds and obstacles, episodes, failures, human corrections, lessons, and evaluation results.
-
-Example relationships:
-
-```
-Episode      → FAILED_NEAR   → LaundryBasket
-Episode      → USED          → PolicyV0
-Correction   → PRODUCED      → ClearanceLesson
-ClearanceLesson → TRAINED_INTO → PolicyV1
-PolicyV1     → OUTPERFORMED  → PolicyV0
-```
-
-Multi-hop queries select the next training curriculum.
-
-### Guild.ai — specialist coordination
-
-Coordinates three agents:
-
-- World and Physics Agent
-- Failure and Curriculum Agent
-- Safety and Evaluation Agent
-
-Guild.ai also handles human approval for questionable physical properties, reward changes, curriculum changes, and policy promotion.
-
-### RocketRide — execution engine
-
-```
-validate world → run episode → summarize telemetry → query graph memory
-→ select curriculum → train candidate policy → evaluate candidate
-→ promote or roll back
-```
-
-Guild.ai decides who reasons. RocketRide executes the approved tools.
-
----
-
-## User interface
-
-**Top bar** — MM-01 · current policy version · world seed · training or evaluation mode · task progress · sensor-stream health
-
-**Main simulation** — a large third-person view showing MM-01 and the apartment, the destination zone, current and previous paths, obstacle risk, clearance boundaries, and contacts/collisions
-
-**Robot POV** — a pinned first-person view with left-eye RGB, right-eye RGB, stereo composite, derived depth, and simulator-debug segmentation. Minimal HUD: current action, destination direction, nearest hazard, speed, tray tilt, collision warning.
-
-**Sensor rail** — expandable panels for:
-
-1. Stereo vision and depth
-2. Linkwise IMUs
-3. Joint position and effort
-4. Foot contacts
-5. Wrist force and tray balance
-6. Hand pressure and slip
-7. Microphone activity
-8. Battery and energy
-
-Every signal must be labeled as **Used by policy**, **Logged only**, or **Simulator ground truth**.
-
-**Bottom timeline** — live LaserData events · reward and completion progress · collision and intervention markers · retrieved FalkorDB lesson · current RocketRide workflow step · episode replay controls
-
----
-
-## Proving improvement
-
-Freeze **20 validation worlds** before training. Never expose them to the learner.
-
-Evaluate V0 and V1 on identical seeds and compare: success rate, collisions per episode, falls, completion time, path efficiency, minimum clearance, tray tilt, package slips, energy per successful delivery, human interventions, and performance on unseen worlds.
-
-### Policy-promotion gate
-
-- At least **80%** held-out success
-- **Zero** falls
-- No more than **10%** collision rate
-- Median clearance of at least **0.25 m**
-- At least **20 percentage points** higher success **or** **50% fewer** collisions than V0
-- No more than **15%** regression in path efficiency
-
-Taking different actions on identical input is **not** proof of learning. Muscle Memory proves learning through improved performance across unseen worlds.
-
-### Current policy evidence
-
-No learned checkpoint is promoted yet. `delivery-v1` was rejected by its paired
-held-out evaluation: it matched V0 at 45% success while producing a 25%
-collision-episode rate and five falls. That result remains immutable rollback
-evidence.
-
-`delivery-v2-sensor-fusion-hysteresis` improved over V0 on its final disjoint
-development audit (66.7% versus 25% success, 8.3% collision episodes, and median
-clearance of 0.315 m), but it still recorded two falls and missed the 80% success
-gate. It is therefore rejected before held-out access. The held-out CLI verifies
-the development decision and checkpoint hash before loading the frozen split, so
-this candidate cannot be tuned or promoted from those worlds.
-
----
-
-## Stable version definition
-
-Muscle Memory v1 is complete when it can:
-
-- Load the identical MM-01 robot every time
-- Walk stably for at least 60 seconds
-- Generate and validate at least 20 layouts
-- Display synchronized third-person and robot-POV views
-- Show every sensor category
-- Save and replay an episode
-- Accept one user route correction
-- Train or restore an improved checkpoint
-- Compare V0 and V1 on the same held-out worlds
-- Display measured improvement statistics
-- Promote or roll back a policy
-- Complete one unseen delivery run independently
-
-Cached TRELLIS assets and verified policy checkpoints protect the critical demo. Live asset generation and training can still be shown, but Muscle Memory must finish the demonstration if either times out.
-
----
-
-## Demo sequence
-
-1. Select the fixed MM-01 robot.
-2. Generate a new apartment.
-3. Run baseline Policy V0.
-4. Show the robot POV and live sensor dashboard.
-5. V0 collides or takes an unsafe route.
-6. LaserData closes the episode.
-7. FalkorDB retrieves a related failure.
-8. Guild.ai's Curriculum Agent proposes a correction.
-9. The user approves it.
-10. RocketRide trains and evaluates Policy V1.
-11. V1 completes an unseen apartment independently.
-12. Display measured V0-versus-V1 improvement.
-
----
-
-> **Muscle Memory gives one robot a lifetime of experience — before it ever enters your home.**

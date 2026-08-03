@@ -143,6 +143,8 @@ class ProviderRegistry:
 
     def health(self) -> ServiceHealth:
         snapshots = self.snapshots()
+        # LaserData, FalkorDB, Guild.ai, and RocketRide form one sponsor evidence
+        # chain, so aggregate readiness must not conceal an unready link.
         required_names = {"LaserData", "FalkorDB", "guild.ai", "rocketride.ai"}
         required = tuple(item for item in snapshots if item.provider in required_names)
         states = {item.state for item in required}
@@ -294,9 +296,13 @@ def build_provider_bundle(
     coordinator: CoordinatorStore | None = None,
 ) -> ProviderBundle:
     values = config.environ
+    # LaserData carries the live append-only episode stream; its spool is recovery,
+    # never a substitute for a successful provider append.
     laser_config = LaserDataConfig.from_env(values)
     laserdata = LaserDataTelemetryBackend(laser_config)
 
+    # FalkorDB supplies the explicit relationship memory used after episodes to
+    # connect failures, corrections, lessons, and evaluated policy versions.
     graph_settings = settings_from_env(values)
     if not graph_settings.cache_path.is_absolute():
         graph_settings = FalkorDBSettings(
@@ -306,10 +312,14 @@ def build_provider_bundle(
             cache_path=Path.cwd() / graph_settings.cache_path,
         )
     graph_memory = build_graph_memory(graph_settings)
+    # Guild.ai keeps the three specialist reasoning roles separate and gives each
+    # only the durable evidence assigned to that role.
     guild = _build_guild(
         values,
         None if coordinator is None else CoordinatorGuildEvidenceSource(coordinator),
     )
+    # RocketRide executes the reviewed fixed pipeline; it is intentionally composed
+    # after Guild.ai so execution cannot become an alternate reasoning path.
     rocketride = _build_rocketride(values, approval_ledger or InMemoryApprovalLedger())
     assets = AssetGenerationPipeline(
         cache=ContentAddressedAssetCache(config.asset_cache_path),

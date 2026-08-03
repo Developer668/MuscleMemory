@@ -27,6 +27,8 @@ from muscle_memory.graph_memory.models import (
     LessonMemoryRecord,
     ObstacleMemoryRecord,
     PolicyComparisonRecord,
+    PolicyEvaluationRecord,
+    PolicyTrainingRecord,
     ProviderState,
     WorldMemoryRecord,
 )
@@ -220,6 +222,18 @@ class ResilientGraphMemory:
             self._cache.record_lesson,
         )
 
+    def record_policy_training(self, record: PolicyTrainingRecord) -> GraphWriteReceipt:
+        return self._write(
+            record,
+            self._cache.record_policy_training,
+        )
+
+    def record_policy_evaluation(self, record: PolicyEvaluationRecord) -> GraphWriteReceipt:
+        return self._write(
+            record,
+            self._cache.record_policy_evaluation,
+        )
+
     def record_outperformance(self, record: PolicyComparisonRecord) -> GraphWriteReceipt:
         return self._write(
             record,
@@ -247,6 +261,8 @@ class ResilientGraphMemory:
             raise GraphProviderUnavailableError("cannot synchronize without FalkorDB")
         with self._reconciliation_lock:
             try:
+                # FalkorDB receives the immutable local backlog after recovery, keeping
+                # explicit experience queryable without rewriting earlier graph facts.
                 replayed, event_cursor = self._cache.replay_to_with_cursor(self._remote)
             except GraphProviderUnavailableError as exc:
                 self._reconciliation_error = type(exc).__name__

@@ -10,7 +10,15 @@ import subprocess
 import time
 from pathlib import Path
 
-DEFAULT_DATA_DIR = Path("/data")
+from ops.deployment.daytona_state import (
+    DEFAULT_SNAPSHOT_DIR,
+    DEFAULT_STATE_DIR,
+    export_snapshot,
+    preflight,
+    recover_latest,
+    repository_revision,
+)
+
 STOP_TIMEOUT_SECONDS = 30.0
 
 
@@ -60,26 +68,35 @@ def stop_process(pid_path: Path, *, timeout: float = STOP_TIMEOUT_SECONDS) -> No
     pid_path.unlink(missing_ok=True)
 
 
-def start_process(repository: Path, data_dir: Path, *, port: int) -> int:
-    if not data_dir.is_dir() or not os.access(data_dir, os.W_OK):
-        raise RuntimeError(f"Daytona data volume is missing or not writable: {data_dir}")
+def start_process(
+    repository: Path,
+    state_dir: Path,
+    snapshot_dir: Path,
+    *,
+    port: int,
+) -> int:
+    preflight(state_dir, snapshot_dir)
 
     runner = repository / "ops" / "deployment" / "daytona_run.sh"
     if not runner.is_file():
         raise RuntimeError(f"Daytona runner is missing: {runner}")
 
-    logs_dir = data_dir / "logs"
-    run_dir = data_dir / "run"
+    logs_dir = state_dir / "logs"
+    run_dir = state_dir / "run"
     logs_dir.mkdir(parents=True, exist_ok=True)
     run_dir.mkdir(parents=True, exist_ok=True)
     pid_path = run_dir / "api.pid.json"
     stop_process(pid_path)
+    revision = repository_revision(repository)
+    recover_latest(state_dir, snapshot_dir)
+    export_snapshot(state_dir, snapshot_dir, revision=revision)
 
     environment = os.environ.copy()
     environment.update(
         {
             "MM_API_PORT": str(port),
-            "MM_DAYTONA_DATA_DIR": str(data_dir),
+            "MM_DAYTONA_STATE_DIR": str(state_dir),
+            "MM_DAYTONA_SNAPSHOT_DIR": str(snapshot_dir),
             "MM_DAYTONA_SKIP_PREPARE": "1",
         }
     )
@@ -120,7 +137,8 @@ def start_process(repository: Path, data_dir: Path, *, port: int) -> int:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", type=Path, default=Path.cwd())
-    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR)
+    parser.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument(
         "--stop",
@@ -132,13 +150,31 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _parser().parse_args()
+    repository = args.repository.resolve()
+    state_dir = args.state_dir.resolve()
+    snapshot_dir = args.snapshot_dir.resolve()
     if args.stop:
-        stop_process(args.data_dir.resolve() / "run" / "api.pid.json")
+        if state_dir == Path("/data") or state_dir.is_relative_to(Path("/data")):
+            raise SystemExit("mutable Daytona state must not use /data FUSE")
+        state_dir.mkdir(parents=True, exist_ok=True)
+        stop_process(state_dir / "run" / "api.pid.json")
+        preflight(state_dir, snapshot_dir)
+        export_snapshot(
+            state_dir,
+            snapshot_dir,
+            revision=repository_revision(repository),
+        )
         print("Daytona API stopped")
         return 0
+    preflight(state_dir, snapshot_dir)
     if not 1 <= args.port <= 65535:
         raise SystemExit("--port must be between 1 and 65535")
-    pid = start_process(args.repository.resolve(), args.data_dir.resolve(), port=args.port)
+    pid = start_process(
+        repository,
+        state_dir,
+        snapshot_dir,
+        port=args.port,
+    )
     print(f"Daytona API started with PID {pid}")
     return 0
 

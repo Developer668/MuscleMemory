@@ -237,6 +237,33 @@ class LessonMemoryRecord(ContentAddressedRecord):
     created_at: AwareDatetime
 
 
+class PolicyTrainingRecord(ContentAddressedRecord):
+    """Immutable evidence that an evaluated policy trained from an approved lesson."""
+
+    lesson_id: str = Field(pattern=_ID_PATTERN)
+    policy_id: str = Field(pattern=_ID_PATTERN)
+    evidence_hash: str = Field(pattern=_HASH_PATTERN)
+    trained_at: AwareDatetime
+
+
+class PolicyEvaluationRecord(ContentAddressedRecord):
+    """One measured held-out comparison, whether it promoted or rolled back."""
+
+    candidate_policy_id: str = Field(pattern=_ID_PATTERN)
+    baseline_policy_id: str = Field(pattern=_ID_PATTERN)
+    evidence_hash: str = Field(pattern=_HASH_PATTERN)
+    action: str = Field(pattern=r"^(promote|roll_back)$")
+    success_rate_delta: FiniteFloat
+    collision_rate_delta: FiniteFloat
+    measured_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def distinct_policies(self) -> Self:
+        if self.candidate_policy_id == self.baseline_policy_id:
+            raise ValueError("policy evaluation requires two distinct policy versions")
+        return self
+
+
 class PolicyComparisonRecord(ContentAddressedRecord):
     candidate_policy_id: str = Field(pattern=_ID_PATTERN)
     baseline_policy_id: str = Field(pattern=_ID_PATTERN)

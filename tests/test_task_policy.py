@@ -135,8 +135,7 @@ def test_policy_action_vocabulary_contains_only_three_allowed_outputs() -> None:
     assert all(isinstance(command, TaskCommand) for command in POLICY_ACTION_COMMANDS.values())
     assert all(command.forward_speed_mps <= 0.3 for command in POLICY_ACTION_COMMANDS.values())
     assert all(
-        abs(command.turning_rate_rad_s) <= 0.5
-        for command in POLICY_ACTION_COMMANDS.values()
+        abs(command.turning_rate_rad_s) <= 0.5 for command in POLICY_ACTION_COMMANDS.values()
     )
 
 
@@ -163,13 +162,9 @@ def test_v1_and_v2_checkpoint_identities_are_distinct_and_evidence_bound() -> No
     v1 = BehaviorClonedPolicy.load(POLICY_V1_CHECKPOINT)
     v2 = BehaviorClonedPolicy.load(POLICY_V2_CHECKPOINT)
     training = json.loads(POLICY_V2_TRAINING_EVIDENCE.read_text(encoding="utf-8"))
-    development = json.loads(
-        POLICY_V2_DEVELOPMENT_EVIDENCE.read_text(encoding="utf-8")
-    )
+    development = json.loads(POLICY_V2_DEVELOPMENT_EVIDENCE.read_text(encoding="utf-8"))
     lock = json.loads(
-        (POLICY_V2_DEVELOPMENT_EVIDENCE.parent / "lock.json").read_text(
-            encoding="utf-8"
-        )
+        (POLICY_V2_DEVELOPMENT_EVIDENCE.parent / "lock.json").read_text(encoding="utf-8")
     )
 
     assert v1.policy_id == "delivery-v1-bc"
@@ -204,22 +199,13 @@ def test_sensor_fusion_episode_state_resets_on_initial_stop_observation() -> Non
     assert reset == first
 
 
-def test_failed_development_gate_blocks_heldout_evaluation(tmp_path: Path) -> None:
-    policy = BehaviorClonedPolicy.load(POLICY_V2_CHECKPOINT)
-    evidence = tmp_path / "development.json"
-    evidence.write_text(
-        json.dumps(
-            {
-                "candidate_policy_sha256": policy.policy_hash,
-                "selection_status": "rejected_before_heldout",
-                "promotion_preview": {"promotable": False},
-            }
-        ),
-        encoding="utf-8",
-    )
-
+def test_failed_development_gate_blocks_heldout_evaluation() -> None:
     with pytest.raises(RuntimeError, match="held-out access denied"):
-        assert_development_gate(evidence, policy.policy_hash)
+        assert_development_gate(
+            POLICY_V2_DEVELOPMENT_EVIDENCE,
+            POLICY_V2_CHECKPOINT,
+            lock_path=POLICY_V2_DEVELOPMENT_EVIDENCE.with_name("lock.json"),
+        )
 
 
 def test_training_refuses_to_replace_an_immutable_checkpoint(tmp_path: Path) -> None:

@@ -63,6 +63,8 @@ async def verify_live_provider() -> tuple[int, dict[str, object]]:
                 "detail": startup.detail,
                 "pending_local_records": startup.pending_local_records,
             }
+        # LaserData is credited as live only after the same content-addressed event
+        # is appended and read back from the provider, not merely after connecting.
         append = await backend.append(record)
         position = await backend.verify_event(append.event_id)
         health = backend.health

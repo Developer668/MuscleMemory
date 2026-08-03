@@ -1,7 +1,14 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "purpose": "development_only_not_held_out",
+  "evaluation_scope": "generated_disjoint_development",
+  "provenance": {
+    "world_generation_mechanics": "training_world_generation",
+    "evaluation_dataset_membership": "disjoint_development_only",
+    "heldout_world_access": "never"
+  },
   "selection_status": "rejected_before_heldout",
+  "paired_world_count": 12,
   "seed_search_start": 700000000,
   "seed_search_rule": "first validated worlds with an expert path at most 8.2 m whose direct route requires avoidance",
   "candidate_policy_id": "delivery-v2-sensor-fusion-hysteresis",

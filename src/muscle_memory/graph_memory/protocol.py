@@ -16,6 +16,8 @@ from muscle_memory.graph_memory.models import (
     LessonMemoryRecord,
     ObstacleMemoryRecord,
     PolicyComparisonRecord,
+    PolicyEvaluationRecord,
+    PolicyTrainingRecord,
     WorldMemoryRecord,
 )
 
@@ -52,6 +54,10 @@ class GraphMemory(Protocol):
     def record_correction(self, record: CorrectionMemoryRecord) -> GraphWriteReceipt: ...
 
     def record_lesson(self, record: LessonMemoryRecord) -> GraphWriteReceipt: ...
+
+    def record_policy_training(self, record: PolicyTrainingRecord) -> GraphWriteReceipt: ...
+
+    def record_policy_evaluation(self, record: PolicyEvaluationRecord) -> GraphWriteReceipt: ...
 
     def record_outperformance(
         self, record: PolicyComparisonRecord

@@ -23,6 +23,8 @@ class CoordinatorGuildEvidenceSource:
         durable_plan = self._coordinator.workflow_plan(plan.run_id)
         if durable_plan != plan:
             return None
+        # Guild.ai receives role-scoped evidence so no specialist can quietly make
+        # another specialist's physics, curriculum, or promotion decision.
         if role is GuildRole.WORLD_AND_PHYSICS:
             return {
                 "world_evidence": bundle.world.world_evidence.model_dump(mode="json")

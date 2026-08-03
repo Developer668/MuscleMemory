@@ -393,7 +393,7 @@ def test_restart_recovers_correction_graph_delivery_journal_crash_window(
     correction_id = asyncio.run(first_process())
     assert coordinator.training_correction_graph_deliveries() == ()
     first_events = tuple(graph_cache.events)
-    assert first_events[-1].record_kind == "correction"
+    assert [event.record_kind for event in first_events[-2:]] == ["correction", "lesson"]
     coordinator.close()
     spool.close()
 

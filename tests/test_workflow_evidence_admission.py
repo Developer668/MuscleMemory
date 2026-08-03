@@ -79,7 +79,7 @@ def _checkpoint(
             "collision_rate": collision_rate,
             "falls": 0,
             "median_clearance_m": 0.31,
-            "path_efficiency_regression_fraction": 0.03,
+            "path_efficiency_regression_fraction": 0.0,
         },
         evaluated_at=NOW,
     )

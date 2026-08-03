@@ -113,31 +113,55 @@ def build_api_backend(
             ),
         )
         if evaluation_admission is not None:
-            selection = EvaluatedPolicySelection.load(
+            evaluation_path = _repository_path(
+                config.environ["MM_HELDOUT_EVALUATION_ARTIFACT"]
+            )
+            candidate_selection = EvaluatedPolicySelection.load(
                 checkpoint_path=_repository_path(
                     config.environ["MM_HELDOUT_CANDIDATE_CHECKPOINT"]
                 ),
-                evaluation_path=_repository_path(
-                    config.environ["MM_HELDOUT_EVALUATION_ARTIFACT"]
-                ),
+                evaluation_path=evaluation_path,
                 expected_evaluation_evidence_hash=evaluation_admission.artifact_hash,
             )
-            if selection.policy.policy_id != evaluation_admission.candidate_policy_id:
+            baseline_selection = EvaluatedPolicySelection.load_baseline(
+                evaluation_path=evaluation_path,
+                expected_evaluation_evidence_hash=evaluation_admission.artifact_hash,
+            )
+            if (
+                candidate_selection.policy.policy_id
+                != evaluation_admission.candidate_policy_id
+            ):
                 raise RuntimeError(
                     "live policy identity differs from the admitted held-out candidate"
+                )
+            if (
+                baseline_selection.policy.policy_id
+                != evaluation_admission.baseline_policy_id
+            ):
+                raise RuntimeError(
+                    "live policy identity differs from the admitted held-out baseline"
                 )
             evaluated = {
                 checkpoint.policy_id: checkpoint
                 for checkpoint in coordinator.evaluated_checkpoints()
             }
-            admitted = evaluated[evaluation_admission.candidate_policy_id]
-            if admitted.checkpoint_hash != selection.policy.policy_hash:
-                raise RuntimeError(
-                    "live policy hash differs from the admitted evaluated checkpoint"
-                )
+            for selection in (baseline_selection, candidate_selection):
+                admitted = evaluated[selection.policy.policy_id]
+                if admitted.checkpoint_hash != selection.policy.policy_hash:
+                    raise RuntimeError(
+                        "live policy hash differs from the admitted evaluated policy"
+                    )
+                if (
+                    admitted.evaluation_evidence_hash
+                    != selection.evaluation_evidence_hash
+                ):
+                    raise RuntimeError(
+                        "live policy evidence differs from the admitted evaluation"
+                    )
             video = BoundedVideoService(
                 maximum_frame_sets=900,
                 maximum_bytes=256 << 20,
+                maximum_total_bytes=64 << 20,
             )
             manager = LiveEpisodeManager(
                 lifecycle=episode_runtime,
@@ -147,7 +171,7 @@ def build_api_backend(
             controller = LiveEpisodeController(
                 manager=manager,
                 worlds=live_world_catalog,
-                policies=(selection,),
+                policies=(baseline_selection, candidate_selection),
                 stable_policy_id=coordinator.current_policy(
                     config.environ.get("MM_STABLE_POLICY_ALIAS", "stable").strip()
                     or "stable"

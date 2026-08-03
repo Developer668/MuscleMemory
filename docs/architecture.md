@@ -22,10 +22,11 @@ The application is split by responsibility rather than by demo screen:
 - RocketRide runs the reviewed fixed pipeline and contains no policy or agent reasoning.
 
 The production coordinator runs directly from the locked `uv` environment in a public Daytona
-sandbox with auto-stop disabled and a persistent `/data` volume. Docker and Compose remain
-optional local-development packaging only. Simulation and training may use separate burst
-workers, but sponsor adapters and acceptance evidence cannot depend on a provider-specific
-shortcut.
+sandbox with all lifecycle timers disabled. Mutable databases and journals use the persistent
+sandbox filesystem under `/home/daytona/mm-data`; the `/data` object volume contains only
+create-once, hash-verified recovery snapshots. Docker and Compose remain optional
+local-development packaging only. Simulation and training may use separate burst workers, but
+sponsor adapters and acceptance evidence cannot depend on a provider-specific shortcut.
 
 ## Control boundary
 

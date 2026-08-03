@@ -36,6 +36,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BrandMark } from "../components/BrandMark";
+import { RealisticHomeScene } from "../operator/RealisticHomeScene";
 import { useOperatorData } from "../operator/useOperatorData";
 import type {
   CorrectionPoint,
@@ -140,6 +141,17 @@ function extractPosition(record: TelemetryRecord | null | undefined): Correction
     "pose.y_m",
   ]);
   return x === null || y === null ? null : { x_m: x, y_m: y };
+}
+
+function extractYaw(record: TelemetryRecord | null | undefined): number | null {
+  if (!record) return null;
+  return numberValue(record.payload, [
+    "yaw_radians",
+    "simulator_pose.yaw_radians",
+    "orientation.yaw_radians",
+    "robot_orientation.yaw_radians",
+    "pose.yaw_radians",
+  ]);
 }
 
 function metricFromSensors(record: TelemetryRecord | null, paths: string[]): number | null {
@@ -435,22 +447,24 @@ function EpisodePicker({ data }: { data: ReturnType<typeof useOperatorData> }) {
           <Square size={13} /> Cancel
         </button>
       </div>
-      <span
-        className="ops-live-state"
-        title={data.liveOptions?.unavailable_reason || live?.detail || "Live simulator state"}
-      >
-        <StatusDot state={live?.phase === "running" ? "live" : live?.phase === "failed" ? "error" : "idle"} />
-        {live ? `Worker ${stateLabel(live.phase)}` : data.liveOptions?.enabled ? "Worker idle" : "Live unavailable"}
-      </span>
-      <span className="ops-stream-state">
-        <StatusDot state={data.streamState} />
-        {data.streamState === "live" ? "20 Hz stream connected" : `Stream ${data.streamState}`}
-      </span>
-      <span><Cloud size={14} /> {data.detail ? stateLabel(data.detail.provider_delivery) : "No delivery record"}</span>
-      <span><ShieldCheck size={14} /> Robot {shortId(data.detail?.episode.robot_checksum, 12)}</span>
-      {data.droppedMessages > 0 && (
-        <span className="ops-warning"><AlertTriangle size={14} /> {data.droppedMessages} dropped before latest</span>
-      )}
+      <div className="ops-runtime-status" aria-label="Runtime status">
+        <span
+          className="ops-live-state"
+          title={data.liveOptions?.unavailable_reason || live?.detail || "Live simulator state"}
+        >
+          <StatusDot state={live?.phase === "running" ? "live" : live?.phase === "failed" ? "error" : "idle"} />
+          {live ? `Worker ${stateLabel(live.phase)}` : data.liveOptions?.enabled ? "Worker idle" : "Live unavailable"}
+        </span>
+        <span className="ops-stream-state">
+          <StatusDot state={data.streamState} />
+          {data.streamState === "live" ? "20 Hz stream connected" : `Stream ${data.streamState}`}
+        </span>
+        <span><Cloud size={14} /> {data.detail ? stateLabel(data.detail.provider_delivery) : "No delivery record"}</span>
+        <span><ShieldCheck size={14} /> Robot {shortId(data.detail?.episode.robot_checksum, 12)}</span>
+        {data.droppedMessages > 0 && (
+          <span className="ops-warning"><AlertTriangle size={14} /> {data.droppedMessages} dropped before latest</span>
+        )}
+      </div>
     </section>
   );
 }
@@ -475,11 +489,11 @@ function SensorRail({ record }: { record: TelemetryRecord | null }) {
         <strong id="sensor-title">8 / 8 categories</strong>
       </div>
       <div className="ops-sensor-list">
-        {sensorRail(record).map((sensor, index) => {
+        {sensorRail(record).map((sensor) => {
           const Icon = sensorIcon(sensor.category);
           const highlights = sensorHighlights(sensor);
           return (
-            <details className="ops-sensor-card" key={sensor.category} open={index < 2}>
+            <details className="ops-sensor-card" key={sensor.category}>
               <summary>
                 <span className="ops-sensor-icon"><Icon size={16} /></span>
                 <span className="ops-sensor-name">
@@ -635,56 +649,63 @@ function SimulationView({
             alt="Direct third-person MuJoCo simulator feed"
           />
         ) : (
-          <div className="ops-stage-empty">
-            <EyeOff size={24} />
-            <strong>Third-person video unavailable</strong>
-            <span>{data.liveOptions?.enabled ? "No direct frame is joined to this event." : "The live simulator is not admitted in this deployment."}</span>
-          </div>
+          <RealisticHomeScene
+            robotPosition={latestPosition}
+            robotYaw={extractYaw(record)}
+            path={positions}
+            correction={points}
+            correctionKind={kind}
+            running={running}
+          />
         )}
-        <svg
-          ref={svgRef}
-          className="ops-world-plot ops-world-plot--inset"
-          viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
-          preserveAspectRatio="xMidYMid meet"
-          onPointerDown={addPoint}
-          aria-label="Telemetry trajectory and correction plane"
-        >
-          <defs>
-            <pattern id="ops-grid" width="1" height="1" patternUnits="userSpaceOnUse">
-              <path d="M 1 0 L 0 0 0 1" fill="none" stroke="currentColor" strokeWidth="0.012" />
-            </pattern>
-          </defs>
-          <rect x={viewBox.x} y={viewBox.y} width={viewBox.width} height={viewBox.height} fill="url(#ops-grid)" />
-          {path && <polyline className="ops-actual-path" points={path} fill="none" />}
-          {correctionPath && (
-            kind === "keep_out" && points.length > 2
-              ? <polygon className="ops-correction-shape" points={correctionPath} />
-              : <polyline className="ops-correction-line" points={correctionPath} fill="none" />
-          )}
-          {points.map((point, index) => (
-            <g key={`${point.x_m}:${point.y_m}:${index}`}>
-              <circle className="ops-correction-point" cx={point.x_m} cy={point.y_m} r="0.11" />
-              <text x={point.x_m + 0.14} y={point.y_m - 0.14}>{index + 1}</text>
-            </g>
-          ))}
-          {latestPosition && (
-            <g className="ops-robot-position" transform={`translate(${latestPosition.x_m} ${latestPosition.y_m})`}>
-              <circle r="0.22" />
-              <path d="M 0 -0.34 L 0.18 0.08 L 0 0 L -0.18 0.08 Z" />
-            </g>
-          )}
-        </svg>
+        {(record !== null || positions.length > 0 || points.length > 0) && (
+          <svg
+            ref={svgRef}
+            className="ops-world-plot ops-world-plot--inset"
+            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+            preserveAspectRatio="xMidYMid meet"
+            onPointerDown={addPoint}
+            aria-label="Telemetry trajectory and correction plane"
+          >
+            <defs>
+              <pattern id="ops-grid" width="1" height="1" patternUnits="userSpaceOnUse">
+                <path d="M 1 0 L 0 0 0 1" fill="none" stroke="currentColor" strokeWidth="0.012" />
+              </pattern>
+            </defs>
+            <rect x={viewBox.x} y={viewBox.y} width={viewBox.width} height={viewBox.height} fill="url(#ops-grid)" />
+            {path && <polyline className="ops-actual-path" points={path} fill="none" />}
+            {correctionPath && (
+              kind === "keep_out" && points.length > 2
+                ? <polygon className="ops-correction-shape" points={correctionPath} />
+                : <polyline className="ops-correction-line" points={correctionPath} fill="none" />
+            )}
+            {points.map((point, index) => (
+              <g key={`${point.x_m}:${point.y_m}:${index}`}>
+                <circle className="ops-correction-point" cx={point.x_m} cy={point.y_m} r="0.11" />
+                <text x={point.x_m + 0.14} y={point.y_m - 0.14}>{index + 1}</text>
+              </g>
+            ))}
+            {latestPosition && (
+              <g className="ops-robot-position" transform={`translate(${latestPosition.x_m} ${latestPosition.y_m})`}>
+                <circle r="0.22" />
+                <path d="M 0 -0.34 L 0.18 0.08 L 0 0 L -0.18 0.08 Z" />
+              </g>
+            )}
+          </svg>
+        )}
         {!positions.length && (
           <div className="ops-spatial-status">
             <ScanLine size={15} />
             <span>Waiting for simulator ground-truth pose</span>
           </div>
         )}
-        <div className="ops-stage-readout">
-          <span><i className="ops-key ops-key--path" /> Simulator ground truth pose</span>
-          <span><i className="ops-key ops-key--correction" /> Human correction</span>
-          <span>X/Y in meters</span>
-        </div>
+        {(record !== null || positions.length > 0 || points.length > 0) && (
+          <div className="ops-stage-readout">
+            <span><i className="ops-key ops-key--path" /> Simulator ground truth pose</span>
+            <span><i className="ops-key ops-key--correction" /> Human correction</span>
+            <span>X/Y in meters</span>
+          </div>
+        )}
         <div className="ops-stage-clock">
           <small>SIM TIME</small>
           <strong>{formatTime(record?.sim_time_seconds)}</strong>
@@ -757,28 +778,41 @@ function RobotPov({
   record: TelemetryRecord | null;
   running: boolean;
 }) {
+  const [selectedFeed, setSelectedFeed] = useState<(typeof VIDEO_FEEDS)[number][0]>("stereo_composite");
   const speed = metricFromSensors(record, ["forward_speed_mps", "speed_mps", "forward_speed"]);
   const tilt = metricFromSensors(record, ["tray_tilt_degrees", "current_tray_tilt_degrees"]);
   const clearance = metricFromSensors(record, ["current_obstacle_clearance_m", "obstacle_clearance_m"]);
   const collision = Boolean(record?.failure_type) || booleanFromRecord(record, ["collision", "body_collision"]) === true;
   const direction = stringValue(record?.payload, ["destination_direction", "goal_direction"]);
+  const activeFeed = VIDEO_FEEDS.find(([key]) => key === selectedFeed) ?? VIDEO_FEEDS[2];
   return (
     <section className="ops-pov" aria-labelledby="pov-title">
       <div className="ops-section-heading">
         <div><Bot size={15} /><span id="pov-title">Robot POV</span></div>
         <strong>{record?.frame_id ? "Joined by frame_id" : "Awaiting frame"}</strong>
       </div>
-      <div className="ops-pov-grid">
-        {VIDEO_FEEDS.map(([key, label], index) => (
-          <VideoFeed
+      <div className="ops-pov-selector" role="tablist" aria-label="Robot camera feed">
+        {VIDEO_FEEDS.map(([key, label]) => (
+          <button
             key={key}
-            feedKey={key}
-            label={label}
-            record={record}
-            featured={index === 2}
-            running={running}
-          />
+            type="button"
+            role="tab"
+            aria-selected={selectedFeed === key}
+            className={selectedFeed === key ? "is-active" : ""}
+            onClick={() => setSelectedFeed(key)}
+          >
+            {label.replace(" RGB", "").replace("Simulator debug ", "")}
+          </button>
         ))}
+      </div>
+      <div className="ops-pov-grid">
+        <VideoFeed
+          feedKey={activeFeed[0]}
+          label={activeFeed[1]}
+          record={record}
+          featured
+          running={running}
+        />
       </div>
       <div className="ops-hud" aria-label="Robot state">
         <div><span>Action</span><strong>{actionLabel(record)}</strong></div>
@@ -1019,7 +1053,7 @@ export function OperatorConsole() {
         </div>
       )}
 
-      {!data.selectedEpisodeId && (
+      {!data.selectedEpisodeId && !data.issue && (
         <div className="ops-system-message" role="status">
           {data.loading ? <RefreshCw className="is-spinning" size={15} /> : <Radio size={15} />}
           <span>{data.loading ? "Connecting to the operations API" : "No operational episode is available; live surfaces remain explicitly unavailable."}</span>
@@ -1027,15 +1061,17 @@ export function OperatorConsole() {
       )}
 
       <div className="ops-workspace">
-        <SensorRail record={selectedRecord} />
-        <div className="ops-primary-column">
+        <div className="ops-live-column">
           <SimulationView key={data.selectedEpisodeId || "no-episode"} data={data} record={selectedRecord} pathRecords={pathRecords} />
-          <PolicyEvidence data={data} />
+          <SensorRail record={selectedRecord} />
         </div>
         <div className="ops-right-column">
           <RobotPov record={selectedRecord} running={liveRunning} />
           <HumanGates data={data} />
         </div>
+      </div>
+      <div className="ops-evidence-row">
+        <PolicyEvidence data={data} />
       </div>
       <Timeline
         data={data}

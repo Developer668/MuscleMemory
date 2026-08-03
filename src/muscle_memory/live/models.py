@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import math
 import re
@@ -103,20 +104,22 @@ class LiveEpisodeHealth(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class EvaluatedPolicySelection:
-    """A checkpoint cryptographically bound to completed held-out evidence.
+    """A task-policy implementation bound to completed held-out evidence.
 
     Evaluation is not promotion. ``promotable`` truthfully mirrors the measured gate and
-    does not grant authority to promote the checkpoint.
+    does not grant authority to promote the policy. A learned policy is backed by a
+    checkpoint; the deterministic baseline is backed by its exact source artifact.
     """
 
     policy: SelectedTaskPolicy
-    checkpoint_path: Path
+    checkpoint_path: Path | None
     checkpoint_hash: str
     evaluation_path: Path
     evaluation_hash: str
     evaluation_evidence_hash: str
     evaluated_episode_count: int
     promotable: bool
+    policy_source_path: Path | None = None
 
     def __post_init__(self) -> None:
         self.verify_integrity()
@@ -135,8 +138,17 @@ class EvaluatedPolicySelection:
             )
         if self.evaluated_episode_count <= 0:
             raise ValueError("selected policy requires completed evaluation episodes")
-        if _sha256(self.checkpoint_path) != self.checkpoint_hash:
-            raise ValueError("selected checkpoint bytes changed after policy loading")
+        if (self.checkpoint_path is None) == (self.policy_source_path is None):
+            raise ValueError(
+                "selected policy requires exactly one immutable implementation artifact"
+            )
+        implementation_path = self.checkpoint_path or self.policy_source_path
+        assert implementation_path is not None
+        if _sha256(implementation_path) != self.checkpoint_hash:
+            artifact = "checkpoint" if self.checkpoint_path is not None else "source"
+            raise ValueError(
+                f"selected policy {artifact} bytes changed after policy loading"
+            )
         if _sha256(self.evaluation_path) != self.evaluation_hash:
             raise ValueError("selected evaluation evidence changed after policy loading")
         if _canonical_json_sha256(self.evaluation_path) != self.evaluation_evidence_hash:
@@ -200,6 +212,69 @@ class EvaluatedPolicySelection:
             evaluation_evidence_hash=evidence_hash,
             evaluated_episode_count=len(candidate_results),
             promotable=promotable,
+        )
+
+    @classmethod
+    def load_baseline(
+        cls,
+        *,
+        evaluation_path: Path,
+        expected_evaluation_evidence_hash: str | None = None,
+    ) -> EvaluatedPolicySelection:
+        """Load the immutable direct-goal baseline only from its measured evidence."""
+        from muscle_memory.policy.baseline import DirectGoalPolicy
+
+        policy = DirectGoalPolicy()
+        source_file = inspect.getsourcefile(DirectGoalPolicy)
+        if source_file is None:
+            raise RuntimeError("deterministic baseline source artifact is unavailable")
+        source_path = Path(source_file).resolve()
+        if _sha256(source_path) != policy.policy_hash:
+            raise RuntimeError("deterministic baseline identity does not match its source")
+        try:
+            evidence = json.loads(evaluation_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError("baseline evaluation evidence is unreadable") from exc
+        if not isinstance(evidence, dict):
+            raise RuntimeError("baseline evaluation evidence must be an object")
+        baseline_results = evidence.get("baseline_results")
+        decision = evidence.get("promotion_decision")
+        if not isinstance(baseline_results, list) or not baseline_results:
+            raise RuntimeError("baseline has no completed evaluation episodes")
+        if not isinstance(decision, dict):
+            raise RuntimeError("baseline evaluation has no promotion decision")
+        for result in baseline_results:
+            if not isinstance(result, dict):
+                raise RuntimeError("baseline evaluation result is malformed")
+            if (
+                result.get("policy_id") != policy.policy_id
+                or result.get("policy_hash") != policy.policy_hash
+                or result.get("world_split") != "held_out"
+            ):
+                raise RuntimeError("baseline does not match its held-out evidence")
+        baseline = decision.get("baseline")
+        if not isinstance(baseline, dict) or (
+            baseline.get("policy_id") != policy.policy_id
+            or baseline.get("policy_hash") != policy.policy_hash
+            or baseline.get("episode_count") != len(baseline_results)
+        ):
+            raise RuntimeError("baseline does not match the measured gate summary")
+        evidence_hash = _canonical_json_sha256(evaluation_path)
+        if expected_evaluation_evidence_hash is not None:
+            if _SHA256_PATTERN.fullmatch(expected_evaluation_evidence_hash) is None:
+                raise RuntimeError("admitted evaluation evidence hash is malformed")
+            if evidence_hash != expected_evaluation_evidence_hash:
+                raise RuntimeError("baseline evaluation evidence was not admitted")
+        return cls(
+            policy=policy,
+            checkpoint_path=None,
+            checkpoint_hash=policy.policy_hash,
+            evaluation_path=evaluation_path,
+            evaluation_hash=_sha256(evaluation_path),
+            evaluation_evidence_hash=evidence_hash,
+            evaluated_episode_count=len(baseline_results),
+            promotable=False,
+            policy_source_path=source_path,
         )
 
 

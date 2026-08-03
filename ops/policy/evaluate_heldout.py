@@ -3,54 +3,40 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from dataclasses import asdict
-from pathlib import Path
 
-from muscle_memory.evaluation.development import assert_development_gate
-from muscle_memory.evaluation.heldout import load_heldout_worlds
+from muscle_memory.evaluation.heldout_trust import (
+    DELIVERY_V2_HELDOUT_TRUST_ROOT,
+    consume_checked_in_heldout_access,
+)
 from muscle_memory.evaluation.promotion import evaluate_promotion
 from muscle_memory.evaluation.runner import PolicyEpisodeResult, run_policy_episode
-from muscle_memory.paths import (
-    HELDOUT_WORLDS_BUNDLE,
-    POLICY_V2_CHECKPOINT,
-    POLICY_V2_DEVELOPMENT_EVIDENCE,
-    POLICY_V2_HELDOUT_EVIDENCE,
-)
 from muscle_memory.policy.baseline import DirectGoalPolicy
 from muscle_memory.policy.network import BehaviorClonedPolicy
-
-DEFAULT_OUTPUT = POLICY_V2_HELDOUT_EVIDENCE
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+from muscle_memory.simulation.world_scene import ValidatedWorldEnvelope
 
 
-def _assert_evaluation_import_isolation() -> None:
+def _assert_pre_gate_import_isolation() -> None:
     forbidden = tuple(
         name
         for name in sys.modules
-        if name.startswith("muscle_memory.training")
+        if name == "muscle_memory.evaluation.heldout"
+        or name.startswith("muscle_memory.training")
         or name.startswith("muscle_memory.worlds.generation")
     )
     if forbidden:
-        raise RuntimeError(f"held-out evaluation loaded forbidden modules: {forbidden}")
+        raise RuntimeError(f"pre-gate evaluation loaded forbidden modules: {forbidden}")
 
 
 def _evaluate(
+    worlds: tuple[ValidatedWorldEnvelope, ...],
     policy: DirectGoalPolicy | BehaviorClonedPolicy,
     *,
     evaluation_scope: str,
     role: str,
 ) -> tuple[PolicyEpisodeResult, ...]:
-    worlds = load_heldout_worlds()
     results: list[PolicyEpisodeResult] = []
     for index, world in enumerate(worlds):
         result = run_policy_episode(
@@ -70,31 +56,35 @@ def _evaluate(
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--checkpoint", type=Path, default=POLICY_V2_CHECKPOINT)
-    parser.add_argument(
-        "--development-evidence",
-        type=Path,
-        default=POLICY_V2_DEVELOPMENT_EVIDENCE,
+    return argparse.ArgumentParser(
+        description=(
+            "Run the reviewed delivery-v2 one-shot held-out evaluation. "
+            "All inputs and outputs are fixed by the committed trust root."
+        )
     )
-    return parser
 
 
 def main() -> int:
-    args = _parser().parse_args()
-    if args.output.exists():
-        raise FileExistsError(f"immutable held-out evidence already exists: {args.output}")
-    _assert_evaluation_import_isolation()
-    candidate_policy = BehaviorClonedPolicy.load(args.checkpoint)
-    assert_development_gate(args.development_evidence, candidate_policy.policy_hash)
+    _parser().parse_args()
+    _assert_pre_gate_import_isolation()
+    trusted = consume_checked_in_heldout_access()
+    from muscle_memory.evaluation.heldout import load_heldout_worlds
+
+    worlds = load_heldout_worlds()
+    candidate_policy = BehaviorClonedPolicy.load(
+        DELIVERY_V2_HELDOUT_TRUST_ROOT.candidate_checkpoint_path
+    )
+    if candidate_policy.policy_hash != trusted.candidate_checkpoint_sha256:
+        raise RuntimeError("candidate identity changed after held-out access was consumed")
     evaluation_scope = candidate_policy.policy_hash[:16]
     baseline = _evaluate(
+        worlds,
         DirectGoalPolicy(),
         evaluation_scope=evaluation_scope,
         role="baseline",
     )
     candidate = _evaluate(
+        worlds,
         candidate_policy,
         evaluation_scope=evaluation_scope,
         role="candidate",
@@ -102,14 +92,15 @@ def main() -> int:
     decision = evaluate_promotion(baseline, candidate)
     payload = {
         "schema_version": 1,
-        "heldout_bundle_sha256": _sha256_file(HELDOUT_WORLDS_BUNDLE),
+        "heldout_bundle_sha256": trusted.heldout_bundle_sha256,
         "candidate_checkpoint_sha256": candidate_policy.policy_hash,
         "baseline_results": [asdict(result) for result in baseline],
         "candidate_results": [asdict(result) for result in candidate],
         "promotion_decision": asdict(decision),
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    trusted.output_path.parent.mkdir(parents=True, exist_ok=True)
+    with trusted.output_path.open("x", encoding="utf-8") as stream:
+        stream.write(json.dumps(payload, indent=2) + "\n")
     print(json.dumps(asdict(decision), indent=2), flush=True)
     return 0 if decision.promotable else 2
 

@@ -8,6 +8,7 @@
 .eslintcache
 .idea/
 .mypy_cache/
+.playwright-mcp/
 MUJOCO_LOG.TXT
 .pytest_cache/
 .ruff_cache/
@@ -26,5 +27,6 @@ coverage.xml
 dist/
 htmlcov/
 node_modules/
+/landing-task-top.png
 /snyk
 tmp/

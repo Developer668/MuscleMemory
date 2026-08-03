@@ -20,6 +20,8 @@ from muscle_memory.graph_memory.models import (
     LessonMemoryRecord,
     ObstacleMemoryRecord,
     PolicyComparisonRecord,
+    PolicyEvaluationRecord,
+    PolicyTrainingRecord,
     ProviderState,
     WorldMemoryRecord,
 )
@@ -53,6 +55,8 @@ class FalkorGraph(Protocol):
 
 _HEALTH_QUERY = "RETURN 1 AS ok"
 
+# FalkorDB stores explicit experience as immutable, connected facts; MERGE plus
+# content hashes prevents a familiar graph identity from being silently rewritten.
 _RECORD_WORLD = """
 MERGE (world:World {world_id: $world_id})
 ON CREATE SET
@@ -204,6 +208,16 @@ MERGE (lesson)-[:TRAINED_INTO]->(policy)
 RETURN lesson.content_hash
 """
 
+_RECORD_POLICY_TRAINING = """
+MATCH (lesson:Lesson {lesson_id: $lesson_id})
+MATCH (policy:PolicyVersion {policy_id: $policy_id, evaluated: true})
+MERGE (lesson)-[training:TRAINED_INTO {evidence_hash: $evidence_hash}]->(policy)
+ON CREATE SET
+  training.content_hash = $content_hash,
+  training.trained_at = $trained_at
+RETURN training.content_hash
+"""
+
 _RECORD_OUTPERFORMANCE = """
 MATCH (candidate:PolicyVersion {policy_id: $candidate_policy_id, evaluated: true})
 MATCH (baseline:PolicyVersion {policy_id: $baseline_policy_id, evaluated: true})
@@ -218,6 +232,23 @@ ON CREATE SET
 RETURN comparison.content_hash
 """
 
+_RECORD_POLICY_EVALUATION = """
+MATCH (candidate:PolicyVersion {policy_id: $candidate_policy_id, evaluated: true})
+MATCH (baseline:PolicyVersion {policy_id: $baseline_policy_id, evaluated: true})
+WHERE candidate.evaluation_split = $held_out_split
+  AND baseline.evaluation_split = $held_out_split
+MERGE (candidate)-[evaluation:EVALUATED_AGAINST {evidence_hash: $evidence_hash}]->(baseline)
+ON CREATE SET
+  evaluation.content_hash = $content_hash,
+  evaluation.action = $action,
+  evaluation.success_rate_delta = $success_rate_delta,
+  evaluation.collision_rate_delta = $collision_rate_delta,
+  evaluation.measured_at = $measured_at
+RETURN evaluation.content_hash
+"""
+
+# FalkorDB's graph traversal turns related failures, corrections, and lessons into
+# curriculum evidence without putting graph lookup in the robot's control loop.
 _CURRICULUM_QUERY = """
 MATCH (source_policy:PolicyVersion)<-[:USED]-(episode:Episode {world_split: $training_split})
 MATCH (episode)-[:OBSERVED_FAILURE]->(failure:Failure)
@@ -410,6 +441,46 @@ class FalkorGraphMemory:
         self._write_and_verify(query, params, record.content_hash, "lesson")
         return self._receipt("lesson", record.lesson_id, record.content_hash)
 
+    def record_policy_training(self, record: PolicyTrainingRecord) -> GraphWriteReceipt:
+        params: dict[str, object] = {
+            "lesson_id": record.lesson_id,
+            "policy_id": record.policy_id,
+            "evidence_hash": record.evidence_hash,
+            "content_hash": record.content_hash,
+            "trained_at": record.trained_at.isoformat(),
+        }
+        self._write_and_verify(
+            _RECORD_POLICY_TRAINING,
+            params,
+            record.content_hash,
+            "policy training lineage",
+        )
+        record_id = f"{record.lesson_id}:{record.policy_id}:{record.evidence_hash}"
+        return self._receipt("policy_training", record_id, record.content_hash)
+
+    def record_policy_evaluation(self, record: PolicyEvaluationRecord) -> GraphWriteReceipt:
+        params: dict[str, object] = {
+            "candidate_policy_id": record.candidate_policy_id,
+            "baseline_policy_id": record.baseline_policy_id,
+            "evidence_hash": record.evidence_hash,
+            "held_out_split": "held_out",
+            "content_hash": record.content_hash,
+            "action": record.action,
+            "success_rate_delta": record.success_rate_delta,
+            "collision_rate_delta": record.collision_rate_delta,
+            "measured_at": record.measured_at.isoformat(),
+        }
+        self._write_and_verify(
+            _RECORD_POLICY_EVALUATION,
+            params,
+            record.content_hash,
+            "policy evaluation",
+        )
+        record_id = (
+            f"{record.candidate_policy_id}:{record.baseline_policy_id}:{record.evidence_hash}"
+        )
+        return self._receipt("policy_evaluation", record_id, record.content_hash)
+
     def record_outperformance(self, record: PolicyComparisonRecord) -> GraphWriteReceipt:
         params: dict[str, object] = {
             "candidate_policy_id": record.candidate_policy_id,
@@ -441,6 +512,8 @@ class FalkorGraphMemory:
             "limit": query.limit,
         }
         try:
+            # FalkorDB curriculum selection is deliberately read-only: agents may
+            # learn from the graph here, but cannot mutate evidence while selecting it.
             result = self._graph.ro_query(
                 _CURRICULUM_QUERY,
                 params=params,
@@ -467,6 +540,8 @@ class FalkorGraphMemory:
         record_kind: str,
     ) -> None:
         try:
+            # FalkorDB returns the stored content hash so the adapter can distinguish
+            # an idempotent write from an identity collision.
             result = self._graph.query(
                 query,
                 params=params,

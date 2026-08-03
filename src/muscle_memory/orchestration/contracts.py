@@ -308,10 +308,20 @@ class GuildReview:
     recommendation: ReviewRecommendation
     summary: str
     requested_approvals: tuple[ApprovalKind, ...] = ()
+    provider_session_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.plan_digest or not self.summary:
             raise ContractViolationError("Guild reviews require a plan digest and summary")
+        if self.provider_session_id is not None and (
+            not self.provider_session_id
+            or len(self.provider_session_id) > 256
+            or any(
+                character.isspace() or not character.isprintable()
+                for character in self.provider_session_id
+            )
+        ):
+            raise ContractViolationError("Guild provider session id is invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +338,15 @@ class GuildReviewSet:
             )
         if any(review.plan_digest != self.plan_digest for review in self.reviews):
             raise ContractViolationError("Guild review digest does not match the reviewed plan")
+        if (
+            self.provider_status.mode is ProviderMode.LIVE
+            and self.provider_status.health
+            in {HealthState.HEALTHY, HealthState.END_TO_END_VERIFIED}
+            and any(review.provider_session_id is None for review in self.reviews)
+        ):
+            raise ContractViolationError(
+                "healthy live Guild reviews require retained provider session ids"
+            )
 
     @property
     def blocked(self) -> bool:

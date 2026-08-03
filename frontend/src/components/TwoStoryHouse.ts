@@ -125,6 +125,113 @@ function fabricTexture(base: string, thread: string): THREE.CanvasTexture {
   }, [3, 3]);
 }
 
+function plasterTexture(base: string, fleck: string): THREE.CanvasTexture {
+  return canvasTexture((context, size) => {
+    context.fillStyle = base;
+    context.fillRect(0, 0, size, size);
+    for (let index = 0; index < 1200; index += 1) {
+      const x = (index * 73) % size;
+      const y = (index * 181) % size;
+      const radius = 0.4 + ((index * 17) % 9) / 10;
+      context.fillStyle = fleck;
+      context.globalAlpha = 0.025 + (index % 5) * 0.008;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.globalAlpha = 1;
+  }, [2.2, 1.8]);
+}
+
+function makeCurtains(width: number, height: number, color: string): THREE.Group {
+  const curtains = new THREE.Group();
+  const textile = new THREE.MeshStandardMaterial({
+    map: fabricTexture(color, "rgba(255,255,255,.045)"),
+    color,
+    roughness: 0.98,
+    side: THREE.DoubleSide,
+  });
+  const rod = surface("#2b2d2c", 0.32, 0.7);
+  curtains.add(item(new THREE.CylinderGeometry(0.022, 0.022, width + 0.42, 12), rod, [0, height / 2 + 0.12, 0], [0, 0, Math.PI / 2]));
+  for (const side of [-1, 1]) {
+    const panel = item(new THREE.BoxGeometry(width * 0.24, height, 0.045, 8, 16, 1), textile, [side * width * 0.42, 0, 0]);
+    const positions = panel.geometry.attributes.position;
+    for (let index = 0; index < positions.count; index += 1) {
+      const x = positions.getX(index);
+      const y = positions.getY(index);
+      positions.setZ(index, positions.getZ(index) + Math.sin((x + y * 0.18) * 32) * 0.025);
+    }
+    positions.needsUpdate = true;
+    panel.geometry.computeVertexNormals();
+    curtains.add(panel);
+  }
+  return curtains;
+}
+
+function makeFramedPrint(
+  width: number,
+  height: number,
+  colors: [string, string, string],
+  seed: number,
+): THREE.Group {
+  const artwork = new THREE.Group();
+  const frame = surface("#382d25", 0.48);
+  addBox(artwork, [width + 0.1, height + 0.1, 0.045], [0, 0, 0], frame);
+  const texture = canvasTexture((context, size) => {
+    context.fillStyle = colors[0];
+    context.fillRect(0, 0, size, size);
+    context.fillStyle = colors[1];
+    context.beginPath();
+    context.arc(size * (0.35 + seed * 0.04), size * 0.42, size * 0.26, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = colors[2];
+    context.save();
+    context.translate(size * 0.62, size * 0.66);
+    context.rotate(seed * 0.23);
+    context.fillRect(-size * 0.22, -size * 0.12, size * 0.44, size * 0.24);
+    context.restore();
+  }, [1, 1]);
+  const print = item(
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshStandardMaterial({ map: texture, roughness: 0.86 }),
+    [0, 0, 0.026],
+  );
+  artwork.add(print);
+  return artwork;
+}
+
+function makeClock(): THREE.Group {
+  const clock = new THREE.Group();
+  const rim = surface("#302e2a", 0.34, 0.55);
+  const face = surface("#eee9dc", 0.56);
+  clock.add(item(new THREE.CylinderGeometry(0.3, 0.3, 0.055, 36), rim, [0, 0, 0], [Math.PI / 2, 0, 0]));
+  clock.add(item(new THREE.CircleGeometry(0.255, 36), face, [0, 0, 0.031]));
+  addBox(clock, [0.018, 0.17, 0.018], [0, 0.075, 0.047], rim, [0, 0, -0.42]);
+  addBox(clock, [0.014, 0.12, 0.018], [0.045, -0.025, 0.049], rim, [0, 0, 1.05]);
+  return clock;
+}
+
+function makeGardenTree(): THREE.Group {
+  const tree = new THREE.Group();
+  const bark = new THREE.MeshStandardMaterial({
+    map: plasterTexture("#5d4533", "#1e1712"),
+    color: "#75543d",
+    roughness: 0.96,
+  });
+  tree.add(item(new THREE.CylinderGeometry(0.22, 0.33, 3.45, 18), bark, [0, 1.72, 0]));
+  const leafColors = ["#315c3c", "#3f7047", "#557d4a"];
+  for (let index = 0; index < 11; index += 1) {
+    const crown = item(
+      new THREE.IcosahedronGeometry(0.72 + (index % 3) * 0.09, 2),
+      surface(leafColors[index % leafColors.length], 0.9),
+      [Math.sin(index * 1.7) * 0.78, 3.1 + (index % 4) * 0.35, Math.cos(index * 1.7) * 0.62],
+    );
+    crown.scale.set(1.08, 0.92, 1);
+    tree.add(crown);
+  }
+  return tree;
+}
+
 function makeWindow(width: number, height: number): THREE.Group {
   const window = new THREE.Group();
   const glass = new THREE.MeshPhysicalMaterial({
@@ -514,6 +621,100 @@ function addLivedInClutter(ground: THREE.Group, upper: THREE.Group): void {
   }
 }
 
+function addArchitecturalCharacter(root: THREE.Group, ground: THREE.Group, upper: THREE.Group): void {
+  const sagePlaster = new THREE.MeshStandardMaterial({
+    map: plasterTexture("#6f7b75", "#26362f"),
+    color: "#75827c",
+    roughness: 0.96,
+  });
+  const bluePlaster = new THREE.MeshStandardMaterial({
+    map: plasterTexture("#788a91", "#2b3b40"),
+    color: "#85979d",
+    roughness: 0.96,
+  });
+  const rosePlaster = new THREE.MeshStandardMaterial({
+    map: plasterTexture("#8e706a", "#4b302b"),
+    color: "#96766f",
+    roughness: 0.96,
+  });
+  const tile = new THREE.MeshStandardMaterial({
+    map: tileTexture("#c7d3ce", "#7f8f8b", 12),
+    color: "#d4ddd8",
+    roughness: 0.62,
+  });
+  const trim = surface("#eee9df", 0.74);
+
+  // Room-specific finishes keep the cutaway readable while giving each space an identity.
+  addBox(ground, [3.58, 2.66, 0.025], [4.58, 1.48, 1.081], sagePlaster);
+  addBox(upper, [5.72, 2.62, 0.025], [-3.58, STORY_HEIGHT + 1.47, 0.742], bluePlaster);
+  addBox(upper, [3.56, 2.62, 0.025], [4.68, STORY_HEIGHT + 1.47, 0.742], rosePlaster);
+  addBox(ground, [4.78, 0.77, 0.035], [-3.75, 1.42, -4.49], tile);
+  addBox(ground, [4.82, 0.58, 0.03], [3.98, 0.33, -4.49], sagePlaster);
+
+  // Baseboards and door casings add the small depth cues that make the walls feel built.
+  addBox(ground, [3.68, 0.11, 0.06], [4.58, 0.08, 1.1], trim);
+  addBox(upper, [5.82, 0.11, 0.06], [-3.58, STORY_HEIGHT + 0.08, 0.76], trim);
+  addBox(upper, [3.66, 0.11, 0.06], [4.68, STORY_HEIGHT + 0.08, 0.76], trim);
+  for (const x of [-5.56, -4.34]) addBox(ground, [0.09, 2.48, 0.13], [x, 1.25, 4.42], trim);
+  addBox(ground, [1.31, 0.09, 0.13], [-4.95, 2.46, 4.42], trim);
+
+  const livingCurtains = makeCurtains(2.8, 1.66, "#b98a6f");
+  livingCurtains.position.set(4.0, 1.55, -4.46);
+  ground.add(livingCurtains);
+  const diningCurtains = makeCurtains(2.0, 1.58, "#566f72");
+  diningCurtains.position.set(-0.3, 1.55, -4.46);
+  ground.add(diningCurtains);
+  const bedroomCurtains = makeCurtains(2.55, 1.62, "#c7b59c");
+  bedroomCurtains.position.set(3.75, STORY_HEIGHT + 1.55, -4.46);
+  upper.add(bedroomCurtains);
+
+  const studyPrint = makeFramedPrint(0.68, 0.88, ["#ded6c7", "#d56f52", "#3d6664"], 1);
+  studyPrint.position.set(4.03, 1.72, 1.105);
+  ground.add(studyPrint);
+  const studyPrintTwo = makeFramedPrint(0.54, 0.7, ["#d9d4c8", "#d8ab54", "#5b7482"], 2);
+  studyPrintTwo.position.set(5.18, 1.58, 1.105);
+  studyPrintTwo.rotation.z = -0.025;
+  ground.add(studyPrintTwo);
+  const bedroomPrint = makeFramedPrint(0.9, 0.62, ["#e2d6c8", "#365f60", "#c97958"], 3);
+  bedroomPrint.position.set(4.7, STORY_HEIGHT + 1.7, 0.766);
+  upper.add(bedroomPrint);
+  const clock = makeClock();
+  clock.position.set(5.86, 2.07, 1.112);
+  ground.add(clock);
+
+  // The garden is intentionally imperfect: uneven pavers, an established tree, and mixed planters.
+  const tree = makeGardenTree();
+  tree.position.set(-7.45, -0.4, -2.85);
+  root.add(tree);
+  const paver = surface("#b0aca1", 0.94);
+  for (let index = 0; index < 7; index += 1) {
+    addBox(
+      root,
+      [0.78 + (index % 2) * 0.12, 0.06, 0.52],
+      [-4.95 + Math.sin(index * 1.8) * 0.11, -0.37, 6.15 + index * 0.72],
+      paver,
+      [0, (index % 3 - 1) * 0.065, 0],
+    );
+  }
+  for (const [x, z, color] of [
+    [-6.45, 4.95, "#b76252"],
+    [5.72, 5.2, "#d2a348"],
+    [6.38, 4.88, "#8f6683"],
+  ] as Array<[number, number, string]>) {
+    root.add(item(new THREE.CylinderGeometry(0.19, 0.16, 0.25, 18), surface("#7b5540", 0.86), [x, -0.27, z]));
+    for (let petal = 0; petal < 5; petal += 1) {
+      root.add(item(new THREE.SphereGeometry(0.07, 12, 8), surface(color, 0.82), [x + Math.sin(petal * 1.26) * 0.1, -0.02 + (petal % 2) * 0.05, z + Math.cos(petal * 1.26) * 0.1]));
+    }
+  }
+
+  const doormat = new THREE.MeshStandardMaterial({
+    map: fabricTexture("#6d5440", "rgba(238,218,183,.11)"),
+    color: "#795f49",
+    roughness: 1,
+  });
+  addBox(root, [1.2, 0.035, 0.62], [-4.95, -0.3, 4.96], doormat, [0, 0.03, 0]);
+}
+
 function addStairs(parent: THREE.Group): void {
   const tread = surface("#795039", 0.54);
   const stringer = surface("#e6e0d4", 0.78);
@@ -671,6 +872,7 @@ export function buildTwoStoryHouse(): TwoStoryHouseModel {
   addUpperArchitecture(upperFloor);
   addUpperRooms(upperFloor);
   addLivedInClutter(ground, upperFloor);
+  addArchitecturalCharacter(root, ground, upperFloor);
 
   const firstLight = new THREE.RectAreaLight("#ffd6a0", 5.5, 4.5, 3.2);
   firstLight.position.set(2.8, 2.72, -1.8);

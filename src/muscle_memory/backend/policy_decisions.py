@@ -152,16 +152,19 @@ def record_reviewed_numeric_decision(
         for _evidence_id, kind, artifact_hash in bundle.artifact_hashes()
         if kind == "guild_evaluation_evidence"
     )
-    collision_reduction = decision.collision_rate_reduction
+    collision_reduction = (
+        0.0
+        if decision.baseline.collision_rate == 0.0
+        else (decision.baseline.collision_rate - decision.candidate.collision_rate)
+        / decision.baseline.collision_rate
+    )
     metrics = PolicyGateMetrics(
         held_out_success_rate=decision.candidate.success_rate,
         collision_rate=decision.candidate.collision_rate,
         fall_count=decision.candidate.total_falls,
         median_clearance_m=decision.candidate.median_minimum_clearance_m,
         success_rate_delta=decision.success_rate_improvement,
-        collision_reduction_fraction=(
-            0.0 if collision_reduction is None else collision_reduction
-        ),
+        collision_reduction_fraction=collision_reduction,
         path_efficiency_regression_fraction=decision.path_efficiency_regression,
     )
     target = (
@@ -169,13 +172,21 @@ def record_reviewed_numeric_decision(
         if expected_action is PolicyAction.PROMOTE
         else evaluation.baseline.policy_id
     )
+    current_policy_id = coordinator.current_policy(stable_alias)
+    if current_policy_id is None:
+        coordinator.initialize_policy_alias(
+            stable_alias,
+            evaluation.baseline.policy_id,
+            occurred_at=decided_at,
+        )
+        current_policy_id = evaluation.baseline.policy_id
     numeric = NumericPolicyDecision(
         decision_id=sha256_text(f"{plan.digest}:{stable_alias}:numeric-policy-decision"),
         run_id=plan.run_id,
         plan_digest=plan.digest,
         action=expected_action,
         alias=stable_alias,
-        from_policy_id=coordinator.current_policy(stable_alias),
+        from_policy_id=current_policy_id,
         target_policy_id=target,
         evaluation_evidence_hash=evaluation_artifact_hash,
         metrics=metrics,

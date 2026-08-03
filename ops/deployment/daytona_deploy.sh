@@ -16,6 +16,7 @@ REPOSITORY_DIR=/home/daytona/MuscleMemory
 PORT=${MM_DAYTONA_API_PORT:-8000}
 PREVIEW_EXPIRES=${MM_DAYTONA_PREVIEW_EXPIRES:-3600}
 REQUIRE_SPONSORS=${MM_DAYTONA_REQUIRE_SPONSORS:-0}
+PRODUCTION_HEALTH_URL=${MM_PRODUCTION_HEALTH_URL:-}
 
 case "$REVISION" in
   ''|*[!0-9a-fA-F]*) printf '%s\n' "revision must be a full hexadecimal commit SHA" >&2; exit 2 ;;
@@ -66,6 +67,10 @@ if payload.get("state") != "started":
     errors.append("sandbox is not started")
 if payload.get("autoStopInterval") != 0:
     errors.append("auto-stop must be disabled")
+if payload.get("autoArchiveInterval") not in {-1, 43200}:
+    errors.append("auto-archive must be disabled or set to Daytona's 30-day maximum")
+if payload.get("autoDeleteInterval") != -1:
+    errors.append("auto-delete must be disabled")
 if payload.get("public") is not True:
     errors.append("sandbox must expose a public preview")
 if not any(item.get("mountPath") == "/data" for item in payload.get("volumes", [])):
@@ -77,10 +82,28 @@ print(payload["id"])
 
 if ! daytona exec "$SANDBOX" -- test -d "$REPOSITORY_DIR/.git"; then
   daytona exec "$SANDBOX" -- git clone --filter=blob:none "$REPOSITORY_URL" "$REPOSITORY_DIR"
+else
+  if ! daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 60 -- \
+    uv run --frozen --no-sync python -m ops.deployment.daytona_process --stop \
+      --state-dir /home/daytona/mm-data \
+      --snapshot-dir /data/muscle-memory-snapshots \
+      >/dev/null 2>&1; then
+    daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 60 -- \
+      uv run --frozen --no-sync python -m ops.deployment.daytona_process --stop \
+        --data-dir /home/daytona/mm-data \
+        >/dev/null 2>&1 || true
+  fi
 fi
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" fetch --depth 1 origin "$REVISION"
 RESOLVED_REVISION=$(daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" rev-parse FETCH_HEAD)
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" checkout --detach "$RESOLVED_REVISION"
+daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" reset --hard "$RESOLVED_REVISION"
+daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" clean -ffdx
+daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" -- sh -eu -c '
+  test "$(git rev-parse HEAD)" = "$1"
+  test -z "$(git status --porcelain --untracked-files=all)"
+  test -z "$(git clean -ndx)"
+' sh "$RESOLVED_REVISION"
 
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 900 -- uv sync --frozen --no-dev
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR/frontend" --timeout 300 -- \
@@ -90,6 +113,7 @@ daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR/frontend" --timeout 300 -- \
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 120 -- \
   uv run --frozen --no-sync mm-verify-robot
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 60 -- \
+  env MM_API_HOST=0.0.0.0 \
   uv run --frozen --no-sync python -m ops.deployment.daytona_process --port "$PORT"
 PROCESS_STARTED=1
 
@@ -117,6 +141,15 @@ if [ "$REQUIRE_SPONSORS" = "1" ]; then
 else
   python3 -m ops.deployment.smoke --url "$HEALTH_URL" --timeout 180
   printf '%s\n' "Runtime-only smoke passed; sponsor providers were not required."
+fi
+
+if [ -n "$PRODUCTION_HEALTH_URL" ]; then
+  case "$PRODUCTION_HEALTH_URL" in
+    https://*) ;;
+    *) printf '%s\n' "MM_PRODUCTION_HEALTH_URL must use HTTPS" >&2; exit 2 ;;
+  esac
+  python3 -m ops.deployment.smoke --url "$PRODUCTION_HEALTH_URL" --timeout 180
+  printf '%s\n' "Production-domain smoke passed: $PRODUCTION_HEALTH_URL"
 fi
 
 printf '%s\n' "Daytona sandbox: $SANDBOX"

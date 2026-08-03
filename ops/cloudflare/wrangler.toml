@@ -1,0 +1,9 @@
+name = "muscle-memory-proxy"
+main = "daytona_proxy.js"
+compatibility_date = "2026-08-03"
+workers_dev = true
+
+routes = [
+  { pattern = "musclememory.space", custom_domain = true },
+  { pattern = "www.musclememory.space", custom_domain = true },
+]

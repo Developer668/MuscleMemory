@@ -42,6 +42,8 @@ class SponsorOrchestrator:
         self._rocketride = rocketride
 
     async def review(self, plan: ExecutionPlan) -> ReviewedExecution:
+        # Guild.ai binds all specialist recommendations to the same immutable plan
+        # before any execution capability is exposed.
         return ReviewedExecution(plan=plan, guild_reviews=await self._guild.review_plan(plan))
 
     async def execute(
@@ -53,4 +55,6 @@ class SponsorOrchestrator:
             raise ReviewBlockedError(
                 "all Guild specialists must recommend proceed before execution"
             )
+        # RocketRide receives only the approved plan, preserving its role as the
+        # deterministic executor rather than a fourth reasoning agent.
         return await self._rocketride.execute(reviewed.plan, prior_run)

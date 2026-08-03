@@ -23,6 +23,8 @@ from muscle_memory.graph_memory import (
     LessonMemoryRecord,
     ObstacleMemoryRecord,
     PolicyComparisonRecord,
+    PolicyEvaluationRecord,
+    PolicyTrainingRecord,
     ProviderState,
     ResilientGraphMemory,
     WorldMemoryRecord,
@@ -163,6 +165,7 @@ def record_experience_chain(
     suffix: str,
     split: WorldSplit,
     signature_hash: str,
+    trained_policy_id: str | None = "policy-v1",
 ) -> None:
     world = make_world(suffix, split)
     obstacle = ObstacleMemoryRecord(
@@ -216,7 +219,7 @@ def record_experience_chain(
         kind="clearance_margin",
         summary="Increase clearance around laundry baskets.",
         signature_hash=signature_hash,
-        trained_policy_id="policy-v1",
+        trained_policy_id=trained_policy_id,
         created_at=NOW,
     )
 
@@ -417,6 +420,88 @@ def test_outperformance_claims_require_held_out_policy_evidence(tmp_path: Path) 
     )
     receipt = held_out.record_outperformance(comparison)
     assert receipt.record_kind == "outperformance"
+
+
+def test_policy_training_lineage_is_immutable_and_excludes_learned_lessons(
+    tmp_path: Path,
+) -> None:
+    cache = AppendOnlyGraphCache(tmp_path / "training-lineage.jsonl")
+    cache.record_evaluated_policy(make_policy("policy-v0", POLICY_V0_HASH))
+    cache.record_evaluated_policy(make_policy("policy-v1", POLICY_V1_HASH))
+    record_experience_chain(
+        cache,
+        suffix="11",
+        split=WorldSplit.TRAINING,
+        signature_hash="1" * 64,
+        trained_policy_id=None,
+    )
+    lesson = next(
+        event for event in cache.events if event.record_kind == "lesson"
+    )
+    lineage = PolicyTrainingRecord(
+        lesson_id=lesson.record_id,
+        policy_id="policy-v1",
+        evidence_hash=EVIDENCE_HASH,
+        trained_at=NOW,
+    )
+
+    receipt = cache.record_policy_training(lineage)
+    replayed = AppendOnlyGraphCache(cache.path)
+
+    assert receipt.record_kind == "policy_training"
+    assert replayed.query_curriculum(
+        CurriculumQuery(exclude_trained_policy_ids=("policy-v1",))
+    ).lessons == ()
+
+
+def test_remote_policy_training_uses_existing_lesson_and_evaluated_policy() -> None:
+    graph = FakeFalkorGraph()
+    memory = FalkorGraphMemory(graph, graph_name="muscle_memory", query_timeout_ms=500)
+    lineage = PolicyTrainingRecord(
+        lesson_id="lesson-11",
+        policy_id="policy-v1",
+        evidence_hash=EVIDENCE_HASH,
+        trained_at=NOW,
+    )
+
+    memory.record_policy_training(lineage)
+    _, query, params, _ = graph.calls[-1]
+
+    assert "(lesson)-[training:TRAINED_INTO" in query
+    assert "evaluated: true" in query
+    assert params is not None
+    assert params["evidence_hash"] == EVIDENCE_HASH
+
+
+def test_failed_held_out_evaluation_is_preserved_without_claiming_outperformance(
+    tmp_path: Path,
+) -> None:
+    cache = AppendOnlyGraphCache(tmp_path / "policy-evaluation.jsonl")
+    cache.record_evaluated_policy(
+        make_policy("policy-v0", POLICY_V0_HASH, evaluation_split="held_out")
+    )
+    cache.record_evaluated_policy(
+        make_policy("policy-v1", POLICY_V1_HASH, evaluation_split="held_out")
+    )
+    evaluation = PolicyEvaluationRecord(
+        candidate_policy_id="policy-v1",
+        baseline_policy_id="policy-v0",
+        evidence_hash=EVIDENCE_HASH,
+        action="roll_back",
+        success_rate_delta=0.0,
+        collision_rate_delta=0.0,
+        measured_at=NOW,
+    )
+
+    receipt = cache.record_policy_evaluation(evaluation)
+    reloaded = AppendOnlyGraphCache(cache.path)
+
+    assert receipt.record_kind == "policy_evaluation"
+    assert [event.record_kind for event in reloaded.events] == [
+        "evaluated_policy",
+        "evaluated_policy",
+        "policy_evaluation",
+    ]
 
 
 def test_remote_failure_and_outperformance_queries_enforce_evidence_scope() -> None:

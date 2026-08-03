@@ -154,6 +154,8 @@ class LaserDataTelemetryEnvelope(BaseModel):
 
     @model_validator(mode="after")
     def verify_event_id(self) -> Self:
+        # LaserData replay is evidence only when the provider event remains bound to
+        # the exact canonical telemetry bytes that produced this content address.
         expected = hashlib.sha256(self.record.canonical_json().encode("utf-8")).hexdigest()
         if self.event_id != expected:
             raise ValueError("LaserData event_id does not match the canonical telemetry record")

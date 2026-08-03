@@ -187,7 +187,8 @@ class MuscleMemoryApiBackend:
             raise RuntimeError("backend resources have already been closed")
         if self._started:
             return
-        # A health probe also replays any append-only cache prefix to a recovered FalkorDB.
+        # FalkorDB restores explicit memory before LaserData resumes the live stream,
+        # keeping graph recovery and operational telemetry in their separate roles.
         self.providers.graph_memory.health()
         await self.providers.laserdata.initialize()
         await self.episode_runtime.service.reconcile_provider_state()

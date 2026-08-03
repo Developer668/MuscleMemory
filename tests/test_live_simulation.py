@@ -6,6 +6,9 @@ import hashlib
 import json
 import subprocess
 import sys
+import threading
+from concurrent.futures import Future
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +27,10 @@ from muscle_memory.live import (
     EncodedVideoProduct,
     EvaluatedPolicySelection,
     LiveEpisodeConfig,
+    LiveEpisodeHealth,
     LiveEpisodeManager,
     LiveEpisodePhase,
+    LiveEpisodeStatus,
     VideoFrameMetadata,
     VideoFrameSet,
     VideoProduct,
@@ -137,6 +142,68 @@ def test_video_service_is_bounded_and_serves_named_mjpeg_products() -> None:
     assert all(b"X-Frame-Id: episode-video:video:" in chunk for chunk in chunks)
 
 
+def test_live_manager_evicts_terminal_status_future_and_video_together() -> None:
+    lifecycle, _ = _lifecycle()
+    video = BoundedVideoService(maximum_frame_sets=2, maximum_bytes=1_000)
+    manager = LiveEpisodeManager(
+        lifecycle=lifecycle,
+        video=video,
+        maximum_retained_episodes=1,
+    )
+    statuses = tuple(
+        LiveEpisodeStatus(
+            episode_id=episode_id,
+            phase=LiveEpisodePhase.CLOSED,
+            health=LiveEpisodeHealth.TERMINAL,
+            world_id="world-1",
+            policy_id="policy-1",
+            policy_hash="a" * 64,
+            policy_promotable=False,
+        )
+        for episode_id in ("terminal-1", "terminal-2")
+    )
+    try:
+        for status in statuses:
+            future: Future[LiveEpisodeStatus] = Future()
+            future.set_result(status)
+            video.start_episode(status.episode_id)
+            video.finish_episode(status.episode_id)
+            manager._statuses[status.episode_id] = status
+            manager._cancellations[status.episode_id] = threading.Event()
+            manager._futures[status.episode_id] = future
+
+        assert manager.wait("terminal-2") == statuses[1]
+        with pytest.raises(KeyError):
+            manager.status("terminal-1")
+        with pytest.raises(KeyError):
+            video.stats("terminal-1")
+        assert manager.status("terminal-2") == statuses[1]
+        assert video.stats("terminal-2").closed is True
+        assert set(manager._cancellations) == {"terminal-2"}
+        assert set(manager._futures) == {"terminal-2"}
+    finally:
+        manager.shutdown()
+
+
+def test_video_service_enforces_one_global_byte_cap_across_episodes() -> None:
+    frame = _video_frame(0)
+    video = BoundedVideoService(
+        maximum_frame_sets=4,
+        maximum_bytes=1_000,
+        maximum_total_bytes=frame.byte_length,
+    )
+    video.start_episode("global-1")
+    video.start_episode("global-2")
+
+    video.append("global-1", frame)
+    video.append("global-2", frame)
+
+    assert video.total_buffered_bytes == frame.byte_length
+    assert video.stats("global-1").buffered_frames == 0
+    assert video.stats("global-1").dropped_frames == 1
+    assert video.stats("global-2").buffered_frames == 1
+
+
 def test_production_live_import_cannot_reach_path_teacher_or_training_expert() -> None:
     audit = subprocess.run(
         [
@@ -175,6 +242,32 @@ def test_policy_selection_is_bound_to_real_heldout_evidence(tmp_path: Path) -> N
             checkpoint_path=POLICY_V1_CHECKPOINT,
             evaluation_path=changed,
         )
+
+
+def test_direct_goal_baseline_selection_is_bound_to_source_and_heldout_evidence(
+    tmp_path: Path,
+) -> None:
+    selection = EvaluatedPolicySelection.load_baseline(
+        evaluation_path=POLICY_V1_HELDOUT_EVIDENCE,
+    )
+
+    assert selection.policy.policy_id == "delivery-v0-direct-goal"
+    assert selection.checkpoint_path is None
+    assert selection.policy_source_path is not None
+    assert selection.evaluated_episode_count == 20
+    assert selection.promotable is False
+
+    changed_source = tmp_path / "baseline.py"
+    changed_source.write_bytes(selection.policy_source_path.read_bytes() + b"\n")
+    with pytest.raises(ValueError, match="source bytes changed"):
+        replace(selection, policy_source_path=changed_source)
+
+    evidence = json.loads(POLICY_V1_HELDOUT_EVIDENCE.read_text(encoding="utf-8"))
+    evidence["baseline_results"][0]["policy_hash"] = "0" * 64
+    changed_evidence = tmp_path / "changed-baseline.json"
+    changed_evidence.write_text(json.dumps(evidence), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="does not match its held-out evidence"):
+        EvaluatedPolicySelection.load_baseline(evaluation_path=changed_evidence)
 
 
 def test_live_manager_rejects_raw_training_world() -> None:

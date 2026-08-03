@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from pydantic import TypeAdapter
 
+from muscle_memory.api.adapters import pipeline_run_view, reviewed_execution_view
 from muscle_memory.orchestration import (
     EXACT_GUILD_ROLES,
     FIXED_PIPELINE,
@@ -24,6 +26,7 @@ from muscle_memory.orchestration import (
     GuildRoleEndpoint,
     GuildRoster,
     GuildUnavailableError,
+    HealthState,
     HumanDecision,
     HumanVerdict,
     InMemoryApprovalLedger,
@@ -44,10 +47,12 @@ from muscle_memory.orchestration import (
     SimulatedGuildCoordinator,
     SimulatedStepTransport,
     SponsorOrchestrator,
+    StepExecutionResult,
     UnconfiguredGuildCoordinator,
     UnconfiguredRocketRideTransport,
 )
 from muscle_memory.orchestration.contracts import canonical_json, sha256_text
+from muscle_memory.orchestration.service import ReviewedExecution
 
 
 def _plan(
@@ -439,6 +444,44 @@ class _FixtureGuildEvidenceSource:
         return {field: fixture[field]}
 
 
+class _CurrentGuildHttpTransport(_FakeGuildHttpTransport):
+    async def request_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Mapping[str, str],
+        body: bytes | None,
+        timeout_seconds: float,
+    ) -> object:
+        if method == "POST":
+            return await super().request_json(
+                method,
+                url,
+                headers=headers,
+                body=body,
+                timeout_seconds=timeout_seconds,
+            )
+        self.requests.append((method, url, headers, body))
+        session_id = url.split("/sessions/", 1)[1].split("/", 1)[0]
+        agent_input = self.sessions[session_id]
+        if "/events?" not in url:
+            return {"root_task": {"status": "DONE"}}
+        return {
+            "items": [
+                {
+                    "content": {
+                        "plan_digest": agent_input["plan_digest"],
+                        "recommendation": "proceed",
+                        "requested_approvals": [],
+                        "role": agent_input["role"],
+                        "summary": "provider reviewed fixed plan",
+                    }
+                }
+            ]
+        }
+
+
 def test_guild_api_adapter_calls_each_exact_role_with_basic_auth() -> None:
     transport = _FakeGuildHttpTransport()
     endpoints = tuple(
@@ -460,6 +503,24 @@ def test_guild_api_adapter_calls_each_exact_role_with_basic_auth() -> None:
 
     assert reviews.executable
     assert tuple(review.role for review in reviews.reviews) == EXACT_GUILD_ROLES
+    assert reviews.provider_status.health is HealthState.END_TO_END_VERIFIED
+    assert tuple(review.provider_session_id for review in reviews.reviews) == (
+        "session-1",
+        "session-2",
+        "session-3",
+    )
+    durable_review = TypeAdapter(ReviewedExecution).validate_json(
+        TypeAdapter(ReviewedExecution).dump_json(
+            ReviewedExecution(plan=_plan(), guild_reviews=reviews)
+        )
+    )
+    public_review = reviewed_execution_view(durable_review)
+    assert tuple(item.provider_session_id for item in public_review.reviews) == (
+        "session-1",
+        "session-2",
+        "session-3",
+    )
+    assert "secret-" not in public_review.model_dump_json()
     posts = [request for request in transport.requests if request[0] == "POST"]
     assert len(posts) == 3
     for request, endpoint in zip(posts, endpoints, strict=True):
@@ -481,6 +542,37 @@ def test_guild_api_adapter_calls_each_exact_role_with_basic_auth() -> None:
             }
             - {field}
         ).intersection(agent_input)
+
+
+def test_guild_api_adapter_reads_current_nested_done_status_and_events() -> None:
+    transport = _CurrentGuildHttpTransport()
+    endpoints = tuple(
+        GuildRoleEndpoint(role, f"key-{index}:secret-{index}")
+        for index, role in enumerate(EXACT_GUILD_ROLES, start=1)
+    )
+    coordinator = GuildApiCoordinator(
+        GuildApiConfig(
+            owner="owner",
+            workspace="workspace",
+            endpoints=endpoints,
+            poll_interval_seconds=0.001,
+        ),
+        transport,
+        _FixtureGuildEvidenceSource(),
+    )
+
+    reviews = asyncio.run(coordinator.review_plan(_plan()))
+
+    assert reviews.executable
+    assert tuple(review.provider_session_id for review in reviews.reviews) == (
+        "session-1",
+        "session-2",
+        "session-3",
+    )
+    event_requests = [
+        url for method, url, _, _ in transport.requests if method == "GET" and "/events?" in url
+    ]
+    assert len(event_requests) == 3
 
 
 class _FakeRocketRideClient:
@@ -559,6 +651,30 @@ def test_rocketride_sdk_adapter_uses_official_async_contract(tmp_path: Path) -> 
 
     assert output["accepted"] is True
     assert transport.status.mode is ProviderMode.LIVE
+    assert transport.status.health is HealthState.HEALTHY
+    assert output["rocketride_execution"] == {
+        "contract_version": 1,
+        "run_id": plan.run_id,
+        "task_token_sha256": sha256_text("task-token"),
+    }
+    durable_step = TypeAdapter(StepExecutionResult).validate_json(
+        TypeAdapter(StepExecutionResult).dump_json(
+            StepExecutionResult.create(plan.commands[0].step, output)
+        )
+    )
+    public_run = pipeline_run_view(
+        PipelineRun(
+            run_id=plan.run_id,
+            plan_digest=plan.digest,
+            state=RunState.RUNNING,
+            completed_steps=(durable_step,),
+            provider_status=transport.status,
+        )
+    )
+    assert public_run.completed_steps[0].provider_task_receipt_sha256 == sha256_text("task-token")
+    assert public_run.completed_steps[0].provider_run_id == plan.run_id
+    assert "task-token" not in durable_step.output_json
+    assert "secret" not in public_run.model_dump_json()
     assert events[0] == (
         "init",
         {

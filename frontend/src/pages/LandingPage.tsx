@@ -6,13 +6,17 @@ import {
   ChevronRight,
   CircleGauge,
   DatabaseZap,
+  Coffee,
+  PackageCheck,
+  Pill,
   Play,
   Radio,
   RotateCcw,
+  ScanLine,
   ShieldCheck,
   Sparkles,
-  Target,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   motion,
   useReducedMotion,
@@ -22,7 +26,69 @@ import {
 import { useRef, useState } from "react";
 
 import { BrandMark } from "../components/BrandMark";
-import { type DemoScenario, LandingWorld } from "../components/LandingWorld";
+import { type DemoScenario, type DemoTask, LandingWorld } from "../components/LandingWorld";
+
+const tasks: Array<{
+  id: DemoTask;
+  label: string;
+  shortLabel: string;
+  headline: [string, string, string];
+  destination: string;
+  arrival: string;
+  message: string;
+  metricLabel: string;
+  metricValue: string;
+  icon: LucideIcon;
+}> = [
+  {
+    id: "medicine",
+    label: "Medicine delivery",
+    shortLabel: "Medicine",
+    headline: ["Medicine.", "Living room.", "No drama."],
+    destination: "Resident / sofa",
+    arrival: "< 30 sec",
+    message: "Medicine loaded. Resident is waiting by the sofa.",
+    metricLabel: "Tray tilt",
+    metricValue: "3.2°",
+    icon: Pill,
+  },
+  {
+    id: "breakfast",
+    label: "Breakfast service",
+    shortLabel: "Breakfast",
+    headline: ["Breakfast.", "Dining room.", "Still warm."],
+    destination: "Dining place",
+    arrival: "tray level",
+    message: "Breakfast is warm. Taking the smooth route to the table.",
+    metricLabel: "Tray tilt",
+    metricValue: "2.7°",
+    icon: Coffee,
+  },
+  {
+    id: "kitchen_check",
+    label: "Cooktop safety sweep",
+    shortLabel: "Safety sweep",
+    headline: ["Cooktop.", "Safety sweep.", "All quiet."],
+    destination: "Cooktop / stop line",
+    arrival: "scan + stop",
+    message: "No payload. Navigating to the cooktop stop line for a visual sweep.",
+    metricLabel: "Scan coverage",
+    metricValue: "98%",
+    icon: ScanLine,
+  },
+  {
+    id: "parcel",
+    label: "Entry parcel handoff",
+    shortLabel: "Parcel",
+    headline: ["Parcel.", "Front entry.", "Right on time."],
+    destination: "Entry bench",
+    arrival: "handoff ready",
+    message: "Parcel secured. Heading to the entry bench for handoff.",
+    metricLabel: "Payload sway",
+    metricValue: "1.8°",
+    icon: PackageCheck,
+  },
+];
 
 const scenarios: Array<{
   id: DemoScenario;
@@ -38,7 +104,7 @@ const scenarios: Array<{
     id: "clear",
     label: "Clear route",
     shortLabel: "Clear",
-    message: "Route is clean. Medicine stays level.",
+    message: "Route is clean. The payload stays level.",
     success: "92%",
     clearance: "0.46 m",
     speed: "0.62 m/s",
@@ -94,6 +160,7 @@ export function LandingPage() {
   const storyRef = useRef<HTMLElement>(null);
   const reduceMotion = useReducedMotion();
   const [scenario, setScenario] = useState<DemoScenario>("laundry");
+  const [task, setTask] = useState<DemoTask>("medicine");
   const { scrollYProgress } = useScroll({
     target: storyRef,
     offset: ["start start", "end end"],
@@ -112,6 +179,8 @@ export function LandingPage() {
   const progressScale = useTransform(scrollYProgress, [0, 1], [0, 1]);
 
   const activeScenario = scenarios.find((item) => item.id === scenario) ?? scenarios[0];
+  const activeTask = tasks.find((item) => item.id === task) ?? tasks[0];
+  const TaskIcon = activeTask.icon;
 
   const runDelivery = () => {
     const story = storyRef.current;
@@ -131,7 +200,7 @@ export function LandingPage() {
 
       <section className="mm-story" ref={storyRef} aria-label="MM-01 delivery story">
         <div className="mm-story__sticky">
-          <LandingWorld progress={scrollYProgress} scenario={scenario} />
+          <LandingWorld progress={scrollYProgress} scenario={scenario} task={task} />
           <div className="mm-world-shade" aria-hidden="true" />
           <div className="mm-film-grain" aria-hidden="true" />
 
@@ -159,7 +228,7 @@ export function LandingPage() {
             <div className="mm-intro-actions">
               <button className="mm-run" type="button" onClick={runDelivery}>
                 <Play size={17} fill="currentColor" />
-                Run a delivery
+                Choose a task
               </button>
               <a className="mm-text-link" href="#memory-story">
                 See what it remembers <ArrowRight size={17} />
@@ -168,12 +237,46 @@ export function LandingPage() {
           </motion.div>
 
           <motion.div className="mm-chapter mm-chapter--task" style={{ opacity: taskOpacity, y: taskY, visibility: taskVisibility }}>
-            <div className="mm-task-index">01 / THE TASK</div>
-            <h2>Medicine.<br />Living room.<br /><em>No drama.</em></h2>
-            <div className="mm-task-ticket">
-              <Target size={19} />
-              <div><span>Destination</span><strong>Resident / sofa</strong></div>
-              <div><span>Arrival</span><strong>&lt; 30 sec</strong></div>
+            <div className="mm-task-index">01 / CHOOSE THE TASK</div>
+            <motion.h2
+              key={task}
+              initial={reduceMotion ? false : { opacity: 0, y: 22, filter: "blur(8px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              transition={{ duration: 0.52, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {activeTask.headline[0]}<br />{activeTask.headline[1]}<br /><em>{activeTask.headline[2]}</em>
+            </motion.h2>
+            <motion.div
+              className="mm-task-ticket"
+              key={`${task}-ticket`}
+              initial={reduceMotion ? false : { opacity: 0, x: 18 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.42, delay: 0.08 }}
+            >
+              <TaskIcon size={19} />
+              <div><span>Destination</span><strong>{activeTask.destination}</strong></div>
+              <div><span>Arrival</span><strong>{activeTask.arrival}</strong></div>
+            </motion.div>
+            <div className="mm-task-chooser" role="group" aria-label="Household task">
+              {tasks.map((item) => {
+                const Icon = item.icon;
+                const selected = item.id === task;
+                return (
+                  <motion.button
+                    key={item.id}
+                    className={selected ? "is-active" : ""}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setTask(item.id)}
+                    whileHover={reduceMotion ? undefined : { y: -2 }}
+                    whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+                  >
+                    {selected && <motion.i layoutId="mm-task-cursor" transition={{ type: "spring", stiffness: 430, damping: 34 }} />}
+                    <Icon size={14} />
+                    <span>{item.shortLabel}</span>
+                  </motion.button>
+                );
+              })}
             </div>
           </motion.div>
 
@@ -193,7 +296,7 @@ export function LandingPage() {
               <div className="mm-eval-grid">
                 <div><span>Clearance</span><strong>{activeScenario.clearance}</strong></div>
                 <div><span>Speed</span><strong>{activeScenario.speed}</strong></div>
-                <div><span>Tray tilt</span><strong>3.2°</strong></div>
+                <div><span>{activeTask.metricLabel}</span><strong>{activeTask.metricValue}</strong></div>
                 <div><span>Risk</span><strong>{activeScenario.risk}</strong></div>
               </div>
               <div className="mm-policy-action">
@@ -232,7 +335,7 @@ export function LandingPage() {
             </div>
           </div>
 
-          <PixelMascot message={activeScenario.message} onCycle={cycleScenario} />
+          <PixelMascot message={scenario === "clear" ? activeTask.message : activeScenario.message} onCycle={cycleScenario} />
 
           <div className="mm-story-rail" aria-hidden="true">
             <span>ORIENT</span><i /><span>DELIVER</span><i /><span>SEE</span><i /><span>REMEMBER</span>

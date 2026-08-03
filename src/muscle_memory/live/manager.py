@@ -36,12 +36,16 @@ class LiveEpisodeManager:
         lifecycle: LiveEpisodeLifecycle,
         video: BoundedVideoService | None = None,
         maximum_concurrent_episodes: int = 1,
+        maximum_retained_episodes: int = 4,
     ) -> None:
         if maximum_concurrent_episodes <= 0:
             raise ValueError("maximum_concurrent_episodes must be positive")
+        if maximum_retained_episodes <= 0:
+            raise ValueError("maximum_retained_episodes must be positive")
         self._lifecycle = lifecycle
         self._video = video or BoundedVideoService()
         self._maximum_concurrent_episodes = maximum_concurrent_episodes
+        self._maximum_retained_episodes = maximum_retained_episodes
         self._executor = ThreadPoolExecutor(
             max_workers=maximum_concurrent_episodes,
             thread_name_prefix="mm01-live",
@@ -76,6 +80,7 @@ class LiveEpisodeManager:
         with self._lock:
             if self._shutting_down:
                 raise RuntimeError("live episode manager is shutting down")
+            self._prune_terminal_episodes_locked()
             if episode_id in self._statuses:
                 raise ValueError(f"live episode {episode_id!r} already exists")
             active = sum(status.phase in active_phases for status in self._statuses.values())
@@ -125,7 +130,10 @@ class LiveEpisodeManager:
                 future = self._futures[episode_id]
             except KeyError as exc:
                 raise KeyError(f"live episode {episode_id!r} does not exist") from exc
-        return future.result(timeout=timeout)
+        result = future.result(timeout=timeout)
+        with self._lock:
+            self._prune_terminal_episodes_locked()
+        return result
 
     def cancel(self, episode_id: str) -> LiveEpisodeStatus:
         with self._lock:
@@ -271,7 +279,27 @@ class LiveEpisodeManager:
             current = self._statuses[episode_id]
             updated = update(current)
             self._statuses[episode_id] = updated
+            if updated.phase in {LiveEpisodePhase.CLOSED, LiveEpisodePhase.FAILED}:
+                self._prune_terminal_episodes_locked()
             return updated
+
+    def _prune_terminal_episodes_locked(self) -> None:
+        terminal = tuple(
+            episode_id
+            for episode_id, status in self._statuses.items()
+            if status.phase in {LiveEpisodePhase.CLOSED, LiveEpisodePhase.FAILED}
+        )
+        excess = len(terminal) - self._maximum_retained_episodes
+        if excess <= 0:
+            return
+        for episode_id in terminal[:excess]:
+            future = self._futures.get(episode_id)
+            if future is not None and not future.done():
+                continue
+            self._video.discard_episode(episode_id)
+            self._statuses.pop(episode_id, None)
+            self._cancellations.pop(episode_id, None)
+            self._futures.pop(episode_id, None)
 
 
 __all__ = ["LiveEpisodeManager"]

@@ -115,9 +115,7 @@ class UrllibGuildTransport:
             with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (OSError, ValueError, urllib.error.HTTPError) as exc:
-            raise GuildUnavailableError(
-                f"Guild request failed ({type(exc).__name__})"
-            ) from exc
+            raise GuildUnavailableError(f"Guild request failed ({type(exc).__name__})") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +178,8 @@ class GuildApiCoordinator:
     async def review_plan(self, plan: ExecutionPlan) -> GuildReviewSet:
         reviews: list[GuildReview] = []
         try:
+            # Guild.ai gives each specialist an independent review session, preserving
+            # the role boundaries that keep one agent from approving its own proposal.
             for endpoint in self._config.endpoints:
                 reviews.append(await self._review_role(endpoint, plan))
         except (ContractViolationError, GuildUnavailableError) as exc:
@@ -197,8 +197,11 @@ class GuildApiCoordinator:
         self._status = ProviderStatus(
             provider=ProviderName.GUILD,
             mode=ProviderMode.LIVE,
-            health=HealthState.HEALTHY,
-            detail="all three Guild role sessions completed with validated output",
+            health=HealthState.END_TO_END_VERIFIED,
+            detail=(
+                "all three Guild role sessions completed with validated output and "
+                "retained provider session ids"
+            ),
             checked_at=datetime.now(UTC),
         )
         return GuildReviewSet(
@@ -268,14 +271,19 @@ class GuildApiCoordinator:
                 body=None,
                 timeout_seconds=self._config.timeout_seconds,
             )
-            state = (_find_string(detail, ("state", "status")) or "").lower()
+            state = _session_state(detail)
             if state in {"failed", "error", "cancelled", "canceled"}:
                 raise GuildUnavailableError(
                     f"Guild {endpoint.role.value} session ended with state {state}"
                 )
             candidate = _find_review_mapping(detail)
             if candidate is not None:
-                return _parse_review(candidate, endpoint.role, plan.digest)
+                return _parse_review(
+                    candidate,
+                    endpoint.role,
+                    plan.digest,
+                    provider_session_id=session_id,
+                )
             if state in {"completed", "complete", "finished", "done"}:
                 break
             if asyncio.get_running_loop().time() >= deadline:
@@ -294,7 +302,12 @@ class GuildApiCoordinator:
             raise GuildUnavailableError(
                 f"Guild {endpoint.role.value} completed without a structured review"
             )
-        return _parse_review(candidate, endpoint.role, plan.digest)
+        return _parse_review(
+            candidate,
+            endpoint.role,
+            plan.digest,
+            provider_session_id=session_id,
+        )
 
 
 def plan_steps(plan: ExecutionPlan) -> tuple[PipelineStep, ...]:
@@ -308,6 +321,16 @@ def _find_string(value: object, keys: tuple[str, ...]) -> str | None:
             if isinstance(candidate, str) and candidate:
                 return candidate
     return None
+
+
+def _session_state(value: object) -> str:
+    """Read both legacy top-level state and Guild's current root-task status."""
+
+    state = _find_string(value, ("state", "status"))
+    if state is None and isinstance(value, Mapping):
+        root_task = value.get("root_task")
+        state = _find_string(root_task, ("state", "status"))
+    return "" if state is None else state.lower()
 
 
 def _find_review_mapping(value: object) -> Mapping[str, object] | None:
@@ -338,6 +361,8 @@ def _parse_review(
     value: Mapping[str, object],
     role: GuildRole,
     plan_digest: str,
+    *,
+    provider_session_id: str,
 ) -> GuildReview:
     required = {
         "plan_digest",
@@ -384,6 +409,7 @@ def _parse_review(
         recommendation=recommendation,
         summary=summary.strip(),
         requested_approvals=requested,
+        provider_session_id=provider_session_id,
     )
 
 

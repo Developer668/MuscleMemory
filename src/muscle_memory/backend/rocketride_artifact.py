@@ -71,6 +71,8 @@ class ReviewedPipelineArtifact:
         if len(token) < 32:
             raise ReviewedPipelineError("RocketRide callback token is too short")
 
+        # RocketRide executes the packaged pipe only after every reviewed artifact
+        # matches its manifest, preventing deployment drift from changing the pipeline.
         manifest_path = bundle_root / "manifest.json"
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

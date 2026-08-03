@@ -34,14 +34,25 @@ from muscle_memory.robot.identity import verify_mm01_bundle
 MAX_EVALUATION_ARTIFACT_BYTES = 16 * 1024 * 1024
 HELD_OUT_WORLD_SET_ID = "heldout-v1"
 _RESULTS = TypeAdapter(tuple[PolicyEpisodeResult, ...])
-_REQUIRED_ARTIFACT_FIELDS = {
-    "schema_version",
-    "heldout_bundle_sha256",
-    "baseline_results",
-    "candidate_results",
-    "promotion_decision",
-}
-_OPTIONAL_ARTIFACT_FIELDS = {"candidate_checkpoint_sha256"}
+_LEGACY_ARTIFACT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "heldout_bundle_sha256",
+        "baseline_results",
+        "candidate_results",
+        "promotion_decision",
+    }
+)
+_CHECKPOINT_BOUND_ARTIFACT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "heldout_bundle_sha256",
+        "candidate_checkpoint_sha256",
+        "baseline_results",
+        "candidate_results",
+        "promotion_decision",
+    }
+)
 
 
 class HeldOutEvaluationAdmissionError(ValueError):
@@ -84,10 +95,8 @@ def admit_held_out_evaluation(
             "held-out artifact does not match the independently configured canonical hash"
         )
     if (
-        not _REQUIRED_ARTIFACT_FIELDS.issubset(payload)
-        or not set(payload).issubset(
-            _REQUIRED_ARTIFACT_FIELDS | _OPTIONAL_ARTIFACT_FIELDS
-        )
+        set(payload) not in {_LEGACY_ARTIFACT_FIELDS, _CHECKPOINT_BOUND_ARTIFACT_FIELDS}
+        or type(payload.get("schema_version")) is not int
         or payload.get("schema_version") != 1
     ):
         raise HeldOutEvaluationAdmissionError(
@@ -99,9 +108,13 @@ def admit_held_out_evaluation(
         )
 
     try:
-        baseline_results = _RESULTS.validate_python(payload["baseline_results"])
-        candidate_results = _RESULTS.validate_python(payload["candidate_results"])
-    except ValidationError as exc:
+        baseline_results = _RESULTS.validate_json(
+            canonical_json(payload["baseline_results"]), strict=True
+        )
+        candidate_results = _RESULTS.validate_json(
+            canonical_json(payload["candidate_results"]), strict=True
+        )
+    except (ValidationError, ValueError) as exc:
         raise HeldOutEvaluationAdmissionError(
             "held-out artifact contains invalid measured episode results"
         ) from exc
@@ -119,31 +132,43 @@ def admit_held_out_evaluation(
         )
     try:
         candidate_policy = BehaviorClonedPolicy.load(candidate_checkpoint_path)
-    except (OSError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         raise HeldOutEvaluationAdmissionError(
             "candidate checkpoint could not be independently verified"
         ) from exc
     actual_checkpoint_hash = _sha256_file(candidate_checkpoint_path)
     declared_checkpoint_hash = payload.get("candidate_checkpoint_sha256")
+    try:
+        promotion_payload = cast(dict[str, object], payload["promotion_decision"])
+        promotion_candidate = cast(dict[str, object], promotion_payload["candidate"])
+        promoted_policy_id = promotion_candidate["policy_id"]
+        promoted_policy_hash = promotion_candidate["policy_hash"]
+    except (KeyError, TypeError) as exc:
+        raise HeldOutEvaluationAdmissionError(
+            "held-out promotion decision has an invalid candidate identity"
+        ) from exc
     if (
         (
-            declared_checkpoint_hash is not None
+            set(payload) == _CHECKPOINT_BOUND_ARTIFACT_FIELDS
             and declared_checkpoint_hash != actual_checkpoint_hash
         )
+        or actual_checkpoint_hash != candidate_policy.policy_hash
         or candidate_results[0].policy_id != candidate_policy.policy_id
         or candidate_results[0].policy_hash != candidate_policy.policy_hash
-        or actual_checkpoint_hash != candidate_policy.policy_hash
         or any(
-            result.policy_hash != actual_checkpoint_hash
+            result.policy_id != candidate_policy.policy_id
+            or result.policy_hash != actual_checkpoint_hash
             for result in candidate_results
         )
+        or promoted_policy_id != candidate_policy.policy_id
+        or promoted_policy_hash != actual_checkpoint_hash
     ):
         raise HeldOutEvaluationAdmissionError(
             "candidate checkpoint identity does not match the held-out artifact"
         )
 
     decision = evaluate_promotion(baseline_results, candidate_results)
-    if payload.get("promotion_decision") != asdict(decision):
+    if canonical_json(payload.get("promotion_decision")) != canonical_json(asdict(decision)):
         raise HeldOutEvaluationAdmissionError(
             "declared promotion decision does not equal recomputed episode measurements"
         )
@@ -250,18 +275,12 @@ def admit_held_out_evaluation_from_env(
             "MM_HELDOUT_EVALUATED_AT must be an ISO-8601 timestamp"
         ) from exc
     if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
-        raise HeldOutEvaluationAdmissionError(
-            "MM_HELDOUT_EVALUATED_AT must include a timezone"
-        )
+        raise HeldOutEvaluationAdmissionError("MM_HELDOUT_EVALUATED_AT must include a timezone")
     return admit_held_out_evaluation(
         coordinator,
         artifact_path=_repository_path(configured["MM_HELDOUT_EVALUATION_ARTIFACT"]),
-        expected_artifact_hash=configured[
-            "MM_HELDOUT_EVALUATION_ARTIFACT_SHA256"
-        ],
-        candidate_checkpoint_path=_repository_path(
-            configured["MM_HELDOUT_CANDIDATE_CHECKPOINT"]
-        ),
+        expected_artifact_hash=configured["MM_HELDOUT_EVALUATION_ARTIFACT_SHA256"],
+        candidate_checkpoint_path=_repository_path(configured["MM_HELDOUT_CANDIDATE_CHECKPOINT"]),
         evaluated_at=evaluated_at,
         stable_alias=environ.get("MM_STABLE_POLICY_ALIAS", "stable").strip() or "stable",
     )
@@ -293,9 +312,7 @@ def _validate_frozen_pairs(
     for index, (world, baseline_result, candidate_result) in enumerate(
         zip(worlds, baseline, candidate, strict=True)
     ):
-        world_hash = hashlib.sha256(
-            world.world.model_dump_json().encode("utf-8")
-        ).hexdigest()
+        world_hash = hashlib.sha256(world.world.model_dump_json().encode("utf-8")).hexdigest()
         expected = (
             world.world.world_id,
             world.world.seed,
@@ -399,19 +416,15 @@ def _validate_canonical_outcome(result: PolicyEpisodeResult) -> None:
         raise HeldOutEvaluationAdmissionError(
             "held-out result contains an invalid non-negative measurement"
         )
-    if (
-        result.time_to_resident_seconds is not None
-        and (
-            result.time_to_resident_seconds < 0
-            or result.time_to_resident_seconds > result.simulated_duration_seconds
-        )
+    if result.time_to_resident_seconds is not None and (
+        result.time_to_resident_seconds < 0
+        or result.time_to_resident_seconds > result.simulated_duration_seconds
     ):
         raise HeldOutEvaluationAdmissionError(
             "held-out result has an invalid measured completion time"
         )
     if (
-        result.facing_error_degrees is not None
-        and not 0.0 <= result.facing_error_degrees <= 180.0
+        result.facing_error_degrees is not None and not 0.0 <= result.facing_error_degrees <= 180.0
     ) or result.path_efficiency > 1.0:
         raise HeldOutEvaluationAdmissionError(
             "held-out result has an invalid measured angle or path efficiency"
@@ -435,15 +448,9 @@ def _validate_canonical_outcome(result: PolicyEpisodeResult) -> None:
         failed.append(FailureReason.FELL.name)
     if result.body_collisions > criteria.maximum_body_collisions:
         failed.append(FailureReason.BODY_COLLISION.name)
-    if (
-        result.minimum_obstacle_clearance_m
-        < criteria.minimum_obstacle_clearance_metres
-    ):
+    if result.minimum_obstacle_clearance_m < criteria.minimum_obstacle_clearance_metres:
         failed.append(FailureReason.INSUFFICIENT_OBSTACLE_CLEARANCE.name)
-    if (
-        result.maximum_tray_tilt_degrees
-        >= criteria.maximum_tray_tilt_degrees_exclusive
-    ):
+    if result.maximum_tray_tilt_degrees >= criteria.maximum_tray_tilt_degrees_exclusive:
         failed.append(FailureReason.EXCESSIVE_TRAY_TILT.name)
     if result.package_slipped and not criteria.package_slip_allowed:
         failed.append(FailureReason.PACKAGE_SLIPPED.name)

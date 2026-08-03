@@ -34,11 +34,21 @@ class _EpisodeBuffer:
 class BoundedVideoService:
     """Keep video bytes outside telemetry in a strictly bounded process buffer."""
 
-    def __init__(self, *, maximum_frame_sets: int = 180, maximum_bytes: int = 64 << 20) -> None:
-        if maximum_frame_sets <= 0 or maximum_bytes <= 0:
+    def __init__(
+        self,
+        *,
+        maximum_frame_sets: int = 180,
+        maximum_bytes: int = 64 << 20,
+        maximum_total_bytes: int | None = None,
+    ) -> None:
+        resolved_total_bytes = maximum_bytes if maximum_total_bytes is None else maximum_total_bytes
+        if maximum_frame_sets <= 0 or maximum_bytes <= 0 or resolved_total_bytes <= 0:
             raise ValueError("video buffer limits must be positive")
         self._maximum_frame_sets = maximum_frame_sets
         self._maximum_bytes = maximum_bytes
+        self._maximum_total_bytes = resolved_total_bytes
+        self._total_bytes = 0
+        self._frame_order: deque[tuple[str, int]] = deque()
         self._episodes: dict[str, _EpisodeBuffer] = {}
         self._condition = threading.Condition(threading.RLock())
 
@@ -58,17 +68,20 @@ class BoundedVideoService:
                 raise RuntimeError("cannot append video after episode close")
             if state.frames and frame.metadata.frame_index <= state.frames[-1].metadata.frame_index:
                 raise ValueError("video frame indexes must be strictly increasing")
-            if frame.byte_length > self._maximum_bytes:
+            if frame.byte_length > min(self._maximum_bytes, self._maximum_total_bytes):
                 raise ValueError("one video frame set exceeds the configured byte limit")
             while state.frames and (
                 len(state.frames) >= self._maximum_frame_sets
                 or state.byte_length + frame.byte_length > self._maximum_bytes
             ):
-                discarded = state.frames.popleft()
-                state.byte_length -= discarded.byte_length
-                state.dropped_frames += 1
+                self._discard_left(state)
+            while self._total_bytes + frame.byte_length > self._maximum_total_bytes:
+                if not self._discard_oldest_global():
+                    raise RuntimeError("global video buffer accounting is inconsistent")
             state.frames.append(frame)
             state.byte_length += frame.byte_length
+            self._total_bytes += frame.byte_length
+            self._frame_order.append((episode_id, frame.metadata.frame_index))
             state.appended_frames += 1
             stats = self._stats(episode_id, state)
             self._condition.notify_all()
@@ -81,6 +94,25 @@ class BoundedVideoService:
             stats = self._stats(episode_id, state)
             self._condition.notify_all()
             return stats
+
+    def discard_episode(self, episode_id: str) -> None:
+        """Release a closed episode buffer after its bounded retention window."""
+
+        with self._condition:
+            state = self._state(episode_id)
+            if not state.closed:
+                raise RuntimeError("cannot discard video for an active episode")
+            self._total_bytes -= state.byte_length
+            del self._episodes[episode_id]
+            self._frame_order = deque(
+                item for item in self._frame_order if item[0] != episode_id
+            )
+            self._condition.notify_all()
+
+    @property
+    def total_buffered_bytes(self) -> int:
+        with self._condition:
+            return self._total_bytes
 
     def stats(self, episode_id: str) -> VideoBufferStats:
         with self._condition:
@@ -138,6 +170,26 @@ class BoundedVideoService:
             return self._episodes[episode_id]
         except KeyError as exc:
             raise KeyError(f"video episode {episode_id!r} does not exist") from exc
+
+    def _discard_left(self, state: _EpisodeBuffer) -> None:
+        discarded = state.frames.popleft()
+        state.byte_length -= discarded.byte_length
+        state.dropped_frames += 1
+        self._total_bytes -= discarded.byte_length
+
+    def _discard_oldest_global(self) -> bool:
+        while self._frame_order:
+            episode_id, frame_index = self._frame_order.popleft()
+            state = self._episodes.get(episode_id)
+            if (
+                state is None
+                or not state.frames
+                or state.frames[0].metadata.frame_index != frame_index
+            ):
+                continue
+            self._discard_left(state)
+            return True
+        return False
 
     @staticmethod
     def _stats(episode_id: str, state: _EpisodeBuffer) -> VideoBufferStats:

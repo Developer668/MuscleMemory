@@ -1,12 +1,27 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "policy_id": "delivery-v2-sensor-fusion-hysteresis",
   "artifact_status": "immutable_rejected_candidate",
   "heldout_access": "denied_by_development_gate",
+  "evaluation_scope": "generated_disjoint_development",
+  "provenance": {
+    "world_generation_mechanics": "training_world_generation",
+    "evaluation_dataset_membership": "disjoint_development_only",
+    "heldout_world_access": "never"
+  },
+  "paired_world_count": 12,
   "robot_checksum": "a82d65cdef447a4c2871faf28574c31aebc7e2425771c44d871714bcc4fcfe52",
+  "checkpoint_path": "models/policy/delivery-v2.npz",
   "checkpoint_sha256": "cb449b5fbaad448d2575fc8da7fd6151cec3412315d5ce0289aa8739db81937c",
+  "training_dataset_path": "artifacts/policy/expert-v1.npz",
   "training_dataset_sha256": "d3c7aa08ae467f0bf17eca13c116037ab2049e0da7d1ff95b2deb489252e20ef",
+  "training_evidence_path": "evidence/policy/delivery-v2/training.json",
   "training_evidence_sha256": "ad11af923e20f3e6a1f412e313f370e60d449ab70af4d0388ba419922a9bd7ae",
+  "training_evidence_canonical_sha256": "dfaf743fe42501833a2ff4647c4c49f36734e0dea7eb3d19e4833bf94417cfaa",
+  "development_round1_evidence_path": "evidence/policy/delivery-v2/development-evaluation-round1.json",
   "development_round1_evidence_sha256": "72bfd477181e6ef54648890fcbd099eb48e6f280f2d60031b473e53b335504bf",
-  "final_development_evidence_sha256": "64d6bdbd614221d70875660cbefaa92de3ab4b62e4843dfc6c3c07245e87eb7a"
+  "development_round1_evidence_canonical_sha256": "973f7136eaa9ae18296f8ddee85a983eb2b799d5b95f4c8762b1c064002e04f1",
+  "final_development_evidence_path": "evidence/policy/delivery-v2/development-evaluation.json",
+  "final_development_evidence_sha256": "cf38e707b0c0ef098acac1f3f28066e4e650a5973e5e78a7b4cbe19c373460e9",
+  "final_development_evidence_canonical_sha256": "b080b5e91e7ab7233ba9c2b95d509c89ab9cdf97b3aab80f73c4a17741d55c0a"
 }

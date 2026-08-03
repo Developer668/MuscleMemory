@@ -1,8 +1,11 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { RectAreaLight } from "three";
 
+import { attachImportedFurnishings } from "../components/ImportedFurnishings";
+import { buildTwoStoryHouse } from "../components/TwoStoryHouse";
 import type { CorrectionPoint } from "./types";
 
 type HomeSceneProps = {
@@ -329,7 +332,9 @@ export function makeRobot(): THREE.Group {
   const tray = mesh(roundedBox(0.7, 0.48, 0.055, 0.07), material("#afb7b8", 0.18, 0.72), [0, 1.02, 0.42], [-Math.PI / 2, 0, 0]);
   tray.name = "delivery-tray";
   robot.add(tray);
-  robot.add(mesh(roundedBox(0.31, 0.2, 0.1, 0.05), material("#b84d46", 0.72), [0, 1.12, 0.44], [-Math.PI / 2, 0, 0]));
+  const payload = mesh(roundedBox(0.31, 0.2, 0.1, 0.05), material("#b84d46", 0.72), [0, 1.12, 0.44], [-Math.PI / 2, 0, 0]);
+  payload.name = "delivery-payload";
+  robot.add(payload);
   robot.scale.setScalar(0.72);
   return robot;
 }
@@ -371,8 +376,8 @@ export function RealisticHomeScene({
     scene.fog = new THREE.FogExp2("#d8dfdf", 0.018);
 
     const camera = new THREE.PerspectiveCamera(43, 1, 0.05, 80);
-    camera.position.set(8.9, 7.2, 9.4);
-    camera.lookAt(0, 0.8, 0);
+    camera.position.set(12.85, 8.35, 12.7);
+    camera.lookAt(0, 2.1, -0.3);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -380,37 +385,52 @@ export function RealisticHomeScene({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 1.02;
     host.appendChild(renderer.domElement);
+
+    const environmentGenerator = new THREE.PMREMGenerator(renderer);
+    const environment = environmentGenerator.fromScene(new RoomEnvironment(), 0.035).texture;
+    scene.environment = environment;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.055;
-    controls.target.set(0, 0.75, -0.25);
-    controls.minDistance = 4.7;
-    controls.maxDistance = 18;
+    controls.target.set(0, 2.05, -0.25);
+    controls.minDistance = 6.4;
+    controls.maxDistance = 29;
     controls.minPolarAngle = 0.32;
     controls.maxPolarAngle = Math.PI / 2.04;
     controls.maxAzimuthAngle = Math.PI * 0.95;
     controls.minAzimuthAngle = -Math.PI * 0.45;
 
-    scene.add(buildApartment());
+    const house = buildTwoStoryHouse();
+    house.upperFloor.position.y = 0.82;
+    scene.add(house.root);
+    const cancelFurnitureLoading = attachImportedFurnishings(house);
     const robot = makeRobot();
-    robot.position.set(-2.8, 0, 2.25);
-    robot.rotation.y = Math.PI;
+    robot.position.set(-4.9, 0.08, 3.82);
+    robot.rotation.y = 2.28;
     scene.add(robot);
+
+    const robotMarker = new THREE.Mesh(
+      new THREE.RingGeometry(0.34, 0.48, 40),
+      new THREE.MeshBasicMaterial({ color: "#45d9c1", transparent: true, opacity: 0.78, side: THREE.DoubleSide }),
+    );
+    robotMarker.rotation.x = -Math.PI / 2;
+    robotMarker.position.set(robot.position.x, 0.04, robot.position.z);
+    scene.add(robotMarker);
 
     const destination = new THREE.Group();
     destination.add(mesh(new THREE.RingGeometry(0.28, 0.42, 48), material("#e56b55", 0.45, 0.1), [0, 0.025, 0], [-Math.PI / 2, 0, 0]));
     const beacon = new THREE.PointLight("#ff806b", 2.2, 2.6, 2);
     beacon.position.set(0, 0.28, 0);
     destination.add(beacon);
-    destination.position.set(2.7, 0, -1.86);
+    destination.position.set(3.42, 0, -2.68);
     scene.add(destination);
 
-    const hemisphere = new THREE.HemisphereLight("#eaf7ff", "#6a5140", 2.1);
+    const hemisphere = new THREE.HemisphereLight("#eaf7ff", "#6a5140", 1.82);
     scene.add(hemisphere);
-    const sun = new THREE.DirectionalLight("#fff2d4", 5.2);
+    const sun = new THREE.DirectionalLight("#fff2d4", 5.05);
     sun.position.set(1.8, 7.5, -6.4);
     sun.target.position.set(0.5, 0, 0.2);
     sun.castShadow = true;
@@ -430,8 +450,8 @@ export function RealisticHomeScene({
     let correctionLine: THREE.Line | null = null;
     let previousPathLength = -1;
     let previousCorrectionKey = "";
-    const targetPosition = new THREE.Vector3(-2.8, 0, 2.25);
-    let targetYaw = Math.PI;
+    const targetPosition = new THREE.Vector3(-4.9, 0.08, 3.82);
+    let targetYaw = 2.28;
     const clock = new THREE.Clock();
     let frame = 0;
 
@@ -468,6 +488,8 @@ export function RealisticHomeScene({
       }
       if (next.robotYaw !== null) targetYaw = -next.robotYaw + Math.PI / 2;
       robot.position.lerp(targetPosition, 0.075);
+      robotMarker.position.set(robot.position.x, 0.04, robot.position.z);
+      robotMarker.rotation.z += 0.004;
       const delta = Math.atan2(Math.sin(targetYaw - robot.rotation.y), Math.cos(targetYaw - robot.rotation.y));
       robot.rotation.y += delta * 0.08;
 
@@ -504,6 +526,7 @@ export function RealisticHomeScene({
     render();
 
     return () => {
+      cancelFurnitureLoading();
       window.cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       controls.dispose();
@@ -519,6 +542,8 @@ export function RealisticHomeScene({
         }
       });
       renderer.dispose();
+      environment.dispose();
+      environmentGenerator.dispose();
       renderer.domElement.remove();
     };
   }, []);

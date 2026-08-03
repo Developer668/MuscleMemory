@@ -30,13 +30,16 @@ from muscle_memory.episodes.models import (
 from muscle_memory.evaluation.runner import PolicyEpisodeResult
 from muscle_memory.graph_memory import (
     CorrectionMemoryRecord,
+    CurriculumQuery,
     EpisodeMemoryRecord,
     EpisodeOutcome,
     EvaluatedPolicyVersion,
     FailureMemoryRecord,
     GraphMemory,
     GraphWriteReceipt,
+    LessonMemoryRecord,
     ObstacleMemoryRecord,
+    PolicyTrainingRecord,
     WorldMemoryRecord,
     WorldSplit,
 )
@@ -529,6 +532,33 @@ class EpisodeService:
             for approval in sorted(approved, key=lambda item: item.approval_id)
         )
 
+    def _record_training_lineage(
+        self,
+        *,
+        policy: EvaluatedPolicyVersion,
+        lesson_ids: tuple[str, ...],
+        evidence_hash: str,
+    ) -> tuple[GraphWriteReceipt, ...]:
+        """Persist trusted lesson-to-policy lineage outside the control path."""
+
+        receipts = [self._graph_memory.record_evaluated_policy(policy)]
+        available_lesson_ids = {
+            lesson.lesson_id
+            for lesson in self._graph_memory.query_curriculum(CurriculumQuery(limit=100)).lessons
+        }
+        for lesson_id in sorted(set(lesson_ids) & available_lesson_ids):
+            receipts.append(
+                self._graph_memory.record_policy_training(
+                    PolicyTrainingRecord(
+                        lesson_id=lesson_id,
+                        policy_id=policy.policy_id,
+                        evidence_hash=evidence_hash,
+                        trained_at=policy.evaluated_at,
+                    )
+                )
+            )
+        return tuple(receipts)
+
     def _session(self, episode_id: str) -> _EpisodeSession:
         try:
             return self._sessions[episode_id]
@@ -837,6 +867,7 @@ class EpisodeService:
                     created_at=submission.created_at,
                 )
             )
+            self._graph_memory.record_lesson(self._lesson_for_approval(approval))
         except Exception as exc:
             return replace(
                 approval,
@@ -848,6 +879,39 @@ class EpisodeService:
             graph_receipt=graph_receipt,
             graph_error_type=None,
             graph_detail=None,
+        )
+
+    def _lesson_for_approval(self, approval: CorrectionApproval) -> LessonMemoryRecord:
+        submission = approval.submission
+        closure = self._session(submission.episode_id).closure
+        if closure is None:
+            raise EpisodeServiceError("approved corrections require a closed episode")
+        failure = next(
+            (item for item in closure.failures if item.failure_id == submission.failure_id),
+            None,
+        )
+        if failure is None:
+            raise EpisodeServiceError("approved correction is detached from its failure")
+        signature_hash = content_digest(
+            {
+                "correction_kind": submission.kind.value,
+                "failure_category": failure.category,
+            }
+        )
+        lesson_digest = content_digest(
+            {
+                "correction_id": submission.correction_id,
+                "signature_hash": signature_hash,
+            }
+        )
+        failure_name = failure.category.replace("_", " ")
+        return LessonMemoryRecord(
+            lesson_id=f"lesson-{lesson_digest}",
+            correction_id=submission.correction_id,
+            kind=f"{submission.kind.value}_correction",
+            summary=f"Approved {submission.kind.value} correction for {failure_name}.",
+            signature_hash=signature_hash,
+            created_at=approval.approved_at,
         )
 
     def _reconcile_unjournaled_receipts(

@@ -192,7 +192,19 @@ class FixedPipelineExecutor:
             plan_digest=plan.digest,
             state=RunState.COMPLETED,
             completed_steps=tuple(completed),
-            provider_status=self.status,
+            provider_status=self._completed_status(),
+        )
+
+    def _completed_status(self) -> ProviderStatus:
+        status = self.status
+        if status.mode is not ProviderMode.LIVE or status.health is not HealthState.HEALTHY:
+            return status
+        return ProviderStatus(
+            provider=status.provider,
+            mode=status.mode,
+            health=HealthState.END_TO_END_VERIFIED,
+            detail="RocketRide completed all eight fixed pipeline steps with retained receipts",
+            checked_at=datetime.now(UTC),
         )
 
     @staticmethod
@@ -349,9 +361,19 @@ class RocketRideSdkTransport:
                 env=dict(self._config.callback_environment),
             )
             async with client:
+                # RocketRide loads the reviewed pipeline artifact so execution follows
+                # the fixed component graph instead of reconstructing steps ad hoc.
                 task = await client.use(filepath=str(self._config.pipeline_path))
                 token_value = task.get("token") if isinstance(task, Mapping) else None
-                if not isinstance(token_value, str) or not token_value:
+                if (
+                    not isinstance(token_value, str)
+                    or not token_value
+                    or len(token_value) > 512
+                    or any(
+                        character.isspace() or not character.isprintable()
+                        for character in token_value
+                    )
+                ):
                     raise RocketRideUnavailableError("RocketRide use() returned no task token")
                 envelope_payload: dict[str, object] = {
                     "contract_version": 1,
@@ -384,6 +406,8 @@ class RocketRideSdkTransport:
                     ]
                 envelope = canonical_json(envelope_payload)
                 try:
+                    # RocketRide carries the approved step through its managed task;
+                    # the returned callback evidence is verified before it is trusted.
                     response = await client.send(
                         token_value,
                         envelope,
@@ -393,11 +417,23 @@ class RocketRideSdkTransport:
                 finally:
                     await client.terminate(token_value)
                 output = _verified_callback_output(response, envelope, plan, command)
+                if "rocketride_execution" in output:
+                    raise RocketRideUnavailableError(
+                        "RocketRide callback output shadows provider execution evidence"
+                    )
+                output["rocketride_execution"] = {
+                    "contract_version": 1,
+                    "run_id": plan.run_id,
+                    "task_token_sha256": sha256_text(token_value),
+                }
                 self._status = ProviderStatus(
                     provider=ProviderName.ROCKETRIDE,
                     mode=ProviderMode.LIVE,
                     health=HealthState.HEALTHY,
-                    detail=f"RocketRide completed {command.step.value}",
+                    detail=(
+                        f"RocketRide completed {command.step.value} with a retained "
+                        "task receipt"
+                    ),
                     checked_at=datetime.now(UTC),
                 )
                 return output

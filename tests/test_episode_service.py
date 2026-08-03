@@ -105,6 +105,9 @@ class FakeGraphMemory:
     def record_correction(self, record: Any) -> GraphWriteReceipt:
         return self._receipt("correction", record, record.correction_id)
 
+    def record_lesson(self, record: Any) -> GraphWriteReceipt:
+        return self._receipt("lesson", record, record.lesson_id)
+
 
 def identity(split: WorldSplit = WorldSplit.TRAINING) -> EpisodeIdentity:
     return EpisodeIdentity(
@@ -357,7 +360,14 @@ def test_corrections_remain_pending_until_authenticated_human_approval() -> None
 
         assert approval.graph_receipt is not None
         assert feed.approved(episode_id="episode-1")[0].correction_id == correction.correction_id
-        assert graph.calls[-1][0] == "correction"
+        correction_call, lesson_call = graph.calls[-2:]
+        assert correction_call[0] == "correction"
+        assert lesson_call[0] == "lesson"
+        assert lesson_call[1].correction_id == correction.correction_id
+        assert lesson_call[1].kind == "route_correction"
+        assert lesson_call[1].summary == (
+            "Approved route correction for insufficient obstacle clearance."
+        )
         with pytest.raises(CorrectionAlreadyApprovedError, match="already been approved"):
             await episode_service.approve_correction(
                 correction.correction_id,

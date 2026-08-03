@@ -235,6 +235,8 @@ class OfficialLaserDataTransport:
             timeout=self._config.timeout_seconds,
         )
         try:
+            # LaserData owns the ordered operational record, so its topic is bound to
+            # the canonical envelope before any episode event can be published.
             topic = client.topic(self._config.topic, cls=LaserDataTelemetryEnvelope)
             await asyncio.wait_for(
                 topic.ensure(self._config.partitions),
@@ -269,6 +271,8 @@ class OfficialLaserDataTransport:
 
     async def publish(self, envelope: LaserDataTelemetryEnvelope) -> None:
         topic = self._connected_topic()
+        # LaserData indexes stable episode identities for downstream replay and audit;
+        # frame_id remains metadata because video bytes travel on a separate channel.
         request = (
             topic.publish(envelope)
             .partition_key(envelope.record.episode_id)
@@ -422,6 +426,8 @@ class LaserDataTelemetryBackend:
     async def append(self, record: EpisodeTelemetryRecord) -> TelemetryAppendResult:
         envelope = LaserDataTelemetryEnvelope.from_domain(record)
         async with self._lock:
+            # Persist before calling LaserData so a provider outage cannot erase or
+            # reorder the episode history that will be flushed after recovery.
             self.spool.append(record)
             delivery = TelemetryDelivery.DURABLE_LOCAL_CACHE_ONLY
             if self._provider_active:
@@ -520,6 +526,8 @@ class LaserDataTelemetryBackend:
             return None
         if position is None:
             return False
+        # A LaserData read-back proves the provider already has this exact event,
+        # allowing crash recovery without publishing a duplicate.
         observed_at = _utc_now()
         self.spool.mark_provider_accepted(
             envelope.event_id,

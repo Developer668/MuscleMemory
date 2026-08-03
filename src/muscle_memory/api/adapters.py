@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Literal
 
@@ -142,6 +143,7 @@ def reviewed_execution_view(reviewed: ReviewedExecution) -> WorkflowReview:
             role=review.role.value,
             recommendation=review.recommendation.value,
             summary=review.summary,
+            provider_session_id=review.provider_session_id,
         )
         for review in review_set.reviews
     )
@@ -158,18 +160,32 @@ def reviewed_execution_view(reviewed: ReviewedExecution) -> WorkflowReview:
 
 def pipeline_run_view(run: PipelineRun) -> WorkflowRun:
     state = WorkflowRunState(run.state.value)
-    return WorkflowRun(
-        run_id=run.run_id,
-        plan_digest=run.plan_digest,
-        state=state,
-        completed_steps=tuple(
+    step_views: list[WorkflowStepResult] = []
+    for result in run.completed_steps:
+        receipt = result.output.get("rocketride_execution")
+        task_receipt_sha256: str | None = None
+        provider_run_id: str | None = None
+        if isinstance(receipt, Mapping):
+            raw_task_receipt = receipt.get("task_token_sha256")
+            raw_run_id = receipt.get("run_id")
+            task_receipt_sha256 = (
+                raw_task_receipt if isinstance(raw_task_receipt, str) else None
+            )
+            provider_run_id = raw_run_id if isinstance(raw_run_id, str) else None
+        step_views.append(
             WorkflowStepResult(
                 step=WorkflowStep(result.step.value),
                 state="completed",
                 output_sha256=result.output_sha256,
+                provider_task_receipt_sha256=task_receipt_sha256,
+                provider_run_id=provider_run_id,
             )
-            for result in run.completed_steps
-        ),
+        )
+    return WorkflowRun(
+        run_id=run.run_id,
+        plan_digest=run.plan_digest,
+        state=state,
+        completed_steps=tuple(step_views),
         blocked_requirement_id=(
             run.blocked_requirement.requirement_id if run.blocked_requirement is not None else None
         ),

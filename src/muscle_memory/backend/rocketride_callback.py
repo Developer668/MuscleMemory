@@ -15,9 +15,12 @@ from pydantic import TypeAdapter, ValidationError
 from muscle_memory.coordinator import CoordinatorStore
 from muscle_memory.coordinator.models import PolicyAction
 from muscle_memory.episodes import EpisodeClosure, EpisodeService
+from muscle_memory.episodes.training import TrainingCorrectionFeed
 from muscle_memory.graph_memory import (
     CurriculumQuery,
     EvaluatedPolicyVersion,
+    PolicyComparisonRecord,
+    PolicyEvaluationRecord,
     ResilientGraphMemory,
 )
 from muscle_memory.orchestration.approvals import HumanDecision, HumanVerdict
@@ -440,10 +443,31 @@ class FixedStepDispatcher:
         if candidate_id != evidence.candidate.policy_id:
             raise CallbackContractError("candidate checkpoint does not match trusted evidence")
         self._verify_checkpoint(checkpoint, evidence.candidate)
+        curriculum = self._required_evidence(plan).failure_curriculum.failure_curriculum_evidence
+        lesson_ids = tuple(
+            sorted(
+                {
+                    lesson_id
+                    for pattern in curriculum.failure_patterns
+                    for lesson_id in pattern.lesson_ids
+                }
+            )
+        )
+        lineage_receipts = TrainingCorrectionFeed(self._episodes).record_policy_lineage(
+            policy=checkpoint,
+            lesson_ids=lesson_ids,
+            evidence_hash=curriculum.graph_query_digest,
+        )
         return {
             "candidate_policy_id": checkpoint.policy_id,
             "checkpoint_hash": checkpoint.checkpoint_hash,
             "immutable_checkpoint_confirmed": True,
+            "training_lesson_ids": list(lesson_ids),
+            "training_lineage_record_ids": [
+                receipt.record_id
+                for receipt in lineage_receipts
+                if receipt.record_kind == "policy_training"
+            ],
             "reward_change_requested": payload.get("reward_change_requested"),
             "operation_execution": self._async_job_completion(
                 job_kind="candidate_training",
@@ -467,6 +491,36 @@ class FixedStepDispatcher:
             require_current_artifact_binding=False,
         )
         self._verify_checkpoint(candidate, evidence.candidate)
+        comparison = PolicyEvaluationRecord(
+            candidate_policy_id=candidate.policy_id,
+            baseline_policy_id=baseline.policy_id,
+            evidence_hash=candidate.evaluation_evidence_hash,
+            action=evidence.proposed_action,
+            success_rate_delta=(
+                evidence.candidate.success_rate - evidence.baseline.success_rate
+            ),
+            collision_rate_delta=(
+                evidence.candidate.collision_rate - evidence.baseline.collision_rate
+            ),
+            measured_at=candidate.evaluated_at,
+        )
+        evaluation_receipt = self._graph_memory.record_policy_evaluation(comparison)
+        outperformance_receipt = None
+        if evidence.proposed_action == PolicyAction.PROMOTE.value:
+            outperformance_receipt = self._graph_memory.record_outperformance(
+                PolicyComparisonRecord(
+                    candidate_policy_id=candidate.policy_id,
+                    baseline_policy_id=baseline.policy_id,
+                    evidence_hash=candidate.evaluation_evidence_hash,
+                    success_rate_delta=(
+                        evidence.candidate.success_rate - evidence.baseline.success_rate
+                    ),
+                    collision_rate_delta=(
+                        evidence.candidate.collision_rate - evidence.baseline.collision_rate
+                    ),
+                    measured_at=candidate.evaluated_at,
+                )
+            )
         return {
             "heldout_world_set_id": evidence.heldout_world_set_id,
             "paired_world_count": evidence.paired_world_count,
@@ -475,6 +529,10 @@ class FixedStepDispatcher:
             "candidate_policy_id": candidate.policy_id,
             "candidate_evidence_hash": candidate.evaluation_evidence_hash,
             "candidate_metrics": json.loads(candidate.metrics_json),
+            "policy_evaluation_record_id": evaluation_receipt.record_id,
+            "outperformance_record_id": (
+                None if outperformance_receipt is None else outperformance_receipt.record_id
+            ),
             "operation_execution": self._async_job_completion(
                 job_kind="paired_policy_evaluation",
                 source_id=candidate.policy_id,

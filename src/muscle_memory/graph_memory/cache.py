@@ -27,6 +27,8 @@ from muscle_memory.graph_memory.models import (
     LessonMemoryRecord,
     ObstacleMemoryRecord,
     PolicyComparisonRecord,
+    PolicyEvaluationRecord,
+    PolicyTrainingRecord,
     ProviderState,
     WorldMemoryRecord,
     WorldSplit,
@@ -42,6 +44,8 @@ type GraphRecord = (
     | FailureMemoryRecord
     | CorrectionMemoryRecord
     | LessonMemoryRecord
+    | PolicyTrainingRecord
+    | PolicyEvaluationRecord
     | PolicyComparisonRecord
 )
 
@@ -64,6 +68,8 @@ _RECORD_TYPES: dict[str, type[ContentAddressedRecord]] = {
     "failure": FailureMemoryRecord,
     "correction": CorrectionMemoryRecord,
     "lesson": LessonMemoryRecord,
+    "policy_training": PolicyTrainingRecord,
+    "policy_evaluation": PolicyEvaluationRecord,
     "outperformance": PolicyComparisonRecord,
 }
 
@@ -116,6 +122,12 @@ class AppendOnlyGraphCache:
     def record_lesson(self, record: LessonMemoryRecord) -> GraphWriteReceipt:
         return self._record(record)
 
+    def record_policy_training(self, record: PolicyTrainingRecord) -> GraphWriteReceipt:
+        return self._record(record)
+
+    def record_policy_evaluation(self, record: PolicyEvaluationRecord) -> GraphWriteReceipt:
+        return self._record(record)
+
     def record_outperformance(self, record: PolicyComparisonRecord) -> GraphWriteReceipt:
         return self._record(record)
 
@@ -125,6 +137,7 @@ class AppendOnlyGraphCache:
             failures = self._by_type(FailureMemoryRecord)
             corrections = self._by_type(CorrectionMemoryRecord)
             lessons = self._by_type(LessonMemoryRecord)
+            policy_training = self._by_type(PolicyTrainingRecord)
             obstacles = self._by_type(ObstacleMemoryRecord)
 
         grouped_episode_ids: dict[tuple[str, str, str, str, str | None, str | None], set[str]] = (
@@ -138,6 +151,9 @@ class AppendOnlyGraphCache:
         episodes_by_id = {record.episode_id: record for record in episodes}
         obstacles_by_id = {record.obstacle_id: record for record in obstacles}
         corrections_by_id = {record.correction_id: record for record in corrections}
+        trained_policies_by_lesson: dict[str, set[str]] = defaultdict(set)
+        for lineage in policy_training:
+            trained_policies_by_lesson[lineage.lesson_id].add(lineage.policy_id)
 
         for lesson in lessons:
             correction = corrections_by_id.get(lesson.correction_id)
@@ -159,22 +175,25 @@ class AppendOnlyGraphCache:
                 continue
             if query.obstacle_categories and obstacle_category not in query.obstacle_categories:
                 continue
-            if (
-                lesson.trained_policy_id is not None
-                and lesson.trained_policy_id in query.exclude_trained_policy_ids
-            ):
-                continue
-
-            key = (
-                lesson.signature_hash,
-                lesson.kind,
-                lesson.summary,
-                failure.category,
-                obstacle_category,
-                lesson.trained_policy_id,
+            trained_policy_ids = trained_policies_by_lesson[lesson.lesson_id]
+            if lesson.trained_policy_id is not None:
+                trained_policy_ids.add(lesson.trained_policy_id)
+            lineage_targets: tuple[str | None, ...] = (
+                tuple(sorted(trained_policy_ids)) if trained_policy_ids else (None,)
             )
-            grouped_episode_ids[key].add(episode.episode_id)
-            lesson_ids[key].add(lesson.lesson_id)
+            for trained_policy_id in lineage_targets:
+                if trained_policy_id in query.exclude_trained_policy_ids:
+                    continue
+                key = (
+                    lesson.signature_hash,
+                    lesson.kind,
+                    lesson.summary,
+                    failure.category,
+                    obstacle_category,
+                    trained_policy_id,
+                )
+                grouped_episode_ids[key].add(episode.episode_id)
+                lesson_ids[key].add(lesson.lesson_id)
 
         candidates = [
             CurriculumLesson(
@@ -224,6 +243,10 @@ class AppendOnlyGraphCache:
                 target.record_correction(record)
             elif isinstance(record, LessonMemoryRecord):
                 target.record_lesson(record)
+            elif isinstance(record, PolicyTrainingRecord):
+                target.record_policy_training(record)
+            elif isinstance(record, PolicyEvaluationRecord):
+                target.record_policy_evaluation(record)
             else:
                 target.record_outperformance(record)
         return len(records), event_cursor
@@ -339,7 +362,10 @@ class AppendOnlyGraphCache:
             self._require("correction", record.correction_id)
             if record.trained_policy_id is not None:
                 self._require("evaluated_policy", record.trained_policy_id)
-        elif isinstance(record, PolicyComparisonRecord):
+        elif isinstance(record, PolicyTrainingRecord):
+            self._require("lesson", record.lesson_id)
+            self._require("evaluated_policy", record.policy_id)
+        elif isinstance(record, (PolicyEvaluationRecord, PolicyComparisonRecord)):
             candidate = self._require("evaluated_policy", record.candidate_policy_id)
             baseline = self._require("evaluated_policy", record.baseline_policy_id)
             if not isinstance(candidate, EvaluatedPolicyVersion) or not isinstance(
@@ -376,6 +402,8 @@ class AppendOnlyGraphCache:
                 FailureMemoryRecord,
                 CorrectionMemoryRecord,
                 LessonMemoryRecord,
+                PolicyTrainingRecord,
+                PolicyEvaluationRecord,
                 PolicyComparisonRecord,
             ),
         ):
@@ -398,6 +426,14 @@ class AppendOnlyGraphCache:
             return "correction", record.correction_id
         if isinstance(record, LessonMemoryRecord):
             return "lesson", record.lesson_id
+        if isinstance(record, PolicyTrainingRecord):
+            training_id = f"{record.lesson_id}:{record.policy_id}:{record.evidence_hash}"
+            return "policy_training", training_id
+        if isinstance(record, PolicyEvaluationRecord):
+            evaluation_id = (
+                f"{record.candidate_policy_id}:{record.baseline_policy_id}:{record.evidence_hash}"
+            )
+            return "policy_evaluation", evaluation_id
         comparison_id = (
             f"{record.candidate_policy_id}:{record.baseline_policy_id}:{record.evidence_hash}"
         )

@@ -220,6 +220,8 @@ async def verify_live_provider(
         )
         async with client:
             pipeline = json.loads(config.pipeline_path.read_text(encoding="utf-8"))
+            # RocketRide validates the reviewed component graph before starting a
+            # task, making the live proof about this fixed pipeline rather than any pipe.
             validation = await client.validate(pipeline)
             errors = _validation_errors(validation)
             if errors:
@@ -231,6 +233,8 @@ async def verify_live_provider(
                 raise ContractError("RocketRide use() returned no task token")
             token = token_value
             try:
+                # RocketRide carries one canonical step envelope to the authenticated
+                # coordinator callback; the returned hashes retain that handoff as evidence.
                 response = await client.send(
                     token,
                     encoded_envelope,
@@ -238,6 +242,8 @@ async def verify_live_provider(
                     mimetype="application/json",
                 )
             finally:
+                # RocketRide tasks are always terminated so verification cannot leave
+                # an untracked execution lane running after the evidence is captured.
                 await client.terminate(token)
         result_json = _extract_result(response)
         result = validate_result(result_json, envelope)

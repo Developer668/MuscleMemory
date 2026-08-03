@@ -53,8 +53,15 @@ Relationships are created only after their referenced facts exist:
 (Correction)-[:CORRECTS]->(Failure)
 (Correction)-[:PRODUCED]->(Lesson)
 (Lesson)-[:TRAINED_INTO]->(PolicyVersion)
+(PolicyVersion)-[:EVALUATED_AGAINST]->(PolicyVersion)
 (PolicyVersion)-[:OUTPERFORMED]->(PolicyVersion)
 ```
+
+An authenticated approval materializes a deterministic `Lesson` from the correction and
+failure signature. RocketRide links only graph-present lesson IDs from admitted curriculum
+evidence to the immutable candidate checkpoint. Every paired held-out run creates an
+`EVALUATED_AGAINST` edge with its measured deltas and `promote` or `roll_back` action;
+`OUTPERFORMED` is added only when the recomputed numeric gate proposes promotion.
 
 Every value is passed through the official client's parameter dictionary. No record value is
 interpolated into Cypher text.

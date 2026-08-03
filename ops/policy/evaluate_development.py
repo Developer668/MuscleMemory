@@ -7,6 +7,11 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+from muscle_memory.evaluation.development import (
+    DEVELOPMENT_EVALUATION_SCOPE,
+    DEVELOPMENT_PURPOSE,
+    DEVELOPMENT_SEED_SEARCH_RULE,
+)
 from muscle_memory.evaluation.promotion import evaluate_promotion
 from muscle_memory.evaluation.runner import PolicyEpisodeResult, run_policy_episode
 from muscle_memory.paths import POLICY_V2_CHECKPOINT, POLICY_V2_DEVELOPMENT_EVIDENCE
@@ -85,18 +90,22 @@ def main() -> int:
     candidate = _evaluate(worlds, loaded_candidate)
     decision = evaluate_promotion(baseline, candidate)
     payload = {
-        "schema_version": 1,
-        "purpose": "development_only_not_held_out",
+        "schema_version": 2,
+        "purpose": DEVELOPMENT_PURPOSE,
+        "evaluation_scope": DEVELOPMENT_EVALUATION_SCOPE,
+        "provenance": {
+            "world_generation_mechanics": "training_world_generation",
+            "evaluation_dataset_membership": "disjoint_development_only",
+            "heldout_world_access": "never",
+        },
         "selection_status": (
             "eligible_for_blinded_heldout_evaluation"
             if decision.promotable
             else "rejected_before_heldout"
         ),
+        "paired_world_count": len(worlds),
         "seed_search_start": args.seed_start,
-        "seed_search_rule": (
-            "first validated worlds with an expert path at most 8.2 m "
-            "whose direct route requires avoidance"
-        ),
+        "seed_search_rule": DEVELOPMENT_SEED_SEARCH_RULE,
         "candidate_policy_id": loaded_candidate.policy_id,
         "candidate_policy_sha256": loaded_candidate.policy_hash,
         "world_ids": [world.world.world_id for world in worlds],

@@ -11,6 +11,7 @@ type FurniturePlacement = {
   position: [number, number, number];
   rotation: number;
   targetSpan: number;
+  targetHeight?: number;
   placeholder?: string;
 };
 
@@ -57,6 +58,7 @@ const placements: FurniturePlacement[] = [
     position: [6.0, 0.03, 1.58],
     rotation: Math.PI,
     targetSpan: 1.78,
+    targetHeight: 2.12,
     placeholder: "procedural-study-bookshelf",
   },
   {
@@ -107,6 +109,7 @@ const placements: FurniturePlacement[] = [
     position: [5.62, STORY_HEIGHT + 0.03, -0.18],
     rotation: Math.PI,
     targetSpan: 1.72,
+    targetHeight: 2.08,
     placeholder: "procedural-master-wardrobe",
   },
 ];
@@ -135,7 +138,11 @@ function normalizeModel(
   const bounds = new THREE.Box3().setFromObject(source);
   const size = bounds.getSize(new THREE.Vector3());
   const horizontalSpan = Math.max(size.x, size.z);
-  const scale = horizontalSpan > 0 ? placement.targetSpan / horizontalSpan : 1;
+  const scale = placement.targetHeight && size.y > 0
+    ? placement.targetHeight / size.y
+    : horizontalSpan > 0
+      ? placement.targetSpan / horizontalSpan
+      : 1;
   source.scale.setScalar(scale);
   source.updateMatrixWorld(true);
 

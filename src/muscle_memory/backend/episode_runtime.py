@@ -82,6 +82,8 @@ class OperationalEpisodeRuntime:
     ) -> EpisodeAppendReceipt:
         """Publish only after the exact event is durably accepted by the backend."""
 
+        # LaserData is the durable episode record; dashboard fanout happens only after
+        # that append succeeds so presentation cannot outrun retained evidence.
         receipt = await self.service.append_telemetry(record)
         self._durable_event_count += 1
         publisher = self._publisher
