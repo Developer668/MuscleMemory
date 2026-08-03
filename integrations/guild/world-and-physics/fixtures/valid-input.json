@@ -1,0 +1,58 @@
+{
+  "contract_version": 1,
+  "role": "World and Physics Agent",
+  "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "run_id": "guild-world-fixture-001",
+  "pipeline_steps": [
+    "validate_world",
+    "run_episode",
+    "summarize_telemetry",
+    "query_graph_memory",
+    "select_curriculum",
+    "train_candidate_policy",
+    "evaluate_candidate_policy",
+    "promote_or_roll_back"
+  ],
+  "requested_output": {
+    "recommendation": "proceed | revise | block",
+    "summary": "non-empty string",
+    "requested_approvals": [
+      "uncertain_physical_properties",
+      "reward_change",
+      "curriculum_change",
+      "policy_promotion",
+      "policy_rollback"
+    ]
+  },
+  "world_evidence": {
+    "world_id": "world-training-fixture-001",
+    "world_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "baseline_path_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "robot_checksum_unchanged": true,
+    "validation": {
+      "no_overlapping_objects": true,
+      "start_destination_connected": true,
+      "passages_meet_minimum_clearance": true,
+      "approved_colliders_only": true,
+      "baseline_path_exists": true,
+      "physical_parameters_within_safe_limits": true
+    },
+    "obstacles": [
+      {
+        "obstacle_id": "obstacle-chair-001",
+        "proposal_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "dimensions_m": [
+          0.5,
+          0.5,
+          0.9
+        ],
+        "mass_kg": 6.5,
+        "friction": 0.7,
+        "property_origin": "catalog_confirmed",
+        "collision_geometry": "primitive",
+        "render_mesh_used_for_collision": false
+      }
+    ]
+  }
+}
+

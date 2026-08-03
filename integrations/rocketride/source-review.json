@@ -1,0 +1,26 @@
+{
+  "conclusions": [
+    "A pipe file is portable JSON with typed data-lane connections.",
+    "The HTTP request and MCP client nodes are agent tools and are excluded.",
+    "The tool_n8n data lane uses a configured host and path and supports bearer authentication.",
+    "No agent or control connection is needed for the fixed callback pipeline.",
+    "SDK use returns a task token; send submits data; terminate releases the task."
+  ],
+  "official_docs": [
+    "https://docs.rocketride.org/pipeline-reference/",
+    "https://docs.rocketride.org/develop/python/",
+    "https://docs.rocketride.org/nodes/tool_http_request/",
+    "https://docs.rocketride.org/nodes/tool_mcp_client/"
+  ],
+  "official_source_commit": "685508d455939f148e37db6bf9de028a5f5a90b3",
+  "official_source_paths": [
+    "packages/client-typescript/src/client/types/pipeline.ts",
+    "nodes/src/nodes/tool_http_request/services.json",
+    "nodes/src/nodes/tool_n8n/services.json",
+    "nodes/src/nodes/tool_n8n/IInstance.py",
+    "examples/n8n-roundtrip.pipe"
+  ],
+  "reviewed_at": "2026-08-03T00:00:00Z",
+  "reviewed_scope": "RocketRide pipeline shape, Python SDK lifecycle, and deterministic callback node",
+  "sdk_validated_version": "1.3.0"
+}

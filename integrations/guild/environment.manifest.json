@@ -1,0 +1,37 @@
+{
+  "contract_version": 1,
+  "provider": "guild.ai",
+  "tested_cli_version": "0.17.0",
+  "publish_environment": [
+    {
+      "name": "MUSCLE_MEMORY_GUILD_OWNER",
+      "secret": false,
+      "purpose": "Guild owner name used to initialize the three agents"
+    },
+    {
+      "name": "MUSCLE_MEMORY_GUILD_WORKSPACE",
+      "secret": false,
+      "purpose": "Guild workspace name used for version-pinned verification sessions"
+    }
+  ],
+  "projects": [
+    {
+      "directory": "world-and-physics",
+      "agent_name": "muscle-memory-world-and-physics",
+      "role": "World and Physics Agent",
+      "trigger_credentials_environment": "MUSCLE_MEMORY_GUILD_WORLD_AND_PHYSICS_CREDENTIALS"
+    },
+    {
+      "directory": "failure-and-curriculum",
+      "agent_name": "muscle-memory-failure-and-curriculum",
+      "role": "Failure and Curriculum Agent",
+      "trigger_credentials_environment": "MUSCLE_MEMORY_GUILD_FAILURE_AND_CURRICULUM_CREDENTIALS"
+    },
+    {
+      "directory": "safety-and-evaluation",
+      "agent_name": "muscle-memory-safety-and-evaluation",
+      "role": "Safety and Evaluation Agent",
+      "trigger_credentials_environment": "MUSCLE_MEMORY_GUILD_SAFETY_AND_EVALUATION_CREDENTIALS"
+    }
+  ]
+}

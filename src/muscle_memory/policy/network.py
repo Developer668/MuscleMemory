@@ -9,12 +9,17 @@ import numpy as np
 import numpy.typing as npt
 
 from muscle_memory.paths import POLICY_V1_CHECKPOINT
-from muscle_memory.policy.actions import POLICY_ACTION_COMMANDS, POLICY_ACTION_COUNT, PolicyAction
 from muscle_memory.policy.observation import NAVIGATION_OBSERVATION_SIZE, NavigationObservation
 from muscle_memory.robot.command import TaskCommand
 from muscle_memory.robot.identity import verify_mm01_bundle
 
-POLICY_CHECKPOINT_SCHEMA_VERSION = 1
+POLICY_CHECKPOINT_SCHEMA_VERSION = 2
+POLICY_OUTPUT_COUNT = 3
+POLICY_MAXIMUM_FORWARD_SPEED_MPS = 0.3
+POLICY_MAXIMUM_TURNING_RATE_RAD_S = 0.5
+DOCKING_ENTRY_DISTANCE_M = 0.65
+DOCKING_STOP_DISTANCE_M = 0.45
+DOCKING_FORWARD_SPEED_MPS = 0.18
 
 
 def policy_file_sha256(path: Path) -> str:
@@ -26,7 +31,7 @@ def policy_file_sha256(path: Path) -> str:
 
 
 class BehaviorClonedPolicy:
-    """Run a two-hidden-layer classifier with no teacher or graph access."""
+    """Run a continuous three-output regressor with no teacher or graph access."""
 
     def __init__(
         self,
@@ -94,8 +99,8 @@ class BehaviorClonedPolicy:
             "bias_1": (hidden_1,),
             "weight_2": (hidden_1, hidden_2),
             "bias_2": (hidden_2,),
-            "weight_output": (hidden_2, POLICY_ACTION_COUNT),
-            "bias_output": (POLICY_ACTION_COUNT,),
+            "weight_output": (hidden_2, POLICY_OUTPUT_COUNT),
+            "bias_output": (POLICY_OUTPUT_COUNT,),
         }
         for name, expected in expected_shapes.items():
             array = arrays[name]
@@ -109,15 +114,43 @@ class BehaviorClonedPolicy:
             **arrays,
         )
 
-    def logits(self, observation: NavigationObservation) -> npt.NDArray[np.float32]:
+    def normalized_outputs(
+        self,
+        observation: NavigationObservation,
+    ) -> npt.NDArray[np.float32]:
+        """Return forward [0, 1], turn [-1, 1], and stop [0, 1]."""
         normalized = (observation.values - self._input_mean) / self._input_std
         hidden_1 = np.tanh(normalized @ self._weight_1 + self._bias_1)
         hidden_2 = np.tanh(hidden_1 @ self._weight_2 + self._bias_2)
+        raw = hidden_2 @ self._weight_output + self._bias_output
         return np.asarray(
-            hidden_2 @ self._weight_output + self._bias_output,
+            (
+                0.5 * (np.tanh(raw[0]) + 1.0),
+                np.tanh(raw[1]),
+                1.0 / (1.0 + np.exp(-raw[2])),
+            ),
             dtype=np.float32,
         )
 
     def command(self, observation: NavigationObservation) -> TaskCommand:
-        action = PolicyAction(int(np.argmax(self.logits(observation))))
-        return POLICY_ACTION_COMMANDS[action]
+        distance = observation.destination_distance_m
+        if distance <= DOCKING_STOP_DISTANCE_M:
+            return TaskCommand(0.0, 0.0, 1.0)
+        outputs = self.normalized_outputs(observation)
+        if distance < DOCKING_ENTRY_DISTANCE_M:
+            return TaskCommand(
+                max(
+                    DOCKING_FORWARD_SPEED_MPS,
+                    float(outputs[0] * POLICY_MAXIMUM_FORWARD_SPEED_MPS),
+                ),
+                max(
+                    -0.3,
+                    min(0.3, 1.4 * observation.destination_bearing_rad),
+                ),
+                0.0,
+            )
+        return TaskCommand(
+            forward_speed_mps=float(outputs[0] * POLICY_MAXIMUM_FORWARD_SPEED_MPS),
+            turning_rate_rad_s=float(outputs[1] * POLICY_MAXIMUM_TURNING_RATE_RAD_S),
+            stop_probability=float(outputs[2]),
+        )

@@ -42,6 +42,7 @@ def main() -> int:
             validation_episode_fraction=defaults.validation_episode_fraction,
             seed=args.seed,
             condition_on_previous_action=defaults.condition_on_previous_action,
+            mirror_training_fraction=defaults.mirror_training_fraction,
         ),
     )
     print(json.dumps(asdict(result), indent=2), flush=True)

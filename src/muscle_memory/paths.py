@@ -25,6 +25,10 @@ EXPERT_DATASET_V1 = REPOSITORY_ROOT / "artifacts" / "policy" / "expert-v1.npz"
 EXPERT_DATASET_V1_METADATA = (
     REPOSITORY_ROOT / "artifacts" / "policy" / "expert-v1.metadata.json"
 )
+DAGGER_DATASET_V1 = REPOSITORY_ROOT / "artifacts" / "policy" / "dagger-v1.npz"
+DAGGER_DATASET_V1_METADATA = (
+    REPOSITORY_ROOT / "artifacts" / "policy" / "dagger-v1.metadata.json"
+)
 POLICY_V1_CHECKPOINT = REPOSITORY_ROOT / "models" / "policy" / "delivery-v1.npz"
 POLICY_V1_TRAINING_EVIDENCE = (
     REPOSITORY_ROOT / "evidence" / "policy" / "delivery-v1" / "training.json"

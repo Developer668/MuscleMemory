@@ -1,0 +1,53 @@
+"""Backend lifecycle for immutable episodes and authenticated corrections."""
+
+from muscle_memory.episodes.models import (
+    AuthenticatedHuman,
+    CorrectionApproval,
+    CorrectionKind,
+    CorrectionPoint,
+    CorrectionSubmission,
+    EpisodeAppendReceipt,
+    EpisodeClosure,
+    EpisodeIdentity,
+    EpisodeLifecycleState,
+    GraphPersistenceReport,
+    ReplayRecord,
+    TelemetryDeliveryReport,
+)
+from muscle_memory.episodes.service import (
+    CorrectionAlreadyApprovedError,
+    CorrectionNotFoundError,
+    DuplicateEpisodeError,
+    EpisodeClosedError,
+    EpisodeIdentityError,
+    EpisodeNotFoundError,
+    EpisodeService,
+    EpisodeServiceError,
+    TelemetryCadenceError,
+    telemetry_digest,
+)
+
+__all__ = [
+    "AuthenticatedHuman",
+    "CorrectionAlreadyApprovedError",
+    "CorrectionApproval",
+    "CorrectionKind",
+    "CorrectionNotFoundError",
+    "CorrectionPoint",
+    "CorrectionSubmission",
+    "DuplicateEpisodeError",
+    "EpisodeAppendReceipt",
+    "EpisodeClosedError",
+    "EpisodeClosure",
+    "EpisodeIdentity",
+    "EpisodeIdentityError",
+    "EpisodeLifecycleState",
+    "EpisodeNotFoundError",
+    "EpisodeService",
+    "EpisodeServiceError",
+    "GraphPersistenceReport",
+    "ReplayRecord",
+    "TelemetryCadenceError",
+    "TelemetryDeliveryReport",
+    "telemetry_digest",
+]

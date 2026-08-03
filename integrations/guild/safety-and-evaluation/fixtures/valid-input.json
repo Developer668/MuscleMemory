@@ -1,0 +1,51 @@
+{
+  "contract_version": 1,
+  "role": "Safety and Evaluation Agent",
+  "plan_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+  "run_id": "guild-safety-fixture-001",
+  "pipeline_steps": [
+    "validate_world",
+    "run_episode",
+    "summarize_telemetry",
+    "query_graph_memory",
+    "select_curriculum",
+    "train_candidate_policy",
+    "evaluate_candidate_policy",
+    "promote_or_roll_back"
+  ],
+  "requested_output": {
+    "recommendation": "proceed | revise | block",
+    "summary": "non-empty string",
+    "requested_approvals": [
+      "uncertain_physical_properties",
+      "reward_change",
+      "curriculum_change",
+      "policy_promotion",
+      "policy_rollback"
+    ]
+  },
+  "evaluation_evidence": {
+    "heldout_world_set_id": "heldout-v1",
+    "heldout_world_set_digest": "4444444444444444444444444444444444444444444444444444444444444444",
+    "paired_world_count": 20,
+    "baseline": {
+      "policy_id": "delivery-v0",
+      "policy_checksum": "5555555555555555555555555555555555555555555555555555555555555555",
+      "evaluation_id": "evaluation-v0-001",
+      "success_rate": 0.55,
+      "collision_rate": 0.4
+    },
+    "candidate": {
+      "policy_id": "delivery-v1-candidate",
+      "policy_checksum": "6666666666666666666666666666666666666666666666666666666666666666",
+      "evaluation_id": "evaluation-v1-001",
+      "success_rate": 0.85,
+      "collision_rate": 0.1,
+      "falls": 0,
+      "median_clearance_m": 0.3,
+      "path_efficiency_regression_fraction": 0.05
+    },
+    "proposed_action": "promote"
+  }
+}
+

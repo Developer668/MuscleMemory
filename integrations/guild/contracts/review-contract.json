@@ -1,0 +1,48 @@
+{
+  "contract_version": 1,
+  "roles": [
+    "World and Physics Agent",
+    "Failure and Curriculum Agent",
+    "Safety and Evaluation Agent"
+  ],
+  "pipeline_steps": [
+    "validate_world",
+    "run_episode",
+    "summarize_telemetry",
+    "query_graph_memory",
+    "select_curriculum",
+    "train_candidate_policy",
+    "evaluate_candidate_policy",
+    "promote_or_roll_back"
+  ],
+  "recommendations": [
+    "proceed",
+    "revise",
+    "block"
+  ],
+  "approval_kinds": [
+    "uncertain_physical_properties",
+    "reward_change",
+    "curriculum_change",
+    "policy_promotion",
+    "policy_rollback"
+  ],
+  "output_fields": [
+    "plan_digest",
+    "role",
+    "recommendation",
+    "summary",
+    "requested_approvals"
+  ],
+  "promotion_gate": {
+    "paired_world_count": 20,
+    "minimum_success_rate": 0.8,
+    "maximum_falls": 0,
+    "maximum_collision_rate": 0.1,
+    "minimum_median_clearance_m": 0.25,
+    "minimum_success_rate_delta": 0.2,
+    "minimum_relative_collision_reduction": 0.5,
+    "maximum_path_efficiency_regression": 0.15
+  }
+}
+

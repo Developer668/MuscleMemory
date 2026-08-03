@@ -1,0 +1,13 @@
+{
+  "name": "muscle-memory-guild-safety-and-evaluation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "node ../scripts/validate.mjs --project safety-and-evaluation"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+

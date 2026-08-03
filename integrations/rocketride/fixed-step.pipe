@@ -1,0 +1,63 @@
+{
+  "components": [
+    {
+      "config": {
+        "hideForm": true,
+        "mode": "Source",
+        "parameters": {},
+        "type": "webhook"
+      },
+      "description": "Receives one canonical fixed-step envelope from the SDK.",
+      "id": "fixed_step_source",
+      "name": "Fixed Step Input",
+      "provider": "webhook"
+    },
+    {
+      "config": {
+        "apiKey": "",
+        "asyncTimeout": 120,
+        "baseUrl": "${ROCKETRIDE_MM_COORDINATOR_URL}",
+        "mode": "sync",
+        "parameters": {},
+        "payloadMode": "simple",
+        "readOnly": true,
+        "syncTimeout": 120,
+        "type": "tool_n8n",
+        "verifyTls": true,
+        "webhookAuth": "bearer",
+        "webhookToken": "${ROCKETRIDE_MM_COORDINATOR_TOKEN}",
+        "workflow": "muscle-memory-fixed-step"
+      },
+      "description": "Deterministic authenticated callback; no agent can invoke this lane.",
+      "id": "coordinator_callback",
+      "input": [
+        {
+          "from": "fixed_step_source",
+          "lane": "text"
+        }
+      ],
+      "name": "Coordinator Callback",
+      "provider": "tool_n8n"
+    },
+    {
+      "config": {
+        "laneName": "result"
+      },
+      "description": "Returns the typed, checksummed callback result.",
+      "id": "typed_result",
+      "input": [
+        {
+          "from": "coordinator_callback",
+          "lane": "text"
+        }
+      ],
+      "name": "Typed Result",
+      "provider": "response_text"
+    }
+  ],
+  "description": "Executes one approved Muscle Memory fixed-pipeline command without reasoning.",
+  "isLocked": true,
+  "name": "Muscle Memory Fixed Step",
+  "source": "fixed_step_source",
+  "version": 1
+}

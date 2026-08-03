@@ -1,0 +1,10 @@
+{
+  "plan_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "role": "Failure and Curriculum Agent",
+  "recommendation": "proceed",
+  "summary": "The recurring training failures support the proposed targeted curriculum.",
+  "requested_approvals": [
+    "curriculum_change"
+  ]
+}
+

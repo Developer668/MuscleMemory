@@ -1,0 +1,15 @@
+{
+  "contract_version": 1,
+  "agent_name": "muscle-memory-failure-and-curriculum",
+  "role": "Failure and Curriculum Agent",
+  "agent_type": "GUILD_TYPESCRIPT",
+  "template": "AUTO_MANAGED_STATE",
+  "entrypoint": "agent.ts",
+  "mode": "one-shot",
+  "tools": "none",
+  "runtime_provided_packages": [
+    "@guildai/agents-sdk",
+    "zod"
+  ]
+}
+

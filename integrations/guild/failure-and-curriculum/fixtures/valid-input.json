@@ -1,0 +1,64 @@
+{
+  "contract_version": 1,
+  "role": "Failure and Curriculum Agent",
+  "plan_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "run_id": "guild-curriculum-fixture-001",
+  "pipeline_steps": [
+    "validate_world",
+    "run_episode",
+    "summarize_telemetry",
+    "query_graph_memory",
+    "select_curriculum",
+    "train_candidate_policy",
+    "evaluate_candidate_policy",
+    "promote_or_roll_back"
+  ],
+  "requested_output": {
+    "recommendation": "proceed | revise | block",
+    "summary": "non-empty string",
+    "requested_approvals": [
+      "uncertain_physical_properties",
+      "reward_change",
+      "curriculum_change",
+      "policy_promotion",
+      "policy_rollback"
+    ]
+  },
+  "failure_curriculum_evidence": {
+    "source_split": "training",
+    "source_policy_id": "delivery-v0",
+    "graph_query_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "failure_patterns": [
+      {
+        "signature": "clearance-near-laundry-basket",
+        "source_episode_ids": [
+          "training-episode-011",
+          "training-episode-024"
+        ],
+        "distinct_source_episode_count": 2,
+        "obstacle_categories": [
+          "laundry_basket"
+        ],
+        "approved_correction_ids": [
+          "correction-009"
+        ],
+        "lesson_ids": [
+          "lesson-clearance-003"
+        ]
+      }
+    ],
+    "curriculum_change_requested": true,
+    "proposed_curriculum": {
+      "proposal_id": "curriculum-proposal-007",
+      "proposal_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+      "target_failure_signatures": [
+        "clearance-near-laundry-basket"
+      ],
+      "generated_world_digests": [
+        "2222222222222222222222222222222222222222222222222222222222222222"
+      ],
+      "rationale": "Two distinct training episodes share an approved clearance lesson."
+    }
+  }
+}
+

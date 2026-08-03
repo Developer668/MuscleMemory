@@ -1,0 +1,13 @@
+{
+  "name": "muscle-memory-guild-world-and-physics",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "node ../scripts/validate.mjs --project world-and-physics"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+

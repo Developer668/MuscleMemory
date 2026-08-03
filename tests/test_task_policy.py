@@ -16,14 +16,18 @@ from muscle_memory.evaluation.promotion import evaluate_promotion
 from muscle_memory.evaluation.runner import PolicyEpisodeResult
 from muscle_memory.policy.actions import POLICY_ACTION_COMMANDS, PolicyAction
 from muscle_memory.policy.baseline import DirectGoalPolicy
-from muscle_memory.policy.network import BehaviorClonedPolicy
+from muscle_memory.policy.network import POLICY_OUTPUT_COUNT, BehaviorClonedPolicy
 from muscle_memory.policy.observation import NAVIGATION_OBSERVATION_SIZE, navigation_observation
 from muscle_memory.robot.command import TaskCommand
 from muscle_memory.robot.identity import verify_mm01_bundle
 from muscle_memory.simulation.metrics import EpisodeMetricsTracker
 from muscle_memory.simulation.runtime import HeadlessG1Simulation
 from muscle_memory.simulation.world_scene import assemble_episode_scene
-from muscle_memory.training.behavior_clone import BehaviorCloneConfig, train_behavior_clone
+from muscle_memory.training.behavior_clone import (
+    BehaviorCloneConfig,
+    mirror_navigation_samples,
+    train_behavior_clone,
+)
 from muscle_memory.training.dataset import DATASET_SCHEMA_VERSION, record_expert_episode
 from muscle_memory.training.expert import ExpertPath
 from muscle_memory.worlds.generation import generate_training_world
@@ -34,7 +38,7 @@ def _write_checkpoint(path: Path, *, robot_checksum: str) -> None:
     rng = np.random.default_rng(4)
     np.savez_compressed(
         path,
-        schema_version=np.asarray(1, dtype=np.int64),
+        schema_version=np.asarray(2, dtype=np.int64),
         policy_id=np.asarray("test-policy"),
         robot_checksum=np.asarray(robot_checksum),
         input_mean=np.zeros(NAVIGATION_OBSERVATION_SIZE, dtype=np.float32),
@@ -43,8 +47,8 @@ def _write_checkpoint(path: Path, *, robot_checksum: str) -> None:
         bias_1=np.zeros(8, dtype=np.float32),
         weight_2=rng.normal(size=(8, 4)).astype(np.float32),
         bias_2=np.zeros(4, dtype=np.float32),
-        weight_output=rng.normal(size=(4, len(PolicyAction))).astype(np.float32),
-        bias_output=np.zeros(len(PolicyAction), dtype=np.float32),
+        weight_output=rng.normal(size=(4, POLICY_OUTPUT_COUNT)).astype(np.float32),
+        bias_output=np.zeros(POLICY_OUTPUT_COUNT, dtype=np.float32),
     )
 
 
@@ -129,7 +133,10 @@ def test_checkpoint_loads_and_is_bound_to_current_robot(tmp_path: Path) -> None:
     observation = _observation_for_seed(8, 8.0)
 
     assert policy.policy_id == "test-policy"
-    assert policy.command(observation) in POLICY_ACTION_COMMANDS.values()
+    command = policy.command(observation)
+    assert 0.0 <= command.forward_speed_mps <= 0.3
+    assert -0.5 <= command.turning_rate_rad_s <= 0.5
+    assert 0.0 <= command.stop_probability <= 1.0
 
     _write_checkpoint(checkpoint, robot_checksum="0" * 64)
     with pytest.raises(RuntimeError, match="different robot"):
@@ -177,6 +184,20 @@ def test_behavior_clone_splits_complete_episodes(tmp_path: Path) -> None:
     checkpoint = tmp_path / "policy.npz"
     evidence = tmp_path / "training.json"
     labels = np.tile(np.arange(len(PolicyAction), dtype=np.int64), sample_count // 6)
+    commands = np.tile(
+        np.asarray(
+            (
+                (0.0, 0.0, 1.0),
+                (0.0, 0.5, 0.0),
+                (0.0, -0.5, 0.0),
+                (0.3, 0.12, 0.0),
+                (0.3, 0.0, 0.0),
+                (0.3, -0.12, 0.0),
+            ),
+            dtype=np.float32,
+        ),
+        (sample_count // 6, 1),
+    )
     np.savez_compressed(
         dataset,
         schema_version=np.asarray(DATASET_SCHEMA_VERSION, dtype=np.int64),
@@ -185,6 +206,7 @@ def test_behavior_clone_splits_complete_episodes(tmp_path: Path) -> None:
             np.float32
         ),
         actions=labels,
+        commands=commands,
         episode_indices=np.repeat(
             np.arange(episode_count, dtype=np.int32),
             samples_per_episode,
@@ -225,6 +247,24 @@ def test_direct_goal_baseline_is_obstacle_unaware_but_output_limited() -> None:
     assert isinstance(command, TaskCommand)
     assert command.forward_speed_mps <= 0.3
     assert abs(command.turning_rate_rad_s) <= 0.5
+
+
+def test_navigation_mirror_augmentation_is_an_involution() -> None:
+    rng = np.random.default_rng(31)
+    observations = rng.normal(size=(5, NAVIGATION_OBSERVATION_SIZE)).astype(np.float32)
+    targets = rng.uniform(-1.0, 1.0, size=(5, POLICY_OUTPUT_COUNT)).astype(np.float32)
+
+    mirrored_observations, mirrored_targets = mirror_navigation_samples(
+        observations,
+        targets,
+    )
+    restored_observations, restored_targets = mirror_navigation_samples(
+        mirrored_observations,
+        mirrored_targets,
+    )
+
+    assert np.array_equal(restored_observations, observations)
+    assert np.array_equal(restored_targets, targets)
 
 
 def test_promotion_requires_measured_paired_improvement() -> None:

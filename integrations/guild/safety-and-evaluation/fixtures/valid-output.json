@@ -1,0 +1,10 @@
+{
+  "plan_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+  "role": "Safety and Evaluation Agent",
+  "recommendation": "proceed",
+  "summary": "The candidate passes the measured numeric gate; promotion remains a human decision.",
+  "requested_approvals": [
+    "policy_promotion"
+  ]
+}
+

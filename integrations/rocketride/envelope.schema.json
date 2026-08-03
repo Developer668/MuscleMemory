@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://muscle-memory.invalid/schemas/rocketride-envelope-v1.json",
+  "additionalProperties": false,
+  "properties": {
+    "approval_evidence": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "decided_at": {"format": "date-time", "type": "string"},
+          "decision_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "human_subject": {"minLength": 1, "type": "string"},
+          "kind": {
+            "enum": [
+              "uncertain_physical_properties",
+              "reward_change",
+              "curriculum_change",
+              "policy_promotion",
+              "policy_rollback"
+            ],
+            "type": "string"
+          },
+          "plan_digest": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "requirement_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "step": {
+            "enum": [
+              "validate_world",
+              "run_episode",
+              "summarize_telemetry",
+              "query_graph_memory",
+              "select_curriculum",
+              "train_candidate_policy",
+              "evaluate_candidate_policy",
+              "promote_or_roll_back"
+            ],
+            "type": "string"
+          },
+          "verdict": {"const": "approve", "type": "string"}
+        },
+        "required": [
+          "requirement_id",
+          "decision_id",
+          "plan_digest",
+          "step",
+          "kind",
+          "verdict",
+          "human_subject",
+          "decided_at"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1,
+      "type": "array"
+    },
+    "contract_version": {"const": 1, "type": "integer"},
+    "payload": {"type": "object"},
+    "plan_digest": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "run_id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$", "type": "string"},
+    "step": {
+      "enum": [
+        "validate_world",
+        "run_episode",
+        "summarize_telemetry",
+        "query_graph_memory",
+        "select_curriculum",
+        "train_candidate_policy",
+        "evaluate_candidate_policy",
+        "promote_or_roll_back"
+      ],
+      "type": "string"
+    }
+  },
+  "required": ["contract_version", "run_id", "plan_digest", "step", "payload"],
+  "title": "Muscle Memory RocketRide Step Envelope v1",
+  "type": "object"
+}

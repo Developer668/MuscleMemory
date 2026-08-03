@@ -1,0 +1,13 @@
+{
+  "name": "muscle-memory-guild-failure-and-curriculum",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "node ../scripts/validate.mjs --project failure-and-curriculum"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+

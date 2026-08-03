@@ -16,8 +16,12 @@ from muscle_memory.paths import (
     POLICY_V1_CHECKPOINT,
     POLICY_V1_TRAINING_EVIDENCE,
 )
-from muscle_memory.policy.actions import POLICY_ACTION_COUNT
-from muscle_memory.policy.network import POLICY_CHECKPOINT_SCHEMA_VERSION
+from muscle_memory.policy.network import (
+    POLICY_CHECKPOINT_SCHEMA_VERSION,
+    POLICY_MAXIMUM_FORWARD_SPEED_MPS,
+    POLICY_MAXIMUM_TURNING_RATE_RAD_S,
+    POLICY_OUTPUT_COUNT,
+)
 from muscle_memory.policy.observation import NAVIGATION_OBSERVATION_SIZE
 from muscle_memory.robot.identity import verify_mm01_bundle
 from muscle_memory.training.dataset import DATASET_SCHEMA_VERSION
@@ -33,6 +37,7 @@ class BehaviorCloneConfig:
     validation_episode_fraction: float = 0.2
     seed: int = 668
     condition_on_previous_action: bool = False
+    mirror_training_fraction: float = 0.5
 
 
 DEFAULT_BEHAVIOR_CLONE_CONFIG = BehaviorCloneConfig()
@@ -48,9 +53,12 @@ class TrainingResult:
     training_sample_count: int
     validation_sample_count: int
     best_epoch: int
-    training_accuracy: float
-    validation_accuracy: float
+    training_command_accuracy: float
+    validation_command_accuracy: float
     validation_loss: float
+    validation_forward_mae_mps: float
+    validation_turning_mae_rad_s: float
+    validation_stop_mae: float
 
 
 def _sha256_file(path: Path) -> str:
@@ -59,12 +67,6 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _softmax(logits: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
-    shifted = logits - np.max(logits, axis=1, keepdims=True)
-    exponential = np.exp(shifted)
-    return np.asarray(exponential / np.sum(exponential, axis=1, keepdims=True), dtype=np.float32)
 
 
 def _forward(
@@ -77,15 +79,55 @@ def _forward(
     return hidden_1, hidden_2, np.asarray(logits, dtype=np.float32)
 
 
+def _normalized_outputs(raw: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
+    forward = 0.5 * (np.tanh(raw[:, 0]) + 1.0)
+    turning = np.tanh(raw[:, 1])
+    stop = 1.0 / (1.0 + np.exp(-np.clip(raw[:, 2], -30.0, 30.0)))
+    return np.column_stack((forward, turning, stop)).astype(np.float32)
+
+
+def mirror_navigation_samples(
+    observations: npt.NDArray[np.float32],
+    targets: npt.NDArray[np.float32],
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+    """Mirror sensor/task samples across the robot's sagittal plane."""
+    if observations.ndim != 2 or observations.shape[1] != NAVIGATION_OBSERVATION_SIZE:
+        raise ValueError("mirror augmentation requires navigation observations")
+    if targets.shape != (observations.shape[0], POLICY_OUTPUT_COUNT):
+        raise ValueError("mirror augmentation requires continuous policy targets")
+    mirrored_observations = observations.copy()
+    mirrored_targets = targets.copy()
+    mirrored_observations[:, :48] = observations[:, :48][:, ::-1]
+    mirrored_observations[:, 49] *= -1.0
+    mirrored_observations[:, (52, 54)] *= -1.0
+    mirrored_observations[:, (55, 57)] *= -1.0
+    mirrored_observations[:, 59] *= -1.0
+    mirrored_observations[:, (62, 63)] = observations[:, (63, 62)]
+    mirrored_observations[:, 67] *= -1.0
+    mirrored_targets[:, 1] *= -1.0
+    return mirrored_observations, mirrored_targets
+
+
 def _metrics(
     inputs: npt.NDArray[np.float32],
-    labels: npt.NDArray[np.int64],
+    targets: npt.NDArray[np.float32],
     parameters: dict[str, npt.NDArray[np.float32]],
-) -> tuple[float, float]:
-    probabilities = _softmax(_forward(inputs, parameters)[2])
-    loss = float(-np.mean(np.log(probabilities[np.arange(labels.size), labels] + 1e-8)))
-    accuracy = float(np.mean(np.argmax(probabilities, axis=1) == labels))
-    return loss, accuracy
+) -> tuple[float, float, npt.NDArray[np.float32]]:
+    predictions = _normalized_outputs(_forward(inputs, parameters)[2])
+    component_weights = np.asarray((1.0, 1.5, 2.0), dtype=np.float32)
+    sample_weights = np.where(targets[:, 2] >= 0.5, 4.0, 1.0).astype(np.float32)
+    squared_error = (predictions - targets) ** 2
+    loss = float(
+        np.sum(squared_error * component_weights[None, :] * sample_weights[:, None])
+        / np.sum(component_weights * np.sum(sample_weights))
+    )
+    within_tolerance = (
+        (np.abs(predictions[:, 0] - targets[:, 0]) <= 0.1)
+        & (np.abs(predictions[:, 1] - targets[:, 1]) <= 0.1)
+        & ((predictions[:, 2] >= 0.5) == (targets[:, 2] >= 0.5))
+    )
+    mae = np.mean(np.abs(predictions - targets), axis=0).astype(np.float32)
+    return loss, float(np.mean(within_tolerance)), mae
 
 
 def _initial_parameters(
@@ -101,8 +143,8 @@ def _initial_parameters(
         "bias_1": np.zeros(config.hidden_1, dtype=np.float32),
         "weight_2": weight(config.hidden_1, config.hidden_2),
         "bias_2": np.zeros(config.hidden_2, dtype=np.float32),
-        "weight_output": weight(config.hidden_2, POLICY_ACTION_COUNT),
-        "bias_output": np.zeros(POLICY_ACTION_COUNT, dtype=np.float32),
+        "weight_output": weight(config.hidden_2, POLICY_OUTPUT_COUNT),
+        "bias_output": np.zeros(POLICY_OUTPUT_COUNT, dtype=np.float32),
     }
 
 
@@ -120,7 +162,7 @@ def train_behavior_clone(
         schema_version = int(dataset["schema_version"])
         dataset_robot_checksum = str(dataset["robot_checksum"])
         observations = np.asarray(dataset["observations"], dtype=np.float32)
-        labels = np.asarray(dataset["actions"], dtype=np.int64)
+        commands = np.asarray(dataset["commands"], dtype=np.float32)
         episode_indices = np.asarray(dataset["episode_indices"], dtype=np.int32)
     if schema_version != DATASET_SCHEMA_VERSION:
         raise RuntimeError("expert dataset schema changed")
@@ -128,12 +170,27 @@ def train_behavior_clone(
         raise RuntimeError("expert dataset belongs to a different robot")
     if observations.ndim != 2 or observations.shape[1] != NAVIGATION_OBSERVATION_SIZE:
         raise RuntimeError("expert dataset observation tensor is invalid")
-    if labels.shape != (observations.shape[0],) or episode_indices.shape != labels.shape:
-        raise RuntimeError("expert dataset labels or episode membership are invalid")
-    if not np.isfinite(observations).all() or np.any(labels < 0) or np.any(
-        labels >= POLICY_ACTION_COUNT
+    if commands.shape != (observations.shape[0], POLICY_OUTPUT_COUNT) or (
+        episode_indices.shape != (observations.shape[0],)
     ):
+        raise RuntimeError("expert dataset commands or episode membership are invalid")
+    if not np.isfinite(observations).all() or not np.isfinite(commands).all():
         raise RuntimeError("expert dataset contains invalid values")
+    if (
+        np.any(commands[:, 0] < 0.0)
+        or np.any(commands[:, 0] > POLICY_MAXIMUM_FORWARD_SPEED_MPS)
+        or np.any(np.abs(commands[:, 1]) > POLICY_MAXIMUM_TURNING_RATE_RAD_S)
+        or np.any(commands[:, 2] < 0.0)
+        or np.any(commands[:, 2] > 1.0)
+    ):
+        raise RuntimeError("expert dataset commands exceed the task-policy contract")
+    normalized_targets = np.column_stack(
+        (
+            commands[:, 0] / POLICY_MAXIMUM_FORWARD_SPEED_MPS,
+            commands[:, 1] / POLICY_MAXIMUM_TURNING_RATE_RAD_S,
+            commands[:, 2],
+        )
+    ).astype(np.float32)
 
     episode_ids = np.unique(episode_indices)
     if episode_ids.size < 2:
@@ -149,9 +206,20 @@ def train_behavior_clone(
     validation_mask = np.isin(episode_indices, validation_episodes)
     training_mask = np.isin(episode_indices, training_episodes)
     train_x_raw = observations[training_mask].copy()
-    train_y = labels[training_mask]
+    train_targets = normalized_targets[training_mask]
     validation_x_raw = observations[validation_mask].copy()
-    validation_y = labels[validation_mask]
+    validation_targets = normalized_targets[validation_mask]
+    if not 0.0 <= config.mirror_training_fraction <= 1.0:
+        raise ValueError("mirror training fraction must be within [0, 1]")
+    mirror_count = round(train_x_raw.shape[0] * config.mirror_training_fraction)
+    if mirror_count:
+        mirror_indices = rng.permutation(train_x_raw.shape[0])[:mirror_count]
+        mirrored_x, mirrored_targets = mirror_navigation_samples(
+            train_x_raw[mirror_indices],
+            train_targets[mirror_indices],
+        )
+        train_x_raw = np.concatenate((train_x_raw, mirrored_x), axis=0)
+        train_targets = np.concatenate((train_targets, mirrored_targets), axis=0)
     if not config.condition_on_previous_action:
         train_x_raw[:, -3:] = 0.0
         validation_x_raw[:, -3:] = 0.0
@@ -165,12 +233,6 @@ def train_behavior_clone(
         (validation_x_raw - input_mean) / input_std,
         dtype=np.float32,
     )
-    class_counts = np.bincount(train_y, minlength=POLICY_ACTION_COUNT).astype(np.float32)
-    if np.any(class_counts == 0):
-        raise RuntimeError("expert dataset does not cover the complete action vocabulary")
-    class_weights = np.sqrt(float(train_y.size) / (POLICY_ACTION_COUNT * class_counts))
-    class_weights /= np.mean(class_weights)
-
     parameters = _initial_parameters(config, rng)
     if not config.condition_on_previous_action:
         parameters["weight_1"][-3:, :] = 0.0
@@ -183,19 +245,36 @@ def train_behavior_clone(
     beta_1 = 0.9
     beta_2 = 0.999
     epsilon = 1e-8
+    component_weights = np.asarray((1.0, 1.5, 2.0), dtype=np.float32)
 
     for epoch in range(1, config.epochs + 1):
-        order = rng.permutation(train_y.size)
-        for start in range(0, train_y.size, config.batch_size):
+        order = rng.permutation(train_targets.shape[0])
+        for start in range(0, train_targets.shape[0], config.batch_size):
             batch_indices = order[start : start + config.batch_size]
             batch_x = train_x[batch_indices]
-            batch_y = train_y[batch_indices]
-            hidden_1, hidden_2, logits = _forward(batch_x, parameters)
-            probabilities = _softmax(logits)
-            sample_weights = class_weights[batch_y]
-            output_gradient = probabilities
-            output_gradient[np.arange(batch_y.size), batch_y] -= 1.0
-            output_gradient *= sample_weights[:, None] / float(batch_y.size)
+            batch_targets = train_targets[batch_indices]
+            hidden_1, hidden_2, raw_outputs = _forward(batch_x, parameters)
+            predictions = _normalized_outputs(raw_outputs)
+            sample_weights = np.where(
+                batch_targets[:, 2] >= 0.5,
+                4.0,
+                1.0,
+            ).astype(np.float32)
+            output_derivatives = np.column_stack(
+                (
+                    2.0 * predictions[:, 0] * (1.0 - predictions[:, 0]),
+                    1.0 - predictions[:, 1] ** 2,
+                    predictions[:, 2] * (1.0 - predictions[:, 2]),
+                )
+            ).astype(np.float32)
+            output_gradient = (
+                2.0
+                * (predictions - batch_targets)
+                * component_weights[None, :]
+                * sample_weights[:, None]
+                * output_derivatives
+                / float(np.sum(sample_weights) * np.sum(component_weights))
+            )
             gradients = {
                 "weight_output": hidden_2.T @ output_gradient,
                 "bias_output": np.sum(output_gradient, axis=0),
@@ -223,9 +302,9 @@ def train_behavior_clone(
                     np.sqrt(corrected_second) + epsilon
                 )
 
-        validation_loss, validation_accuracy = _metrics(
+        validation_loss, validation_accuracy, validation_mae = _metrics(
             validation_x,
-            validation_y,
+            validation_targets,
             parameters,
         )
         if validation_loss < best_validation_loss:
@@ -233,18 +312,24 @@ def train_behavior_clone(
             best_epoch = epoch
             best_parameters = copy.deepcopy(parameters)
         if epoch == 1 or epoch % 20 == 0 or epoch == config.epochs:
-            _, training_accuracy = _metrics(train_x, train_y, parameters)
+            _, training_accuracy, _ = _metrics(train_x, train_targets, parameters)
             print(
                 f"epoch={epoch:03d} train_acc={training_accuracy:.4f} "
                 f"validation_acc={validation_accuracy:.4f} "
-                f"validation_loss={validation_loss:.5f}",
+                f"validation_loss={validation_loss:.5f} "
+                f"mae=({validation_mae[0]:.4f},"
+                f"{validation_mae[1]:.4f},{validation_mae[2]:.4f})",
                 flush=True,
             )
 
-    training_loss, training_accuracy = _metrics(train_x, train_y, best_parameters)
-    validation_loss, validation_accuracy = _metrics(
+    training_loss, training_accuracy, _ = _metrics(
+        train_x,
+        train_targets,
+        best_parameters,
+    )
+    validation_loss, validation_accuracy, validation_mae = _metrics(
         validation_x,
-        validation_y,
+        validation_targets,
         best_parameters,
     )
     policy_id = "delivery-v1-bc"
@@ -270,12 +355,19 @@ def train_behavior_clone(
         dataset_sha256=dataset_sha256,
         training_episode_count=int(training_episodes.size),
         validation_episode_count=int(validation_episodes.size),
-        training_sample_count=int(train_y.size),
-        validation_sample_count=int(validation_y.size),
+        training_sample_count=int(train_targets.shape[0]),
+        validation_sample_count=int(validation_targets.shape[0]),
         best_epoch=best_epoch,
-        training_accuracy=training_accuracy,
-        validation_accuracy=validation_accuracy,
+        training_command_accuracy=training_accuracy,
+        validation_command_accuracy=validation_accuracy,
         validation_loss=validation_loss,
+        validation_forward_mae_mps=(
+            float(validation_mae[0]) * POLICY_MAXIMUM_FORWARD_SPEED_MPS
+        ),
+        validation_turning_mae_rad_s=(
+            float(validation_mae[1]) * POLICY_MAXIMUM_TURNING_RATE_RAD_S
+        ),
+        validation_stop_mae=float(validation_mae[2]),
     )
     evidence = {
         "schema_version": 1,

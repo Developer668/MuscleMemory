@@ -9,6 +9,7 @@ from pathlib import Path
 
 from muscle_memory.evaluation.promotion import evaluate_promotion
 from muscle_memory.evaluation.runner import PolicyEpisodeResult, run_policy_episode
+from muscle_memory.paths import POLICY_V1_CHECKPOINT
 from muscle_memory.policy.baseline import DirectGoalPolicy
 from muscle_memory.policy.network import BehaviorClonedPolicy
 from muscle_memory.training.expert import (
@@ -72,6 +73,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--worlds", type=int, default=DEFAULT_DEVELOPMENT_WORLDS)
     parser.add_argument("--seed-start", type=int, default=DEVELOPMENT_SEED_START)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--checkpoint", type=Path, default=POLICY_V1_CHECKPOINT)
     return parser
 
 
@@ -79,7 +81,7 @@ def main() -> int:
     args = _parser().parse_args()
     worlds = _development_worlds(args.worlds, args.seed_start)
     baseline = _evaluate(worlds, DirectGoalPolicy())
-    candidate = _evaluate(worlds, BehaviorClonedPolicy.load())
+    candidate = _evaluate(worlds, BehaviorClonedPolicy.load(args.checkpoint))
     decision = evaluate_promotion(baseline, candidate)
     payload = {
         "schema_version": 1,

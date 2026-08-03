@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "robot_checksum": "a82d65cdef447a4c2871faf28574c31aebc7e2425771c44d871714bcc4fcfe52",
-  "dataset_schema_version": 1,
+  "dataset_schema_version": 2,
   "config": {
     "hidden_1": 96,
     "hidden_2": 64,
@@ -9,7 +9,8 @@
     "batch_size": 256,
     "learning_rate": 0.001,
     "validation_episode_fraction": 0.2,
-    "seed": 668
+    "seed": 668,
+    "condition_on_previous_action": false
   },
   "training_episode_indices": [
     5,
@@ -79,16 +80,19 @@
     18,
     63
   ],
-  "training_loss": 0.051109205931425095,
+  "training_loss": 0.00576411746442318,
   "policy_id": "delivery-v1-bc",
-  "policy_sha256": "e0e10b1bf4eb45597bb986cd1b3fa0ce982ef4cb91d32b8323312fd6360a893a",
-  "dataset_sha256": "82fd271b9b309c1a147066fd9b56a4c39e08bd9b6c60c16a2a5a08c1373356a6",
+  "policy_sha256": "d29d046566f26c17625a85611a8a26e23ce518efab7e02004bc397f844ac57c8",
+  "dataset_sha256": "d3c7aa08ae467f0bf17eca13c116037ab2049e0da7d1ff95b2deb489252e20ef",
   "training_episode_count": 51,
   "validation_episode_count": 13,
   "training_sample_count": 12888,
   "validation_sample_count": 3503,
-  "best_epoch": 55,
-  "training_accuracy": 0.9832402234636871,
-  "validation_accuracy": 0.96117613474165,
-  "validation_loss": 0.1172790601849556
+  "best_epoch": 131,
+  "training_command_accuracy": 0.8077281191806331,
+  "validation_command_accuracy": 0.7013988010276906,
+  "validation_loss": 0.023394407704472542,
+  "validation_forward_mae_mps": 0.015373655408620833,
+  "validation_turning_mae_rad_s": 0.044152744114398956,
+  "validation_stop_mae": 0.013974065892398357
 }

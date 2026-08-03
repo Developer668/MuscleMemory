@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://muscle-memory.invalid/schemas/rocketride-result-v1.json",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {"const": 1, "type": "integer"},
+    "output": {"type": "object"},
+    "output_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "plan_digest": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "request_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "run_id": {"pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$", "type": "string"},
+    "status": {"const": "completed", "type": "string"},
+    "step": {
+      "enum": [
+        "validate_world",
+        "run_episode",
+        "summarize_telemetry",
+        "query_graph_memory",
+        "select_curriculum",
+        "train_candidate_policy",
+        "evaluate_candidate_policy",
+        "promote_or_roll_back"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "run_id",
+    "plan_digest",
+    "step",
+    "status",
+    "request_sha256",
+    "output",
+    "output_sha256"
+  ],
+  "title": "Muscle Memory RocketRide Step Result v1",
+  "type": "object"
+}
