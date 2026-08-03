@@ -12,6 +12,7 @@ from ops.controller.contract import (
     RunMode,
     build_artifact_manifest,
     evaluate_qualification,
+    verify_qualification_binding,
     verify_source_checkout,
     write_artifact_manifest,
 )
@@ -47,6 +48,11 @@ def main() -> int:
     if not isinstance(evidence_payload, dict):
         raise ValueError("qualification evidence must be a JSON object")
     evidence = QualificationEvidence.from_mapping(evidence_payload)
+    verify_qualification_binding(
+        evidence,
+        args.run_root,
+        Path(__file__).with_name("native_qualify.py"),
+    )
     result = evaluate_qualification(evidence, args.mode)
     manifest = build_artifact_manifest(
         args.run_root,

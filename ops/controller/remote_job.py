@@ -20,6 +20,7 @@ from ops.controller.contract import (
     RunMode,
     build_artifact_manifest,
     evaluate_qualification,
+    verify_qualification_binding,
     verify_source_checkout,
     write_artifact_manifest,
 )
@@ -433,6 +434,7 @@ def qualify_training_run(run_root: Path) -> dict[str, object]:
     mode = RunMode(contract_payload["mode"])
     seed = int(contract_payload["seed"])
     evidence = QualificationEvidence.from_mapping(evidence_payload)
+    verify_qualification_binding(evidence, run_root, Path(__file__).with_name("native_qualify.py"))
     result = evaluate_qualification(evidence, mode)
     manifest = build_artifact_manifest(
         run_root,

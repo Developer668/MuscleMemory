@@ -33,6 +33,7 @@ from ops.controller.contract import (  # noqa: E402
     build_artifact_manifest,
     evaluate_qualification,
     sha256_file,
+    verify_qualification_binding,
     verify_source_checkout,
 )
 from ops.controller.export_onnx import (  # noqa: E402
@@ -92,6 +93,9 @@ def passing_evidence() -> QualificationEvidence:
         payload_package_slipped=False,
         deterministic_repeat_max_metric_delta=1e-6,
         robot_checksum="frozen-mm01-checksum",
+        controller_onnx_sha256="controller-checksum",
+        qualification_program_sha256="qualifier-checksum",
+        qualification_trials_sha256="trials-checksum",
     )
 
 
@@ -360,12 +364,15 @@ def test_qualification_reports_every_failed_gate(
         payload_package_slipped=True,
         deterministic_repeat_max_metric_delta=0.1,
         robot_checksum="",
+        controller_onnx_sha256="",
+        qualification_program_sha256="",
+        qualification_trials_sha256="",
     )
 
     result = evaluate_qualification(failing, RunMode.FULL)
 
     assert not result.qualified
-    assert len(result.failures) == 20
+    assert len(result.failures) == 23
 
 
 def test_evidence_rejects_missing_or_extra_fields(
@@ -377,6 +384,29 @@ def test_evidence_rejects_missing_or_extra_fields(
 
     with pytest.raises(ContractError, match=r"missing=.*robot_checksum.*extra=.*unexpected"):
         QualificationEvidence.from_mapping(payload)
+
+
+def test_qualification_binding_rejects_evidence_for_other_artifacts(
+    passing_evidence: QualificationEvidence,
+    tmp_path: Path,
+) -> None:
+    controller = tmp_path / "controller.onnx"
+    qualifier = tmp_path / "native_qualify.py"
+    trials = tmp_path / "qualification-trials.json"
+    controller.write_bytes(b"controller")
+    qualifier.write_bytes(b"qualifier")
+    trials.write_bytes(b"trials")
+    bound = replace(
+        passing_evidence,
+        controller_onnx_sha256=sha256_file(controller),
+        qualification_program_sha256=sha256_file(qualifier),
+        qualification_trials_sha256=sha256_file(trials),
+    )
+    verify_qualification_binding(bound, tmp_path, qualifier)
+
+    controller.write_bytes(b"different controller")
+    with pytest.raises(ContractError, match="controller artifact checksum"):
+        verify_qualification_binding(bound, tmp_path, qualifier)
 
 
 def test_artifact_manifest_hashes_files_and_records_episode_length(

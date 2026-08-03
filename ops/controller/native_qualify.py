@@ -268,6 +268,32 @@ def generate_evidence(policy_path: Path) -> tuple[QualificationEvidence, dict[st
         float(np.max(np.abs(forward.final_qvel - forward_repeat.final_qvel))),
     )
     forward_delta = np.asarray(forward.planar_delta_m, dtype=np.float64)
+    raw_trials = {
+        "schema_version": 1,
+        "trials": {
+            name: {
+                key: value
+                for key, value in asdict(trial).items()
+                if key not in {"final_qpos", "final_qvel"}
+            }
+            for name, trial in zip(
+                (
+                    "forward",
+                    "forward_repeat",
+                    "left",
+                    "right",
+                    "stop",
+                    "standstill",
+                    "payload",
+                ),
+                trials,
+                strict=True,
+            )
+        },
+    }
+    raw_trial_bytes = (
+        json.dumps(raw_trials, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
     evidence = QualificationEvidence(
         controller_hz=CONTROLLER_HZ if measured_rates_match else 0,
         ctrl_dt_seconds=CTRL_DT_SECONDS if measured_rates_match else 0.0,
@@ -292,20 +318,11 @@ def generate_evidence(policy_path: Path) -> tuple[QualificationEvidence, dict[st
         payload_package_slipped=payload.package_slipped,
         deterministic_repeat_max_metric_delta=repeat_delta,
         robot_checksum=_bundle_checksum(policy_path),
+        controller_onnx_sha256=sha256_file(policy_path),
+        qualification_program_sha256=sha256_file(Path(__file__)),
+        qualification_trials_sha256=hashlib.sha256(raw_trial_bytes).hexdigest(),
     )
-    raw_trials = {
-        name: {
-            key: value
-            for key, value in asdict(trial).items()
-            if key not in {"final_qpos", "final_qvel"}
-        }
-        for name, trial in zip(
-            ("forward", "forward_repeat", "left", "right", "stop", "standstill", "payload"),
-            trials,
-            strict=True,
-        )
-    }
-    return evidence, {"schema_version": 1, "trials": raw_trials}
+    return evidence, raw_trials
 
 
 def _parser() -> argparse.ArgumentParser:

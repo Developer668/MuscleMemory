@@ -145,6 +145,9 @@ class QualificationEvidence:
     payload_package_slipped: bool
     deterministic_repeat_max_metric_delta: float
     robot_checksum: str
+    controller_onnx_sha256: str
+    qualification_program_sha256: str
+    qualification_trials_sha256: str
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> QualificationEvidence:
@@ -317,7 +320,41 @@ def evaluate_qualification(
         failures.append("deterministic repeat tolerance was exceeded")
     if not evidence.robot_checksum:
         failures.append("robot checksum is missing")
+    if not evidence.controller_onnx_sha256:
+        failures.append("controller artifact checksum is missing")
+    if not evidence.qualification_program_sha256:
+        failures.append("qualification program checksum is missing")
+    if not evidence.qualification_trials_sha256:
+        failures.append("raw qualification-trial checksum is missing")
     return QualificationResult(qualified=not failures, failures=tuple(failures))
+
+
+def verify_qualification_binding(
+    evidence: QualificationEvidence,
+    run_root: Path,
+    qualification_program_path: Path,
+) -> None:
+    """Bind physical evidence to exact controller, program, and raw-trial bytes."""
+
+    expected = {
+        "controller artifact": (
+            evidence.controller_onnx_sha256,
+            run_root / "controller.onnx",
+        ),
+        "qualification program": (
+            evidence.qualification_program_sha256,
+            qualification_program_path,
+        ),
+        "raw qualification trials": (
+            evidence.qualification_trials_sha256,
+            run_root / "qualification-trials.json",
+        ),
+    }
+    for label, (declared_hash, path) in expected.items():
+        if not path.is_file():
+            raise ContractError(f"{label} file is missing")
+        if sha256_file(path) != declared_hash:
+            raise ContractError(f"{label} checksum does not match qualification evidence")
 
 
 def build_artifact_manifest(
