@@ -677,7 +677,7 @@ function SimulationView({
           </div>
         )}
         <div className="ops-stage-readout">
-          <span><i className="ops-key ops-key--path" /> Telemetry path</span>
+          <span><i className="ops-key ops-key--path" /> Simulator ground truth pose</span>
           <span><i className="ops-key ops-key--correction" /> Human correction</span>
           <span>X/Y in meters</span>
         </div>

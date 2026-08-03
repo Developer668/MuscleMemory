@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from datetime import UTC, datetime
 
 import pytest
@@ -450,6 +451,29 @@ def test_live_hub_is_bounded_and_reports_dropped_stale_messages() -> None:
     assert sequence == 2
     assert dropped == 1
     assert kind is LiveMessageKind.TELEMETRY
+
+
+def test_live_hub_bridges_worker_thread_events_to_the_api_loop() -> None:
+    async def exercise() -> tuple[int, int]:
+        hub = LiveTelemetryHub(queue_size=2)
+        hub.bind_running_loop()
+        publisher_thread = 0
+        async with hub.subscribe("episode-1") as subscription:
+            def publish_from_worker() -> None:
+                nonlocal publisher_thread
+                publisher_thread = threading.get_ident()
+                asyncio.run(hub.publish_telemetry(_telemetry(7)))
+
+            await asyncio.to_thread(publish_from_worker)
+            message = await asyncio.wait_for(subscription.receive(), timeout=1.0)
+            assert message is not None and message.telemetry is not None
+            api_thread = threading.get_ident()
+            await hub.close()
+            return message.telemetry.sequence, int(publisher_thread != api_thread)
+
+    sequence, crossed_threads = asyncio.run(exercise())
+    assert sequence == 7
+    assert crossed_threads == 1
 
 
 def test_live_message_allows_frame_id_as_the_only_video_join_key() -> None:

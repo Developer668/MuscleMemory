@@ -16,7 +16,7 @@ from muscle_memory.graph_memory import (
     WorldSplit,
     canonical_json,
 )
-from muscle_memory.worlds.generation import generate_training_world
+from muscle_memory.live.catalog import LiveWorldCatalog
 from muscle_memory.worlds.models import TrainingWorld
 
 
@@ -32,16 +32,20 @@ def derive_training_world_artifacts(
     seed: int,
     *,
     recorded_at: datetime,
+    catalog: LiveWorldCatalog | None = None,
 ) -> DerivedTrainingWorldArtifacts:
-    """Regenerate and validate a seeded training world without provider input."""
+    """Load stable graph parents without making the path teacher runtime-reachable."""
 
-    validated = generate_training_world(seed)
+    active_catalog = catalog or LiveWorldCatalog.load()
+    if recorded_at.tzinfo is None or recorded_at.utcoffset() is None:
+        raise ValueError("recorded_at must be timezone-aware")
+    try:
+        validated = active_catalog.world_for_seed(seed)
+    except KeyError as exc:
+        raise ValueError("training world seed is not in the admitted live catalog") from exc
     world = validated.world
     world_hash = hashlib.sha256(world.model_dump_json().encode("utf-8")).hexdigest()
-    baseline_path_payload = [point.model_dump(mode="json") for point in validated.baseline_path]
-    baseline_path_digest = hashlib.sha256(
-        canonical_json(baseline_path_payload).encode("utf-8")
-    ).hexdigest()
+    baseline_path_digest = validated.baseline_path_sha256
     validation_hash = hashlib.sha256(
         canonical_json(
             {
@@ -59,7 +63,7 @@ def derive_training_world_artifacts(
         generation_version=world.generation_version,
         validation_hash=validation_hash,
         validated=True,
-        recorded_at=recorded_at,
+        recorded_at=active_catalog.validated_at,
     )
     obstacles = tuple(
         ObstacleMemoryRecord(
@@ -71,7 +75,7 @@ def derive_training_world_artifacts(
             category=item.category.value,
             collider_kind=item.collider.kind.value,
             physical_properties_approved=True,
-            recorded_at=recorded_at,
+            recorded_at=active_catalog.validated_at,
         )
         for item in world.objects
     )
@@ -84,16 +88,18 @@ def derive_training_world_artifacts(
 
 
 class CoordinatorGraphPrerequisiteResolver:
-    """Bind an episode to a regenerated world and immutable evaluated checkpoint."""
+    """Bind an episode to a catalog world and immutable evaluated checkpoint."""
 
     def __init__(
         self,
         coordinator: CoordinatorStore,
         *,
         expected_robot_checksum: str,
+        catalog: LiveWorldCatalog | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._expected_robot_checksum = expected_robot_checksum
+        self._catalog = catalog or LiveWorldCatalog.load()
 
     def resolve(
         self,
@@ -109,6 +115,7 @@ class CoordinatorGraphPrerequisiteResolver:
         derived = derive_training_world_artifacts(
             result.world_seed,
             recorded_at=recorded_at,
+            catalog=self._catalog,
         )
         policies = {
             checkpoint.policy_id: checkpoint

@@ -25,9 +25,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--epochs", type=int, default=defaults.epochs)
     parser.add_argument("--seed", type=int, default=1_337)
     parser.add_argument("--avoidance-distance-m", type=float, default=2.6)
-    parser.add_argument("--avoidance-gain", type=float, default=1.35)
+    parser.add_argument("--avoidance-gain", type=float, default=1.8)
     parser.add_argument("--avoidance-exponent", type=float, default=2.0)
-    parser.add_argument("--avoidance-activation", type=float, default=0.2)
+    parser.add_argument("--avoidance-activation", type=float, default=0.1)
     parser.add_argument("--avoidance-docking-suppression-m", type=float, default=1.0)
     parser.add_argument("--learned-turn-blend", type=float, default=0.0)
     return parser
@@ -50,7 +50,7 @@ def main() -> int:
             seed=args.seed,
             condition_on_previous_action=False,
             mirror_training_fraction=defaults.mirror_training_fraction,
-            policy_id="delivery-v2-sensor-fusion",
+            policy_id="delivery-v2-sensor-fusion-hysteresis",
             inference_strategy=SENSOR_FUSION_INFERENCE_STRATEGY,
             avoidance_distance_m=args.avoidance_distance_m,
             avoidance_gain=args.avoidance_gain,
@@ -58,6 +58,13 @@ def main() -> int:
             avoidance_activation=args.avoidance_activation,
             avoidance_docking_suppression_m=args.avoidance_docking_suppression_m,
             learned_turn_blend=args.learned_turn_blend,
+            avoidance_release=0.06,
+            avoidance_reversal=0.18,
+            avoidance_release_ticks=5,
+            held_repulsion=0.16,
+            turn_slew_per_update=0.1,
+            sparse_risk_threshold=0.2,
+            sparse_turn_slew_per_update=0.15,
         ),
     )
     print(json.dumps(asdict(result), indent=2), flush=True)

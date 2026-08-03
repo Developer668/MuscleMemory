@@ -252,12 +252,19 @@ export function LandingPage() {
         <a href="/console"><CircleGauge size={18} /> Inspect evidence <ArrowRight size={17} /></a>
       </section>
 
-      <section className="mm-room-poster" aria-label="MM-01 living room simulation">
-        <div className="mm-room-poster__image" role="img" aria-label="Rendered living room from the MM-01 simulation" />
+      <section className="mm-room-poster" aria-label="MM-01 two-story home simulation">
+        <img
+          className="mm-room-poster__image"
+          src="/assets/mm01-two-story-house.webp"
+          alt="Rendered MM-01 two-story home simulation"
+          width="2994"
+          height="1738"
+          loading="lazy"
+        />
         <div className="mm-room-poster__caption">
-          <span>World 07 / warm apartment</span>
-          <strong>Same robot.<br />Different room.</strong>
-          <p>Furniture can move. Friction can change. The body and walking controller do not.</p>
+          <span>World 07 / two-story home</span>
+          <strong>Every room.<br />Same robot.</strong>
+          <p>Rooms, furniture, and friction can change. The body and walking controller do not.</p>
         </div>
       </section>
 

@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import type { MotionValue } from "motion/react";
 import * as THREE from "three";
 
-import { buildApartment, makeRobot } from "../operator/RealisticHomeScene";
+import { makeRobot } from "../operator/RealisticHomeScene";
+import { buildTwoStoryHouse, STORY_HEIGHT } from "./TwoStoryHouse";
 
 export type DemoScenario = "clear" | "laundry" | "low_friction";
 
@@ -55,12 +56,13 @@ function makeDropObject(kind: "box" | "basket" | "lamp"): THREE.Group {
 
 function makeRoute(): THREE.Line {
   const points = [
-    new THREE.Vector3(-2.75, 0.055, 2.25),
-    new THREE.Vector3(-1.7, 0.055, 1.4),
-    new THREE.Vector3(-0.9, 0.055, 0.45),
-    new THREE.Vector3(0.05, 0.055, 0.2),
-    new THREE.Vector3(0.9, 0.055, -0.72),
-    new THREE.Vector3(2.28, 0.055, -1.83),
+    new THREE.Vector3(-4.9, 0.055, 3.82),
+    new THREE.Vector3(-3.75, 0.055, 2.72),
+    new THREE.Vector3(-2.15, 0.055, 1.48),
+    new THREE.Vector3(-0.45, 0.055, 0.52),
+    new THREE.Vector3(1.42, 0.055, -0.18),
+    new THREE.Vector3(2.48, 0.055, -1.42),
+    new THREE.Vector3(3.42, 0.055, -2.68),
   ];
   const curve = new THREE.CatmullRomCurve3(points);
   const geometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(90));
@@ -96,11 +98,11 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
     if (!host) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#b9c8ca");
-    scene.fog = new THREE.FogExp2("#d7dfdc", 0.022);
+    scene.background = new THREE.Color("#aebfc2");
+    scene.fog = new THREE.FogExp2("#d5dfde", 0.012);
 
-    const camera = new THREE.PerspectiveCamera(44, 1, 0.04, 80);
-    camera.position.set(8.2, 5.4, 8.6);
+    const camera = new THREE.PerspectiveCamera(39, 1, 0.04, 120);
+    camera.position.set(15.2, 9.5, 15.7);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8));
@@ -112,11 +114,11 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
     renderer.domElement.setAttribute("aria-hidden", "true");
     host.appendChild(renderer.domElement);
 
-    const home = buildApartment();
-    scene.add(home);
+    const house = buildTwoStoryHouse();
+    scene.add(house.root);
 
     const robot = makeRobot();
-    robot.position.set(-2.75, 0, 2.25);
+    robot.position.set(-4.9, 0.08, 3.82);
     scene.add(robot);
 
     const route = makeRoute();
@@ -127,17 +129,17 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
       new THREE.MeshBasicMaterial({ color: "#ff6e57", transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
     );
     destination.rotation.x = -Math.PI / 2;
-    destination.position.set(2.28, 0.07, -1.83);
+    destination.position.set(3.42, 0.07, -2.68);
     scene.add(destination);
 
     const box = makeDropObject("box");
-    box.position.set(-1.2, 4.8, 0.55);
+    box.position.set(-2.35, 7.8, 1.2);
     scene.add(box);
     const basket = makeDropObject("basket");
-    basket.position.set(-0.32, 5.5, 0.72);
+    basket.position.set(-0.55, 8.4, 0.72);
     scene.add(basket);
     const lamp = makeDropObject("lamp");
-    lamp.position.set(3.25, 5.8, 1.1);
+    lamp.position.set(5.45, 8.8, -0.2);
     scene.add(lamp);
 
     const frictionPatch = new THREE.Mesh(
@@ -145,15 +147,19 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
       new THREE.MeshBasicMaterial({ color: "#77e7ff", transparent: true, opacity: 0.26, side: THREE.DoubleSide }),
     );
     frictionPatch.rotation.x = -Math.PI / 2;
-    frictionPatch.position.set(0.25, 0.062, 0.05);
+    frictionPatch.position.set(1.1, 0.062, -0.15);
     scene.add(frictionPatch);
 
     const dotGeometry = new THREE.BufferGeometry();
     const dotPositions = new Float32Array(180 * 3);
     for (let index = 0; index < 180; index += 1) {
-      dotPositions[index * 3] = (Math.random() - 0.5) * 9;
-      dotPositions[index * 3 + 1] = Math.random() * 3.4;
-      dotPositions[index * 3 + 2] = (Math.random() - 0.5) * 7;
+      const seeded = (salt: number) => {
+        const value = Math.sin((index + 1) * (12.9898 + salt * 7.13)) * 43758.5453;
+        return value - Math.floor(value);
+      };
+      dotPositions[index * 3] = (seeded(1) - 0.5) * 15;
+      dotPositions[index * 3 + 1] = seeded(2) * 7.1;
+      dotPositions[index * 3 + 2] = (seeded(3) - 0.5) * 11;
     }
     dotGeometry.setAttribute("position", new THREE.BufferAttribute(dotPositions, 3));
     const dots = new THREE.Points(
@@ -162,33 +168,37 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
     );
     scene.add(dots);
 
-    scene.add(new THREE.HemisphereLight("#eafcff", "#72513d", 2.25));
-    const sun = new THREE.DirectionalLight("#fff0ce", 5.4);
-    sun.position.set(2.4, 7.8, -5.8);
+    scene.add(new THREE.HemisphereLight("#eafcff", "#6c5140", 2.4));
+    const sun = new THREE.DirectionalLight("#fff0ce", 5.8);
+    sun.position.set(5.4, 13.5, -10.8);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -7;
-    sun.shadow.camera.right = 7;
-    sun.shadow.camera.top = 7;
-    sun.shadow.camera.bottom = -7;
+    sun.shadow.camera.left = -12;
+    sun.shadow.camera.right = 12;
+    sun.shadow.camera.top = 12;
+    sun.shadow.camera.bottom = -12;
     scene.add(sun);
     const warm = new THREE.PointLight("#ff9b63", 5.5, 5.5, 2);
-    warm.position.set(-2.4, 2.1, 1.8);
+    warm.position.set(-4.2, 2.35, -1.6);
     scene.add(warm);
+    const upstairsGlow = new THREE.PointLight("#ffcf95", 3.8, 8.5, 2);
+    upstairsGlow.position.set(3.6, STORY_HEIGHT + 2.2, -2.4);
+    scene.add(upstairsGlow);
 
     const routeCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-2.75, 0, 2.25),
-      new THREE.Vector3(-1.7, 0, 1.4),
-      new THREE.Vector3(-0.9, 0, 0.45),
-      new THREE.Vector3(0.05, 0, 0.2),
-      new THREE.Vector3(0.9, 0, -0.72),
-      new THREE.Vector3(2.28, 0, -1.83),
+      new THREE.Vector3(-4.9, 0.08, 3.82),
+      new THREE.Vector3(-3.75, 0.08, 2.72),
+      new THREE.Vector3(-2.15, 0.08, 1.48),
+      new THREE.Vector3(-0.45, 0.08, 0.52),
+      new THREE.Vector3(1.42, 0.08, -0.18),
+      new THREE.Vector3(2.48, 0.08, -1.42),
+      new THREE.Vector3(3.42, 0.08, -2.68),
     ]);
-    const widePosition = new THREE.Vector3(8.2, 5.4, 8.6);
-    const wideTarget = new THREE.Vector3(0, 0.85, -0.15);
-    const overviewPosition = new THREE.Vector3(5.8, 3.15, 6.15);
-    const finalPosition = new THREE.Vector3(-6.8, 4.1, 7.2);
-    const finalTarget = new THREE.Vector3(0.35, 0.9, -0.4);
+    const widePosition = new THREE.Vector3(15.2, 9.5, 15.7);
+    const wideTarget = new THREE.Vector3(-0.8, 2.78, -0.15);
+    const overviewPosition = new THREE.Vector3(12.6, 5.25, 11.8);
+    const finalPosition = new THREE.Vector3(-16.2, 10.4, 17.2);
+    const finalTarget = new THREE.Vector3(0.2, 3.0, -0.25);
     const cameraPosition = new THREE.Vector3();
     const cameraTarget = new THREE.Vector3();
     const forward = new THREE.Vector3();
@@ -214,7 +224,7 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
       object.visible = progressValue >= start;
       const fall = smooth((progressValue - start) / 0.085);
       const bounce = Math.abs(Math.sin(fall * Math.PI * 2.5)) * (1 - fall) * 0.34;
-      object.position.y = THREE.MathUtils.lerp(5.2, ground, fall) + bounce;
+      object.position.y = THREE.MathUtils.lerp(8.6, ground, fall) + bounce;
       object.rotation.y = (1 - fall) * 1.8;
       object.scale.setScalar(0.78 + fall * 0.22);
     };
@@ -239,15 +249,18 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
       setDrop(box, 0.16, 0, p);
       setDrop(basket, 0.25, 0, p);
       setDrop(lamp, 0.34, 0, p);
-      basket.position.x = liveRef.current.scenario === "laundry" ? -0.28 : -1.95;
-      basket.position.z = liveRef.current.scenario === "laundry" ? 0.5 : 1.9;
+      basket.position.x = liveRef.current.scenario === "laundry" ? -0.55 : -5.45;
+      basket.position.z = liveRef.current.scenario === "laundry" ? 0.72 : 2.68;
       frictionPatch.visible = liveRef.current.scenario === "low_friction";
       frictionPatch.material.opacity = 0.2 + Math.sin(elapsed * 3) * 0.07;
+
+      const floorLift = smooth((p - 0.12) / 0.15) * (1 - smooth((p - 0.72) / 0.16));
+      house.upperFloor.position.y = floorLift * 1.15;
 
       const povMix = smooth((p - 0.48) / 0.1) * (1 - smooth((p - 0.77) / 0.09));
       const finalMix = smooth((p - 0.79) / 0.16);
       cameraPosition.lerpVectors(widePosition, overviewPosition, smooth(p / 0.34));
-      cameraTarget.copy(wideTarget).lerp(robot.position.clone().add(new THREE.Vector3(0, 0.9, 0)), smooth((p - 0.08) / 0.28));
+      cameraTarget.copy(wideTarget).lerp(robot.position.clone().add(new THREE.Vector3(0, 1.05, 0)), smooth((p - 0.08) / 0.28));
 
       const headPosition = robot.position.clone().add(new THREE.Vector3(0, 1.43, 0));
       const headTarget = headPosition.clone().add(forward.clone().multiplyScalar(3.6));
@@ -255,8 +268,8 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
       cameraTarget.lerp(headTarget, povMix);
       cameraPosition.lerp(finalPosition, finalMix);
       cameraTarget.lerp(finalTarget, finalMix);
-      cameraPosition.x += pointerX * 0.16 * (1 - povMix);
-      cameraPosition.y -= pointerY * 0.1 * (1 - povMix);
+      cameraPosition.x += pointerX * 0.3 * (1 - povMix);
+      cameraPosition.y -= pointerY * 0.18 * (1 - povMix);
       camera.position.lerp(cameraPosition, 0.075);
       camera.lookAt(cameraTarget);
 
@@ -307,7 +320,7 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
       className="mm-world"
       ref={hostRef}
       role="img"
-      aria-label="Interactive 3D living room with MM-01 completing a household delivery"
+      aria-label="Interactive two-story 3D home with MM-01 completing a household delivery"
     />
   );
 }

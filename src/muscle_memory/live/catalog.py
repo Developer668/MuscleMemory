@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -15,7 +16,7 @@ from muscle_memory.paths import REPOSITORY_ROOT
 from muscle_memory.worlds.models import TrainingWorld
 
 LIVE_WORLD_CATALOG_PATH = REPOSITORY_ROOT / "config" / "worlds" / "live-training-v1.json"
-LIVE_WORLD_CATALOG_SHA256 = "f1945556ebb68c2f86385a613638613a4460f206624f38be1bec6c2568479b8f"
+LIVE_WORLD_CATALOG_SHA256 = "c44bc36365ec9107a060556dc4e82689a02911e4f2ef26186cc1ffffc1ffbe75"
 MAXIMUM_CATALOG_BYTES = 2 * 1024 * 1024
 REQUIRED_VALIDATION_CHECKS = frozenset(
     {
@@ -86,11 +87,14 @@ class ValidatedRuntimeWorld:
 class LiveWorldCatalog:
     catalog_id: str
     artifact_sha256: str
+    validated_at: datetime
     worlds: tuple[ValidatedRuntimeWorld, ...]
 
     def __post_init__(self) -> None:
         if not self.catalog_id or _SHA256_PATTERN.fullmatch(self.artifact_sha256) is None:
             raise LiveWorldCatalogError("live world catalog identity is malformed")
+        if self.validated_at.tzinfo is None or self.validated_at.utcoffset() is None:
+            raise LiveWorldCatalogError("live world catalog validation time must be timezone-aware")
         if not self.worlds:
             raise LiveWorldCatalogError("live world catalog must not be empty")
         seeds = tuple(item.world.seed for item in self.worlds)
@@ -133,11 +137,26 @@ class LiveWorldCatalog:
         if not isinstance(decoded, dict) or set(decoded) != {
             "schema_version",
             "catalog_id",
+            "validated_at",
             "worlds",
         }:
             raise LiveWorldCatalogError("live world catalog contract is invalid")
-        if decoded["schema_version"] != 1 or not isinstance(decoded["catalog_id"], str):
+        if (
+            decoded["schema_version"] != 1
+            or not isinstance(decoded["catalog_id"], str)
+            or not isinstance(decoded["validated_at"], str)
+        ):
             raise LiveWorldCatalogError("live world catalog version is unsupported")
+        try:
+            validated_at = datetime.fromisoformat(decoded["validated_at"])
+        except ValueError as exc:
+            raise LiveWorldCatalogError(
+                "live world catalog validation time is malformed"
+            ) from exc
+        if validated_at.tzinfo is None or validated_at.utcoffset() is None:
+            raise LiveWorldCatalogError(
+                "live world catalog validation time must be timezone-aware"
+            )
         artifact_sha256 = _sha256_json(decoded)
         if artifact_sha256 != expected_sha256:
             raise LiveWorldCatalogError("live world catalog does not match its pinned hash")
@@ -173,6 +192,7 @@ class LiveWorldCatalog:
         return cls(
             catalog_id=decoded["catalog_id"],
             artifact_sha256=artifact_sha256,
+            validated_at=validated_at,
             worlds=tuple(admitted),
         )
 

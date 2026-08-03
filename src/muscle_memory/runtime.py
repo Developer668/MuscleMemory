@@ -73,6 +73,7 @@ def build_api_backend(
             coordinator,
             expected_robot_checksum=verification.robot_checksum,
         )
+        live_world_catalog = LiveWorldCatalog.load()
         episode_service = EpisodeService(
             telemetry_backend=providers.laserdata,
             telemetry_store=providers.laserdata.spool,
@@ -81,6 +82,7 @@ def build_api_backend(
             graph_prerequisites=CoordinatorGraphPrerequisiteResolver(
                 coordinator,
                 expected_robot_checksum=verification.robot_checksum,
+                catalog=live_world_catalog,
             ),
         )
         episode_runtime = OperationalEpisodeRuntime(
@@ -140,7 +142,7 @@ def build_api_backend(
             )
             controller = LiveEpisodeController(
                 manager=manager,
-                worlds=LiveWorldCatalog.load(),
+                worlds=live_world_catalog,
                 policies=(selection,),
             )
             setattr(backend, "live_episode_controller", controller)  # noqa: B010

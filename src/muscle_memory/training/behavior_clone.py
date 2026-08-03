@@ -44,11 +44,18 @@ class BehaviorCloneConfig:
     policy_id: str = "delivery-v1-bc"
     inference_strategy: str = CONTINUOUS_INFERENCE_STRATEGY
     avoidance_distance_m: float = 2.6
-    avoidance_gain: float = 1.35
+    avoidance_gain: float = 1.8
     avoidance_exponent: float = 2.0
-    avoidance_activation: float = 0.2
+    avoidance_activation: float = 0.1
     avoidance_docking_suppression_m: float = 1.0
     learned_turn_blend: float = 0.0
+    avoidance_release: float = 0.06
+    avoidance_reversal: float = 0.18
+    avoidance_release_ticks: int = 5
+    held_repulsion: float = 0.16
+    turn_slew_per_update: float = 0.1
+    sparse_risk_threshold: float = 0.2
+    sparse_turn_slew_per_update: float = 0.15
 
 
 DEFAULT_BEHAVIOR_CLONE_CONFIG = BehaviorCloneConfig()
@@ -377,6 +384,19 @@ def train_behavior_clone(
             dtype=np.float64,
         ),
         learned_turn_blend=np.asarray(config.learned_turn_blend, dtype=np.float64),
+        avoidance_release=np.asarray(config.avoidance_release, dtype=np.float64),
+        avoidance_reversal=np.asarray(config.avoidance_reversal, dtype=np.float64),
+        avoidance_release_ticks=np.asarray(
+            config.avoidance_release_ticks,
+            dtype=np.int64,
+        ),
+        held_repulsion=np.asarray(config.held_repulsion, dtype=np.float64),
+        turn_slew_per_update=np.asarray(config.turn_slew_per_update, dtype=np.float64),
+        sparse_risk_threshold=np.asarray(config.sparse_risk_threshold, dtype=np.float64),
+        sparse_turn_slew_per_update=np.asarray(
+            config.sparse_turn_slew_per_update,
+            dtype=np.float64,
+        ),
         input_mean=input_mean,
         input_std=input_std,
         weight_1=best_parameters["weight_1"],

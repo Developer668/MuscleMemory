@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "catalog_id": "live-training-v1",
+  "validated_at": "2026-08-03T12:57:14-07:00",
   "worlds": [
     {
       "world": {
@@ -3901,6 +3902,263 @@
       },
       "world_sha256": "91d038e34a4404482ed27d1b968964a35cef536e7de46b579dc1e0cd0e715037",
       "baseline_path_sha256": "f49072c675c1ad1ce5a7984807afc9bb4b211833918b16288471a0ae51823969",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-000000000000002a",
+        "split": "training",
+        "seed": 42,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "chair-00",
+            "category": "chair",
+            "position": {
+              "x": 4.211,
+              "y": 4.207
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.637,
+                "width_m": 0.453,
+                "height_m": 1.119
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 19.521,
+              "sliding_friction": 0.899,
+              "restitution": 0.008,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-01",
+            "category": "chair",
+            "position": {
+              "x": 3.316,
+              "y": 2.2
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.466,
+                "width_m": 0.596,
+                "height_m": 1.157
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 11.621,
+              "sliding_friction": 0.66,
+              "restitution": 0.035,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-02",
+            "category": "box",
+            "position": {
+              "x": 3.937,
+              "y": 1.441
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.555,
+                "width_m": 0.493,
+                "height_m": 0.322
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 3.871,
+              "sliding_friction": 0.852,
+              "restitution": 0.017,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-03",
+            "category": "chair",
+            "position": {
+              "x": 3.57,
+              "y": 3.285
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.486,
+                "width_m": 0.663,
+                "height_m": 1.06
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 3.247,
+              "sliding_friction": 0.602,
+              "restitution": 0.05,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-04",
+            "category": "stool",
+            "position": {
+              "x": 4.856,
+              "y": 2.902
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.375,
+                "width_m": 0.375,
+                "height_m": 0.691
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.092,
+              "sliding_friction": 0.914,
+              "restitution": 0.086,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-05",
+            "category": "box",
+            "position": {
+              "x": 1.979,
+              "y": 4.049
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.658,
+                "width_m": 0.543,
+                "height_m": 0.498
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 10.46,
+              "sliding_friction": 0.52,
+              "restitution": 0.184,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-06",
+            "category": "laundry_basket",
+            "position": {
+              "x": 6.191,
+              "y": 1.885
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.694,
+                "width_m": 0.541,
+                "height_m": 0.615
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 1.927,
+              "sliding_friction": 0.677,
+              "restitution": 0.119,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-07",
+            "category": "laundry_basket",
+            "position": {
+              "x": 6.391,
+              "y": 2.64
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.513,
+                "width_m": 0.649,
+                "height_m": 0.72
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 5.399,
+              "sliding_friction": 0.459,
+              "restitution": 0.014,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "71b94a8de0e9388a235c18db4c8fc016b758ff4d099afeca9fb849f3d1185e39",
+      "baseline_path_sha256": "a34b991d00d190254ceea9a9955f6b822a8ad8fef1d19a078c9c20661309790a",
       "validation_checks": [
         "approved_colliders",
         "baseline_path_exists",

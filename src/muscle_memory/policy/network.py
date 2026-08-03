@@ -57,6 +57,13 @@ class BehaviorClonedPolicy:
         avoidance_activation: float = 0.2,
         avoidance_docking_suppression_m: float = 1.0,
         learned_turn_blend: float = 0.0,
+        avoidance_release: float = 0.06,
+        avoidance_reversal: float = 0.18,
+        avoidance_release_ticks: int = 5,
+        held_repulsion: float = 0.16,
+        turn_slew_per_update: float = 0.1,
+        sparse_risk_threshold: float = 0.2,
+        sparse_turn_slew_per_update: float = 0.15,
     ) -> None:
         self.policy_id = policy_id
         self.policy_hash = policy_hash
@@ -75,6 +82,16 @@ class BehaviorClonedPolicy:
         self._avoidance_activation = avoidance_activation
         self._avoidance_docking_suppression_m = avoidance_docking_suppression_m
         self._learned_turn_blend = learned_turn_blend
+        self._avoidance_release = avoidance_release
+        self._avoidance_reversal = avoidance_reversal
+        self._avoidance_release_ticks = avoidance_release_ticks
+        self._held_repulsion = held_repulsion
+        self._turn_slew_per_update = turn_slew_per_update
+        self._sparse_risk_threshold = sparse_risk_threshold
+        self._sparse_turn_slew_per_update = sparse_turn_slew_per_update
+        self._avoidance_side = 0
+        self._avoidance_clear_ticks = 0
+        self._previous_turn = 0.0
 
     @classmethod
     def load(cls, path: Path = POLICY_V1_CHECKPOINT) -> BehaviorClonedPolicy:
@@ -120,6 +137,41 @@ class BehaviorClonedPolicy:
                         float(checkpoint["avoidance_docking_suppression_m"])
                         if "avoidance_docking_suppression_m" in checkpoint.files
                         else 1.0
+                    ),
+                    "avoidance_release": (
+                        float(checkpoint["avoidance_release"])
+                        if "avoidance_release" in checkpoint.files
+                        else 0.06
+                    ),
+                    "avoidance_reversal": (
+                        float(checkpoint["avoidance_reversal"])
+                        if "avoidance_reversal" in checkpoint.files
+                        else 0.18
+                    ),
+                    "avoidance_release_ticks": (
+                        int(checkpoint["avoidance_release_ticks"])
+                        if "avoidance_release_ticks" in checkpoint.files
+                        else 5
+                    ),
+                    "held_repulsion": (
+                        float(checkpoint["held_repulsion"])
+                        if "held_repulsion" in checkpoint.files
+                        else 0.16
+                    ),
+                    "turn_slew_per_update": (
+                        float(checkpoint["turn_slew_per_update"])
+                        if "turn_slew_per_update" in checkpoint.files
+                        else 0.1
+                    ),
+                    "sparse_risk_threshold": (
+                        float(checkpoint["sparse_risk_threshold"])
+                        if "sparse_risk_threshold" in checkpoint.files
+                        else 0.2
+                    ),
+                    "sparse_turn_slew_per_update": (
+                        float(checkpoint["sparse_turn_slew_per_update"])
+                        if "sparse_turn_slew_per_update" in checkpoint.files
+                        else 0.15
                     ),
                 }
                 arrays = {
@@ -174,7 +226,7 @@ class BehaviorClonedPolicy:
                 raise RuntimeError(f"task-policy checkpoint tensor is invalid: {name}")
         if np.any(arrays["input_std"] <= 0.0):
             raise RuntimeError("task-policy input standard deviation must be positive")
-        if not all(np.isfinite(value) for value in fusion_parameters.values()):
+        if not all(np.isfinite(float(value)) for value in fusion_parameters.values()):
             raise RuntimeError("task-policy sensor-fusion parameters must be finite")
         if not (
             0.2 < fusion_parameters["avoidance_distance_m"] <= 8.0
@@ -185,6 +237,15 @@ class BehaviorClonedPolicy:
             <= fusion_parameters["avoidance_docking_suppression_m"]
             <= 2.0
             and 0.0 <= fusion_parameters["learned_turn_blend"] <= 1.0
+            and 0.0 <= fusion_parameters["avoidance_release"] < 0.52
+            and 0.0 < fusion_parameters["avoidance_reversal"] <= 0.52
+            and 1 <= fusion_parameters["avoidance_release_ticks"] <= 100
+            and 0.0 <= fusion_parameters["held_repulsion"] <= 0.52
+            and 0.0 < fusion_parameters["turn_slew_per_update"] <= 0.5
+            and 0.0 <= fusion_parameters["sparse_risk_threshold"] <= 48.0
+            and 0.0
+            < fusion_parameters["sparse_turn_slew_per_update"]
+            <= 0.5
         ):
             raise RuntimeError("task-policy sensor-fusion parameters are out of bounds")
         return cls(
@@ -199,6 +260,15 @@ class BehaviorClonedPolicy:
                 "avoidance_docking_suppression_m"
             ],
             learned_turn_blend=fusion_parameters["learned_turn_blend"],
+            avoidance_release=fusion_parameters["avoidance_release"],
+            avoidance_reversal=fusion_parameters["avoidance_reversal"],
+            avoidance_release_ticks=int(fusion_parameters["avoidance_release_ticks"]),
+            held_repulsion=fusion_parameters["held_repulsion"],
+            turn_slew_per_update=fusion_parameters["turn_slew_per_update"],
+            sparse_risk_threshold=fusion_parameters["sparse_risk_threshold"],
+            sparse_turn_slew_per_update=fusion_parameters[
+                "sparse_turn_slew_per_update"
+            ],
             input_mean=arrays["input_mean"],
             input_std=arrays["input_std"],
             weight_1=arrays["weight_1"],
@@ -252,6 +322,10 @@ class BehaviorClonedPolicy:
 
     def _sensor_fusion_command(self, observation: NavigationObservation) -> TaskCommand:
         distance = observation.destination_distance_m
+        if observation.values[-1] >= 0.5 and distance > 1.0:
+            self._avoidance_side = 0
+            self._avoidance_clear_ticks = 0
+            self._previous_turn = 0.0
         if distance <= DOCKING_STOP_DISTANCE_M:
             return TaskCommand(0.0, 0.0, 1.0)
 
@@ -272,23 +346,52 @@ class BehaviorClonedPolicy:
         total_risk = float(np.sum(risk))
         repulsion = float(np.sum(risk * -sector_angles) / max(total_risk, 0.05))
         front_depth = float(np.percentile(depths_m[17:31], 20.0))
-        avoidance_active = (
-            distance > self._avoidance_docking_suppression_m
-            and abs(repulsion) >= self._avoidance_activation
-        )
+        if distance <= self._avoidance_docking_suppression_m:
+            self._avoidance_side = 0
+        elif self._avoidance_side:
+            if repulsion * self._avoidance_side < -self._avoidance_reversal:
+                self._avoidance_side = 1 if repulsion > 0.0 else -1
+                self._avoidance_clear_ticks = 0
+            elif abs(repulsion) < self._avoidance_release:
+                self._avoidance_clear_ticks += 1
+                if self._avoidance_clear_ticks >= self._avoidance_release_ticks:
+                    self._avoidance_side = 0
+            else:
+                self._avoidance_clear_ticks = 0
+        elif abs(repulsion) >= self._avoidance_activation:
+            self._avoidance_side = 1 if repulsion > 0.0 else -1
+
+        avoidance_active = bool(self._avoidance_side)
+        active_repulsion = 0.0
+        if avoidance_active:
+            active_repulsion = (
+                repulsion
+                if repulsion * self._avoidance_side > 0.0
+                else self._held_repulsion * self._avoidance_side
+            )
         direct_turn = 1.4 * observation.destination_bearing_rad
         learned_turn = float(outputs[1] * POLICY_MAXIMUM_TURNING_RATE_RAD_S)
         turning_delta = 0.0
         if avoidance_active:
-            turning_delta = self._avoidance_gain * repulsion
+            turning_delta = self._avoidance_gain * active_repulsion
             turning_delta += self._learned_turn_blend * (learned_turn - direct_turn)
-        turning = max(
+        desired_turn = max(
             -POLICY_MAXIMUM_TURNING_RATE_RAD_S,
             min(
                 POLICY_MAXIMUM_TURNING_RATE_RAD_S,
                 direct_turn + turning_delta,
             ),
         )
+        turn_slew = (
+            self._sparse_turn_slew_per_update
+            if total_risk < self._sparse_risk_threshold
+            else self._turn_slew_per_update
+        )
+        turning = max(
+            self._previous_turn - turn_slew,
+            min(self._previous_turn + turn_slew, desired_turn),
+        )
+        self._previous_turn = turning
         target_heading = turning / 1.4
         if abs(target_heading) > 0.22:
             forward = 0.0

@@ -766,6 +766,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        hub.bind_running_loop()
         await backend.startup()
         try:
             yield

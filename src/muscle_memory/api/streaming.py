@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -50,16 +51,46 @@ class LiveTelemetryHub:
         self._subscribers: dict[str, dict[int, _Subscriber]] = {}
         self._ids = itertools.count()
         self._lock = asyncio.Lock()
+        self._loop_guard = threading.Lock()
+        self._owning_loop: asyncio.AbstractEventLoop | None = None
         self._closed = False
 
     @property
     def queue_size(self) -> int:
         return self._queue_size
 
+    def bind_running_loop(self) -> None:
+        """Pin all subscriber state to the FastAPI event loop."""
+
+        running = asyncio.get_running_loop()
+        with self._loop_guard:
+            if self._owning_loop is None:
+                self._owning_loop = running
+            elif self._owning_loop is not running:
+                raise RuntimeError("live telemetry hub is bound to another event loop")
+
+    async def _on_owning_loop(self, message: LiveStreamMessage) -> None:
+        running = asyncio.get_running_loop()
+        with self._loop_guard:
+            if self._owning_loop is None:
+                self._owning_loop = running
+            owning = self._owning_loop
+        if owning is running:
+            await self._publish_on_owning_loop(message)
+            return
+        if owning.is_closed():
+            raise RuntimeError("live telemetry hub event loop is closed")
+        future = asyncio.run_coroutine_threadsafe(
+            self._publish_on_owning_loop(message),
+            owning,
+        )
+        await asyncio.wrap_future(future)
+
     @asynccontextmanager
     async def subscribe(self, episode_id: str) -> AsyncIterator[LiveSubscription]:
         if not episode_id.strip():
             raise ValueError("episode_id must not be blank")
+        self.bind_running_loop()
         subscriber = _Subscriber(queue=asyncio.Queue(maxsize=self._queue_size))
         subscription_id = next(self._ids)
         async with self._lock:
@@ -102,6 +133,9 @@ class LiveTelemetryHub:
         )
 
     async def publish(self, message: LiveStreamMessage) -> None:
+        await self._on_owning_loop(message)
+
+    async def _publish_on_owning_loop(self, message: LiveStreamMessage) -> None:
         async with self._lock:
             if self._closed:
                 return
@@ -123,6 +157,7 @@ class LiveTelemetryHub:
         subscriber.queue.put_nowait(outgoing)
 
     async def close(self) -> None:
+        self.bind_running_loop()
         async with self._lock:
             if self._closed:
                 return
@@ -140,4 +175,3 @@ class LiveTelemetryHub:
 
 
 __all__ = ["LiveSubscription", "LiveTelemetryHub"]
-

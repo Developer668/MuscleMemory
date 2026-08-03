@@ -20,7 +20,7 @@ from muscle_memory.worlds.generation import generate_training_world
 from muscle_memory.worlds.generation.models import ValidatedTrainingWorld
 from muscle_memory.worlds.rules import load_world_rules
 
-DEVELOPMENT_SEED_START = 600_000_000
+DEVELOPMENT_SEED_START = 700_000_000
 DEFAULT_DEVELOPMENT_WORLDS = 12
 MAXIMUM_EXPERT_PATH_LENGTH_M = 8.2
 DEFAULT_OUTPUT = POLICY_V2_DEVELOPMENT_EVIDENCE

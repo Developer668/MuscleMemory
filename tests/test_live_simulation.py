@@ -137,7 +137,7 @@ def test_video_service_is_bounded_and_serves_named_mjpeg_products() -> None:
     assert all(b"X-Frame-Id: episode-video:video:" in chunk for chunk in chunks)
 
 
-def test_live_import_cannot_reach_path_teacher_or_training_expert() -> None:
+def test_production_live_import_cannot_reach_path_teacher_or_training_expert() -> None:
     audit = subprocess.run(
         [
             sys.executable,
@@ -145,7 +145,7 @@ def test_live_import_cannot_reach_path_teacher_or_training_expert() -> None:
             "\n".join(
                 (
                     "import sys",
-                    "import muscle_memory.live.runner",
+                    "import muscle_memory.runtime",
                     "assert 'muscle_memory.worlds.generation.pathfinding' not in sys.modules",
                     "assert 'muscle_memory.training.expert' not in sys.modules",
                 )

@@ -11,6 +11,7 @@ traffic.
 - React 19 and TypeScript 6
 - Vite 8 for development and production builds
 - Motion for React for entrance, scroll, and pointer-responsive animation
+- Three.js for the scroll-directed household scene and MM-01 demonstration
 - Lucide React for interface icons
 - Self-hosted Manrope and Newsreader fonts
 - Plain CSS with shared design tokens; no runtime CSS framework
@@ -35,7 +36,8 @@ The development server binds to `0.0.0.0:4173` and proxies `/api` (including Web
 
 ## Product rules
 
-- The landing hero uses a checked-in project asset, never a network-dependent image.
+- The landing hero renders locally with WebGL; its two-story house still is captured from the same
+  checked-in scene and never depends on a network image.
 - Pointer motion is transform-only and has a `prefers-reduced-motion` fallback.
 - Every breakpoint must remain horizontally scroll-free and leave the next section visible below
   the hero.
@@ -51,8 +53,11 @@ The development server binds to `0.0.0.0:4173` and proxies `/api` (including Web
 The workspace reads `/api/v1/health`, `/episodes`, `/approvals/pending`, `/policies`, and the
 selected episode's telemetry or replay page. Running episodes attach to
 `/api/v1/episodes/{episode_id}/live`; the browser accepts only the typed 20 Hz messages and keeps
-`frame_id` as the sole video join. Camera surfaces render a direct stream URL only when one is
-present in real video metadata. Otherwise they remain visibly unavailable.
+`frame_id` as the sole video join. The live controls read `/api/v1/live/options`, select only an
+admitted catalog seed and evaluated policy, and use authenticated start/cancel mutations. Camera
+surfaces use the direct 30 FPS MJPEG URLs during a run and exact-frame URLs while scrubbing a
+buffered replay. Otherwise they remain visibly unavailable; the browser does not substitute the
+illustrative product scene for simulator output.
 
 Human decisions and route or keep-out corrections use the API's existing authenticated mutation
 routes. The operator credential is held in `sessionStorage`, never written into a URL, build asset,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -242,6 +242,44 @@ def test_fresh_episode_registers_validated_graph_parents_before_episode(
     assert kinds[0] == "world"
     assert kinds[-2:] == ["evaluated_policy", "episode"]
     assert all(kind == "obstacle" for kind in kinds[1:-2])
+    coordinator.close()
+    spool.close()
+
+
+def test_repeated_catalog_seed_reuses_immutable_graph_parents(tmp_path: Path) -> None:
+    coordinator, spool, graph_cache, service, first_identity = _build_service(tmp_path)
+    second_identity = replace(
+        first_identity,
+        episode_id="episode-2",
+        opened_at=NOW + timedelta(seconds=1),
+    )
+
+    async def exercise() -> None:
+        await service.open_episode(first_identity)
+        await service.append_telemetry(_telemetry(first_identity))
+        first = await service.close_episode(_result(first_identity), closed_at=NOW)
+
+        await service.open_episode(second_identity)
+        await service.append_telemetry(_telemetry(second_identity))
+        second = await service.close_episode(
+            _result(second_identity),
+            closed_at=NOW + timedelta(seconds=2),
+        )
+        assert first.graph.complete
+        assert second.graph.complete
+
+    asyncio.run(exercise())
+    earlier = derive_training_world_artifacts(SEED, recorded_at=NOW)
+    later = derive_training_world_artifacts(
+        SEED,
+        recorded_at=NOW + timedelta(days=1),
+    )
+    assert earlier.world == later.world
+    assert earlier.obstacles == later.obstacles
+    kinds = tuple(event.record_kind for event in graph_cache.events)
+    assert kinds.count("world") == 1
+    assert kinds.count("obstacle") == len(earlier.obstacles)
+    assert kinds.count("episode") == 2
     coordinator.close()
     spool.close()
 
