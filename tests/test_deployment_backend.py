@@ -151,6 +151,7 @@ def test_daytona_deploy_enforces_cloud_runtime_shape_and_provider_gate() -> None
     assert 'payload.get("public") is not True' in deploy
     assert 'item.get("mountPath") == "/data"' in deploy
     assert '"${#REVISION}" -ne 40' in deploy
+    assert 'reset --hard HEAD' in deploy
     assert "ops.deployment.daytona_process" in deploy
     assert "ops.deployment.daytona_process --stop" in deploy
     assert 'reset --hard "$RESOLVED_REVISION"' in deploy

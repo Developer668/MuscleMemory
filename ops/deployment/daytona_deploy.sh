@@ -96,6 +96,8 @@ else
 fi
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" fetch --depth 1 origin "$REVISION"
 RESOLVED_REVISION=$(daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" rev-parse FETCH_HEAD)
+daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" reset --hard HEAD
+daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" clean -ffdx
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" checkout --detach "$RESOLVED_REVISION"
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" reset --hard "$RESOLVED_REVISION"
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" clean -ffdx
