@@ -12,6 +12,7 @@ from integrations.rocketride.protocol import (
     canonical_json,
     sha256_text,
 )
+from integrations.rocketride.runtime import ReviewedPipelineArtifact
 
 __all__ = [
     "FIXED_STEPS",
@@ -19,6 +20,7 @@ __all__ = [
     "ApprovalRejectedError",
     "ContractError",
     "FixedStepDispatcher",
+    "ReviewedPipelineArtifact",
     "SequenceError",
     "SequenceLedger",
     "StepEnvelope",

@@ -127,6 +127,8 @@ def telemetry(
 ) -> EpisodeTelemetryRecord:
     return EpisodeTelemetryRecord.create(
         episode_id="episode-1",
+        world_id="world-1",
+        policy_id="policy-1",
         sequence=sequence,
         sim_time_seconds=sequence / 20 if sim_time_seconds is None else sim_time_seconds,
         robot_checksum=ROBOT_HASH,

@@ -11,6 +11,7 @@ import urllib.request
 from collections.abc import Mapping
 from threading import RLock
 from typing import Any, Protocol, cast
+from urllib.parse import urlparse
 
 from muscle_memory.assets.models import (
     ArtifactRole,
@@ -126,6 +127,8 @@ class _HttpProviderState:
     def __init__(self, *, provider_name: str, endpoint: str | None) -> None:
         self.provider_name = provider_name
         self.endpoint = endpoint.strip() if endpoint else None
+        if self.endpoint is not None:
+            _validate_provider_endpoint(self.endpoint)
         self._lock = RLock()
         if self.endpoint is None:
             self._snapshot = ProviderSnapshot(
@@ -173,6 +176,19 @@ def _validate_timeout(timeout_seconds: float) -> float:
             f"provider timeout must be within (0, {MAX_PROVIDER_TIMEOUT_SECONDS}] seconds"
         )
     return timeout_seconds
+
+
+def _validate_provider_endpoint(endpoint: str) -> None:
+    parsed = urlparse(endpoint)
+    local_http = parsed.scheme == "http" and parsed.hostname in {
+        "127.0.0.1",
+        "::1",
+        "localhost",
+    }
+    if parsed.scheme != "https" and not local_http:
+        raise ValueError("asset provider endpoints require HTTPS or loopback HTTP")
+    if not parsed.netloc or parsed.username is not None or parsed.password is not None:
+        raise ValueError("asset provider endpoints cannot embed credentials")
 
 
 def _authorization_headers(api_key: str | None) -> dict[str, str]:

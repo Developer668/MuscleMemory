@@ -148,6 +148,25 @@ def test_roster_and_execution_plan_require_exact_order() -> None:
         ExecutionPlan.create(plan.run_id, tuple(reversed(plan.commands)))
 
 
+def test_sponsor_credentials_are_excluded_from_configuration_reprs(
+    tmp_path: Path,
+) -> None:
+    guild_secret = "guild-key-id:guild-secret-value"
+    endpoint = GuildRoleEndpoint(EXACT_GUILD_ROLES[0], guild_secret)
+    pipeline = tmp_path / "pipeline.pipe"
+    pipeline.write_text("reviewed pipeline", encoding="utf-8")
+    rocketride_secret = "rocketride-secret-value"
+    config = RocketRideSdkConfig(
+        uri="https://cloud.rocketride.example.test",
+        api_key=rocketride_secret,
+        pipeline_path=pipeline,
+        pipeline_sha256=sha256_text("reviewed pipeline"),
+    )
+
+    assert guild_secret not in repr(endpoint)
+    assert rocketride_secret not in repr(config)
+
+
 def test_evaluation_command_rejects_teacher_or_extra_runtime_inputs() -> None:
     with pytest.raises(ContractViolationError, match="only policy ids"):
         PipelineCommand.create(
@@ -315,9 +334,7 @@ def test_rocketride_exact_plan_cache_is_explicit_and_does_not_generalize() -> No
     plan = _plan()
     ledger = InMemoryApprovalLedger()
     _approve_all(plan, ledger)
-    complete = asyncio.run(
-        FixedPipelineExecutor(_simulated_transport([]), ledger).execute(plan)
-    )
+    complete = asyncio.run(FixedPipelineExecutor(_simulated_transport([]), ledger).execute(plan))
     cache = InMemoryPipelineRunCache()
     cache.put(complete)
     cache.put(complete)
@@ -403,9 +420,7 @@ def test_guild_api_adapter_calls_each_exact_role_with_basic_auth() -> None:
         assert body is not None
         agent_input = json.loads(body)["agent_input"]
         assert agent_input["role"] == endpoint.role.value
-        assert tuple(agent_input["pipeline_steps"]) == tuple(
-            step.value for step in FIXED_PIPELINE
-        )
+        assert tuple(agent_input["pipeline_steps"]) == tuple(step.value for step in FIXED_PIPELINE)
 
 
 class _FakeRocketRideClient:
@@ -482,9 +497,7 @@ def test_rocketride_sdk_adapter_uses_official_async_contract(tmp_path: Path) -> 
 
 
 def test_live_provider_configs_reject_insecure_urls(tmp_path: Path) -> None:
-    endpoints = tuple(
-        GuildRoleEndpoint(role, "key:secret") for role in EXACT_GUILD_ROLES
-    )
+    endpoints = tuple(GuildRoleEndpoint(role, "key:secret") for role in EXACT_GUILD_ROLES)
     with pytest.raises(ContractViolationError, match="HTTPS"):
         GuildApiConfig(
             owner="owner",

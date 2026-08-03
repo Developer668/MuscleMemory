@@ -50,16 +50,17 @@ def make_record(
     )
     return EpisodeTelemetryRecord.create(
         episode_id=episode_id,
+        world_id="world-laserdata-001",
+        policy_id="policy-laserdata-v1",
         sequence=sequence,
-        sim_time_seconds=(
-            sequence / 20 if sim_time_seconds is None else sim_time_seconds
-        ),
+        sim_time_seconds=(sequence / 20 if sim_time_seconds is None else sim_time_seconds),
         robot_checksum="a" * 64,
         policy_hash="b" * 64,
         world_hash="c" * 64,
         signal_use=SignalUseLabel.LOGGED_ONLY,
         sensors=snapshot,
         payload={"event": "numeric_telemetry", "sample_rate_hz": 20},
+        failure_type=None,
         frame_id=joined_frame_id,
     )
 
@@ -231,11 +232,14 @@ def test_wire_envelope_round_trips_and_preserves_the_single_frame_join_key() -> 
     record = make_record(0)
 
     envelope = LaserDataTelemetryEnvelope.from_domain(record)
-    replayed = LaserDataTelemetryEnvelope.model_validate_json(
-        envelope.canonical_json()
-    ).to_domain()
+    replayed = LaserDataTelemetryEnvelope.model_validate_json(envelope.canonical_json()).to_domain()
 
     assert replayed == record
+    assert envelope.schema_version == "muscle-memory.episode-event.v2"
+    assert envelope.record.world_id == "world-laserdata-001"
+    assert envelope.record.policy_id == "policy-laserdata-v1"
+    assert envelope.record.event_time == record.sim_time_seconds
+    assert envelope.record.failure_type is None
     assert envelope.frame_join_key == "frame_id"
     assert envelope.record.frame_id == record.frame_id
     assert envelope.record.sensors[0].model_dump()["category"] == (
@@ -279,9 +283,7 @@ def test_sqlite_triggers_block_record_updates_and_deletes(tmp_path: Path) -> Non
         connection = sqlite3.connect(path)
         try:
             with pytest.raises(sqlite3.IntegrityError, match="immutable"):
-                connection.execute(
-                    "UPDATE telemetry_records SET sequence = 1 WHERE sequence = 0"
-                )
+                connection.execute("UPDATE telemetry_records SET sequence = 1 WHERE sequence = 0")
             with pytest.raises(sqlite3.IntegrityError, match="append-only"):
                 connection.execute("DELETE FROM telemetry_records")
         finally:
@@ -365,8 +367,12 @@ def test_official_transport_uses_the_sdk_topic_publish_and_replay_surface(
     assert request.key == envelope.record.episode_id
     assert request.indexes == {
         "episode_id": envelope.record.episode_id,
+        "event_time": "0.000000000",
         "event_id": envelope.event_id,
+        "failure_type": "none",
+        "policy_id": envelope.record.policy_id,
         "sequence": "0",
+        "world_id": envelope.record.world_id,
     }
     assert request.headers == {"frame_id": envelope.record.frame_id}
     assert request.inline
@@ -375,13 +381,38 @@ def test_official_transport_uses_the_sdk_topic_publish_and_replay_surface(
     assert client.closed
 
 
+def test_failure_events_publish_typed_search_indexes(tmp_path: Path) -> None:
+    client = FakeSdkClient()
+    FakeSdkLaser.client = client
+    transport = OfficialLaserDataTransport(config(tmp_path / "telemetry.sqlite3"))
+    failure_record = replace(
+        make_record(1, sim_time_seconds=0.05),
+        failure_type="body_collision",
+    )
+    envelope = LaserDataTelemetryEnvelope.from_domain(failure_record)
+
+    async def exercise() -> None:
+        await transport.initialize()
+        await transport.publish(envelope)
+        await transport.close()
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            OfficialLaserDataTransport,
+            "_load_sdk",
+            staticmethod(lambda: SimpleNamespace(Laser=FakeSdkLaser)),
+        )
+        asyncio.run(exercise())
+
+    assert client.topic_instance.sent_requests[0].indexes["failure_type"] == ("body_collision")
+    assert client.topic_instance.sent_requests[0].indexes["event_time"] == ("0.050000000")
+
+
 def test_provider_failure_is_degraded_without_leaking_credentials(
     tmp_path: Path,
 ) -> None:
     connection_string = "iggy://admin:do-not-log@example:8090"
-    fake = FakeLaserDataTransport(
-        publish_error=RuntimeError(f"failed at {connection_string}")
-    )
+    fake = FakeLaserDataTransport(publish_error=RuntimeError(f"failed at {connection_string}"))
     backend = LaserDataTelemetryBackend(
         config(tmp_path / "telemetry.sqlite3", connection=connection_string),
         transport_factory=lambda _config: fake,
@@ -424,6 +455,81 @@ def test_reinitialize_flushes_pending_records_in_episode_order(tmp_path: Path) -
     assert recovered_health.state is LaserDataProviderState.HEALTHY
     assert recovered_health.pending_local_records == 0
     asyncio.run(backend.close())
+
+
+def test_startup_recovers_publish_receipt_without_duplicating_provider_event(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "telemetry.sqlite3"
+    record = make_record(0)
+    envelope = LaserDataTelemetryEnvelope.from_domain(record)
+    spool = DurableTelemetrySpool(path)
+    spool.append(record)
+    provider = FakeLaserDataTransport()
+    provider.published.append(envelope)
+    provider.positions[envelope.event_id] = "2:41"
+    backend = LaserDataTelemetryBackend(
+        config(path),
+        spool=spool,
+        transport_factory=lambda _config: provider,
+    )
+
+    health = asyncio.run(backend.initialize())
+
+    assert provider.published == [envelope]
+    assert health.state is LaserDataProviderState.END_TO_END_VERIFIED
+    assert health.pending_local_records == 0
+    assert spool.verified_position(envelope.event_id) == "2:41"
+    asyncio.run(backend.close())
+
+
+def test_provider_verification_position_is_immutable(tmp_path: Path) -> None:
+    path = tmp_path / "telemetry.sqlite3"
+    with DurableTelemetrySpool(path) as spool:
+        record = make_record(0)
+        envelope = LaserDataTelemetryEnvelope.from_domain(record)
+        spool.append(record)
+        spool.mark_provider_accepted(
+            envelope.event_id,
+            provider="LaserData",
+            accepted_at_utc="2026-08-03T12:00:00Z",
+        )
+        spool.mark_provider_verified(
+            envelope.event_id,
+            provider_position="0:1",
+            verified_at_utc="2026-08-03T12:00:01Z",
+        )
+        with pytest.raises(ValueError, match="cannot move"):
+            spool.mark_provider_verified(
+                envelope.event_id,
+                provider_position="0:2",
+                verified_at_utc="2026-08-03T12:00:02Z",
+            )
+
+
+def test_live_event_consumers_are_unreachable_from_policy_control_and_evaluation() -> None:
+    root = Path(__file__).resolve().parents[1] / "src" / "muscle_memory"
+    protected = (
+        root / "policy",
+        root / "robot",
+        root / "simulation" / "controller.py",
+        root / "simulation" / "runtime.py",
+        root / "evaluation",
+    )
+    forbidden = (
+        "telemetry.laserdata",
+        "LaserDataTelemetryBackend",
+        "LiveTelemetryHub",
+        "api.streaming",
+    )
+    violations: list[str] = []
+    for path in protected:
+        files = path.rglob("*.py") if path.is_dir() else (path,)
+        for source_file in files:
+            source = source_file.read_text(encoding="utf-8")
+            if any(symbol in source for symbol in forbidden):
+                violations.append(str(source_file.relative_to(root)))
+    assert violations == []
 
 
 def test_startup_probe_failure_never_claims_provider_health(tmp_path: Path) -> None:

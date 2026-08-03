@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -97,9 +97,9 @@ class PipelineRun:
             raise ContractViolationError("approval-waiting run must name its blocked requirement")
         if self.state is RunState.CACHED and self.fallback is None:
             raise ContractViolationError("cached run must carry a fallback record")
-        if self.state in {RunState.COMPLETED, RunState.CACHED} and len(
-            self.completed_steps
-        ) != len(FIXED_PIPELINE):
+        if self.state in {RunState.COMPLETED, RunState.CACHED} and len(self.completed_steps) != len(
+            FIXED_PIPELINE
+        ):
             raise ContractViolationError("completed runs must contain all fixed pipeline steps")
 
 
@@ -147,9 +147,7 @@ class FixedPipelineExecutor:
                         blocked_requirement=requirement,
                     )
                 if decision.plan_digest != plan.digest:
-                    raise ContractViolationError(
-                        "approval decision belongs to a different plan"
-                    )
+                    raise ContractViolationError("approval decision belongs to a different plan")
                 if decision.verdict is HumanVerdict.REJECT:
                     return PipelineRun(
                         run_id=plan.run_id,
@@ -205,9 +203,7 @@ class FixedPipelineExecutor:
         if prior_run is None:
             return []
         if prior_run.run_id != plan.run_id or prior_run.plan_digest != plan.digest:
-            raise ContractViolationError(
-                "cannot resume a run from a different execution plan"
-            )
+            raise ContractViolationError("cannot resume a run from a different execution plan")
         if prior_run.state not in {
             RunState.AWAITING_HUMAN_APPROVAL,
             RunState.BLOCKED,
@@ -277,7 +273,7 @@ class UnconfiguredRocketRideTransport:
 @dataclass(frozen=True, slots=True)
 class RocketRideSdkConfig:
     uri: str
-    api_key: str
+    api_key: str = field(repr=False)
     pipeline_path: Path
     pipeline_sha256: str
     request_timeout_ms: float = 120_000.0
@@ -380,8 +376,9 @@ class RocketRideSdkTransport:
             self._mark_unhealthy("RocketRide task contract failed")
             raise
         except Exception as exc:
-            self._mark_unhealthy(str(exc))
-            raise RocketRideUnavailableError(f"RocketRide execution failed: {exc}") from exc
+            detail = f"RocketRide execution failed ({type(exc).__name__})"
+            self._mark_unhealthy(detail)
+            raise RocketRideUnavailableError(detail) from exc
 
     def _mark_unhealthy(self, detail: str) -> None:
         self._status = ProviderStatus(

@@ -2,6 +2,7 @@
   "contract_version": 1,
   "provider": "guild.ai",
   "tested_cli_version": "0.17.0",
+  "publish_category": "development",
   "publish_environment": [
     {
       "name": "MUSCLE_MEMORY_GUILD_OWNER",

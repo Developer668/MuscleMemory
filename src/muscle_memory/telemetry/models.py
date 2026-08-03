@@ -5,9 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass, fields
 from enum import StrEnum
 from typing import Any
+
+_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+_FAILURE_TYPE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 class SignalUseLabel(StrEnum):
@@ -161,8 +165,11 @@ class EpisodeTelemetryRecord:
     """
 
     episode_id: str
+    world_id: str
+    policy_id: str
     sequence: int
     sim_time_seconds: float
+    event_time: float
     robot_checksum: str
     policy_hash: str
     world_hash: str
@@ -170,16 +177,41 @@ class EpisodeTelemetryRecord:
     sensors: SensorSnapshot
     payload_json: str
     payload_checksum: str
+    failure_type: str | None = None
     frame_id: str | None = None
 
     def __post_init__(self) -> None:
-        for name in ("episode_id", "robot_checksum", "policy_hash", "world_hash"):
+        for name in (
+            "episode_id",
+            "world_id",
+            "policy_id",
+            "robot_checksum",
+            "policy_hash",
+            "world_hash",
+        ):
             if not getattr(self, name):
                 raise ValueError(f"{name} must not be empty")
+        for name in ("episode_id", "world_id", "policy_id"):
+            if _IDENTIFIER_PATTERN.fullmatch(getattr(self, name)) is None:
+                raise ValueError(f"{name} must be a stable identifier")
         if self.sequence < 0:
             raise ValueError("sequence must be non-negative")
         if not math.isfinite(self.sim_time_seconds) or self.sim_time_seconds < 0:
             raise ValueError("sim_time_seconds must be finite and non-negative")
+        if not math.isfinite(self.event_time) or self.event_time < 0:
+            raise ValueError("event_time must be finite and non-negative")
+        if not math.isclose(
+            self.event_time,
+            self.sim_time_seconds,
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        ):
+            raise ValueError("event_time must equal the deterministic simulation clock")
+        if (
+            self.failure_type is not None
+            and _FAILURE_TYPE_PATTERN.fullmatch(self.failure_type) is None
+        ):
+            raise ValueError("failure_type must be lower snake case when present")
         if self.frame_id == "":
             raise ValueError("frame_id must be non-empty when present")
         self.verify_integrity()
@@ -189,6 +221,8 @@ class EpisodeTelemetryRecord:
         cls,
         *,
         episode_id: str,
+        world_id: str,
+        policy_id: str,
         sequence: int,
         sim_time_seconds: float,
         robot_checksum: str,
@@ -197,13 +231,18 @@ class EpisodeTelemetryRecord:
         signal_use: SignalUseLabel,
         sensors: SensorSnapshot,
         payload: object,
+        event_time: float | None = None,
+        failure_type: str | None = None,
         frame_id: str | None = None,
     ) -> EpisodeTelemetryRecord:
         payload_json = _canonical_json(payload)
         return cls(
             episode_id=episode_id,
+            world_id=world_id,
+            policy_id=policy_id,
             sequence=sequence,
             sim_time_seconds=sim_time_seconds,
+            event_time=sim_time_seconds if event_time is None else event_time,
             robot_checksum=robot_checksum,
             policy_hash=policy_hash,
             world_hash=world_hash,
@@ -211,6 +250,7 @@ class EpisodeTelemetryRecord:
             sensors=sensors,
             payload_json=payload_json,
             payload_checksum=_payload_checksum(payload_json),
+            failure_type=failure_type,
             frame_id=frame_id,
         )
 

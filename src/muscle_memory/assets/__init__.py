@@ -1,6 +1,7 @@
 """Safe appearance-asset generation, caching, and world admission."""
 
 from muscle_memory.assets.approvals import (
+    AssetApprovalError,
     AssetApprovalLedger,
     AssetApprovalRequirement,
     HumanAssetDecision,
@@ -44,6 +45,7 @@ __all__ = [
     "AdmissionState",
     "ArtifactDescriptor",
     "ArtifactRole",
+    "AssetApprovalError",
     "AssetApprovalLedger",
     "AssetApprovalRequirement",
     "AssetCacheIntegrityError",

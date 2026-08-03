@@ -1,0 +1,158 @@
+name: ${COMPOSE_PROJECT_NAME:-muscle-memory}
+
+x-log-policy: &log-policy
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: muscle-memory-api:local
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    stop_grace_period: 30s
+    environment:
+      MM_API_BACKEND_FACTORY: ${MM_API_BACKEND_FACTORY:-muscle_memory.runtime:create_api_backend}
+      MM_API_HOST: 0.0.0.0
+      MM_API_PORT: "8000"
+      MM_API_LOG_LEVEL: ${MM_API_LOG_LEVEL:-info}
+      MM_API_AUTH_CREDENTIALS_JSON: '[{"subject":"local-operator","token_sha256":"${MM_API_OPERATOR_TOKEN_SHA256:?Generate the local backend environment first}","scopes":["approvals:write","workflows:write","corrections:write"]}]'
+      MUSCLE_MEMORY_COORDINATOR_DB_PATH: /var/lib/muscle-memory/coordinator/coordinator.sqlite3
+      MUSCLE_MEMORY_TELEMETRY_SPOOL: /var/lib/muscle-memory/telemetry/laserdata-spool.sqlite3
+      MUSCLE_MEMORY_FALKORDB_CACHE_PATH: /var/lib/muscle-memory/graph/falkordb-events.jsonl
+      MM_ASSET_CACHE_DIR: /var/lib/muscle-memory/assets/cache
+      MM_ASSET_APPROVAL_LEDGER_DIR: /var/lib/muscle-memory/assets/approvals
+      LASERDATA_CONNECTION_STRING: ${LASERDATA_CONNECTION_STRING:-iggy://${IGGY_ROOT_USERNAME:-iggy}:${IGGY_ROOT_PASSWORD:?Generate the local backend environment first}@iggy:8090}
+      LASERDATA_STREAM: ${LASERDATA_STREAM:-muscle-memory}
+      LASERDATA_TOPIC: ${LASERDATA_TOPIC:-episode-events-v2}
+      LASERDATA_PARTITIONS: ${LASERDATA_PARTITIONS:-4}
+      LASERDATA_TIMEOUT_SECONDS: ${LASERDATA_TIMEOUT_SECONDS:-5}
+      MUSCLE_MEMORY_FALKORDB_URL: ${MUSCLE_MEMORY_FALKORDB_URL:-redis://:${FALKORDB_PASSWORD:?Generate the local backend environment first}@falkordb:6379}
+      MUSCLE_MEMORY_FALKORDB_GRAPH: ${MUSCLE_MEMORY_FALKORDB_GRAPH:-muscle_memory}
+      MUSCLE_MEMORY_FALKORDB_QUERY_TIMEOUT_MS: ${MUSCLE_MEMORY_FALKORDB_QUERY_TIMEOUT_MS:-2000}
+      MM_ASSET_REFERENCE_ENDPOINT: ${MM_ASSET_REFERENCE_ENDPOINT:-}
+      MM_ASSET_REFERENCE_API_KEY: ${MM_ASSET_REFERENCE_API_KEY:-}
+      MM_ASSET_REFERENCE_TIMEOUT_SECONDS: ${MM_ASSET_REFERENCE_TIMEOUT_SECONDS:-10}
+      MM_ASSET_TRELLIS_ENDPOINT: ${MM_ASSET_TRELLIS_ENDPOINT:-}
+      MM_ASSET_TRELLIS_API_KEY: ${MM_ASSET_TRELLIS_API_KEY:-}
+      MM_ASSET_TRELLIS_TIMEOUT_SECONDS: ${MM_ASSET_TRELLIS_TIMEOUT_SECONDS:-30}
+      MUSCLE_MEMORY_GUILD_OWNER: ${MUSCLE_MEMORY_GUILD_OWNER:-}
+      MUSCLE_MEMORY_GUILD_WORKSPACE: ${MUSCLE_MEMORY_GUILD_WORKSPACE:-}
+      MUSCLE_MEMORY_GUILD_BASE_URL: ${MUSCLE_MEMORY_GUILD_BASE_URL:-https://app.guild.ai}
+      MUSCLE_MEMORY_GUILD_WORLD_AND_PHYSICS_CREDENTIALS: ${MUSCLE_MEMORY_GUILD_WORLD_AND_PHYSICS_CREDENTIALS:-}
+      MUSCLE_MEMORY_GUILD_FAILURE_AND_CURRICULUM_CREDENTIALS: ${MUSCLE_MEMORY_GUILD_FAILURE_AND_CURRICULUM_CREDENTIALS:-}
+      MUSCLE_MEMORY_GUILD_SAFETY_AND_EVALUATION_CREDENTIALS: ${MUSCLE_MEMORY_GUILD_SAFETY_AND_EVALUATION_CREDENTIALS:-}
+      ROCKETRIDE_URI: ${ROCKETRIDE_URI:-}
+      ROCKETRIDE_APIKEY: ${ROCKETRIDE_APIKEY:-}
+      ROCKETRIDE_MM_COORDINATOR_URL: ${ROCKETRIDE_MM_COORDINATOR_URL:-}
+      ROCKETRIDE_MM_COORDINATOR_TOKEN: ${ROCKETRIDE_MM_COORDINATOR_TOKEN:-}
+      ROCKETRIDE_VERIFY_ENVELOPE_FILE: ${ROCKETRIDE_VERIFY_ENVELOPE_FILE:-}
+      ROCKETRIDE_REQUEST_TIMEOUT_MS: ${ROCKETRIDE_REQUEST_TIMEOUT_MS:-120000}
+    volumes:
+      - coordinator-data:/var/lib/muscle-memory/coordinator
+      - telemetry-data:/var/lib/muscle-memory/telemetry
+      - graph-cache:/var/lib/muscle-memory/graph
+      - asset-cache:/var/lib/muscle-memory/assets
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    ports:
+      - "${MM_API_BIND_ADDRESS:-127.0.0.1}:${MM_API_PORT:-8000}:8000"
+    depends_on:
+      falkordb:
+        condition: service_healthy
+      iggy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "ops.deployment.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *log-policy
+    networks:
+      - backend
+    labels:
+      com.muscle-memory.environment: self-hosted-development
+
+  falkordb:
+    image: falkordb/falkordb-server:v4.20.1@sha256:8b676c2e72271f5d06541136eb214b0db50180636cc86f7ee38d63287e9b8d13
+    restart: unless-stopped
+    environment:
+      FALKORDB_PASSWORD: ${FALKORDB_PASSWORD:?Generate the local backend environment first}
+      REDIS_ARGS: --requirepass ${FALKORDB_PASSWORD:?Generate the local backend environment first} --appendonly yes --appendfsync everysec
+      FALKORDB_ARGS: THREAD_COUNT ${FALKORDB_THREADS:-4} TIMEOUT_MAX ${MUSCLE_MEMORY_FALKORDB_QUERY_TIMEOUT_MS:-2000}
+    volumes:
+      - falkordb-data:/data
+    ports:
+      - "${MM_PROVIDER_BIND_ADDRESS:-127.0.0.1}:${FALKORDB_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$FALKORDB_PASSWORD\" ping | grep -qx PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *log-policy
+    networks:
+      - backend
+    labels:
+      com.muscle-memory.evidence-boundary: self-hosted-development-not-cloud
+
+  iggy:
+    image: apache/iggy:0.8.0@sha256:99b42016a898381d4bab3c2d4613456eb04ad06a7a0688314823d798a685636b
+    restart: unless-stopped
+    cap_add:
+      - SYS_NICE
+    security_opt:
+      - seccomp:unconfined
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    environment:
+      IGGY_ROOT_USERNAME: ${IGGY_ROOT_USERNAME:-iggy}
+      IGGY_ROOT_PASSWORD: ${IGGY_ROOT_PASSWORD:?Generate the local backend environment first}
+      IGGY_SYSTEM_PATH: /iggy/local_data
+      IGGY_TCP_ENABLED: "true"
+      IGGY_TCP_ADDRESS: 0.0.0.0:8090
+      IGGY_QUIC_ENABLED: "false"
+      IGGY_HTTP_ENABLED: "false"
+      IGGY_WEBSOCKET_ENABLED: "false"
+      IGGY_HEARTBEAT_ENABLED: "true"
+      IGGY_HEARTBEAT_INTERVAL: 5s
+    volumes:
+      - iggy-data:/iggy/local_data
+    ports:
+      - "${MM_PROVIDER_BIND_ADDRESS:-127.0.0.1}:${IGGY_TCP_PORT:-8090}:8090"
+    healthcheck:
+      test: ["CMD-SHELL", "iggy --quiet --tcp-server-address 127.0.0.1:8090 --username \"$$IGGY_ROOT_USERNAME\" --password \"$$IGGY_ROOT_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *log-policy
+    networks:
+      - backend
+    labels:
+      com.muscle-memory.evidence-boundary: self-hosted-development-not-laserdata-cloud
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  asset-cache:
+  coordinator-data:
+  falkordb-data:
+  graph-cache:
+  iggy-data:
+  telemetry-data:

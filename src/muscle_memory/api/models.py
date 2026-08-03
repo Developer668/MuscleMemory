@@ -118,8 +118,15 @@ class SensorReadingView(ApiModel):
 
 class TelemetryRecordView(ApiModel):
     episode_id: str = Field(min_length=1, max_length=128)
+    world_id: str = Field(min_length=1, max_length=128)
+    policy_id: str = Field(min_length=1, max_length=128)
     sequence: int = Field(ge=0)
     sim_time_seconds: float = Field(ge=0.0, allow_inf_nan=False)
+    event_time: float = Field(ge=0.0, allow_inf_nan=False)
+    failure_type: str | None = Field(
+        default=None,
+        pattern=r"^[a-z][a-z0-9_]{0,63}$",
+    )
     frame_id: str | None = Field(default=None, min_length=1, max_length=256)
     frame_join_key: Literal["frame_id"] = "frame_id"
     signal_use: Literal["Used by policy", "Logged only", "Simulator ground truth"]

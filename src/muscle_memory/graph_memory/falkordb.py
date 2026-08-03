@@ -138,8 +138,8 @@ RETURN failure.content_hash
 """
 
 _RECORD_FAILURE_NEAR_OBSTACLE = """
-MATCH (episode:Episode {episode_id: $episode_id})
-MATCH (obstacle:Obstacle {obstacle_id: $obstacle_id})
+MATCH (episode:Episode {episode_id: $episode_id})-[:RAN_IN]->(world:World)
+MATCH (world)-[:CONTAINS]->(obstacle:Obstacle {obstacle_id: $obstacle_id})
 MERGE (failure:Failure {failure_id: $failure_id})
 ON CREATE SET
   failure.content_hash = $content_hash,
@@ -207,6 +207,8 @@ RETURN lesson.content_hash
 _RECORD_OUTPERFORMANCE = """
 MATCH (candidate:PolicyVersion {policy_id: $candidate_policy_id, evaluated: true})
 MATCH (baseline:PolicyVersion {policy_id: $baseline_policy_id, evaluated: true})
+WHERE candidate.evaluation_split = $held_out_split
+  AND baseline.evaluation_split = $held_out_split
 MERGE (candidate)-[comparison:OUTPERFORMED {evidence_hash: $evidence_hash}]->(baseline)
 ON CREATE SET
   comparison.content_hash = $content_hash,
@@ -221,7 +223,7 @@ MATCH (source_policy:PolicyVersion)<-[:USED]-(episode:Episode {world_split: $tra
 MATCH (episode)-[:OBSERVED_FAILURE]->(failure:Failure)
 MATCH (correction:Correction {approved: true})-[:CORRECTS]->(failure)
 MATCH (correction)-[:PRODUCED]->(lesson:Lesson)
-OPTIONAL MATCH (failure)-[:NEAR]->(obstacle:Obstacle)
+OPTIONAL MATCH (failure)-[:NEAR]->(obstacle:Obstacle)<-[:CONTAINS]-(:World)<-[:RAN_IN]-(episode)
 OPTIONAL MATCH (lesson)-[:TRAINED_INTO]->(trained_policy:PolicyVersion)
 WHERE (size($failure_categories) = 0 OR failure.category IN $failure_categories)
   AND (size($obstacle_categories) = 0 OR obstacle.category IN $obstacle_categories)
@@ -397,6 +399,7 @@ class FalkorGraphMemory:
             "candidate_policy_id": record.candidate_policy_id,
             "baseline_policy_id": record.baseline_policy_id,
             "evidence_hash": record.evidence_hash,
+            "held_out_split": "held_out",
             "content_hash": record.content_hash,
             "success_rate_delta": record.success_rate_delta,
             "collision_rate_delta": record.collision_rate_delta,

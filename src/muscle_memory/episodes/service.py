@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Protocol
 
+from muscle_memory.episodes.journal import EpisodeJournal, VolatileEpisodeJournal
 from muscle_memory.episodes.models import (
     AuthenticatedHuman,
     CorrectionApproval,
@@ -111,14 +112,80 @@ class EpisodeService:
         telemetry_backend: TelemetryBackend,
         telemetry_store: TelemetryRecordStore,
         graph_memory: GraphMemory,
+        journal: EpisodeJournal | None = None,
     ) -> None:
         self._telemetry_backend = telemetry_backend
         self._telemetry_store = telemetry_store
         self._graph_memory = graph_memory
+        self._journal = journal or VolatileEpisodeJournal()
         self._sessions: dict[str, _EpisodeSession] = {}
         self._corrections: dict[str, CorrectionSubmission] = {}
         self._approvals: dict[str, CorrectionApproval] = {}
         self._lock = asyncio.Lock()
+        self._restore_journal()
+
+    def _restore_journal(self) -> None:
+        """Validate and restore append-only lifecycle facts after a process restart."""
+
+        for identity in self._journal.identities():
+            if identity.episode_id in self._sessions:
+                raise DuplicateEpisodeError(
+                    f"episode {identity.episode_id!r} appears twice in the journal"
+                )
+            records = self._telemetry_store.records_for(identity.episode_id)
+            if records:
+                self._validate_record_set(identity, records)
+            receipts = list(self._journal.receipts_for(identity.episode_id))
+            if len(receipts) > len(records):
+                raise EpisodeServiceError(
+                    "episode journal has more delivery receipts than telemetry records"
+                )
+            for sequence, receipt in enumerate(receipts):
+                if receipt.episode_id != identity.episode_id or receipt.sequence != sequence:
+                    raise EpisodeServiceError(
+                        "episode journal delivery receipts are not a contiguous prefix"
+                    )
+            closure = self._journal.closure_for(identity.episode_id)
+            if closure is not None:
+                if closure.identity != identity:
+                    raise EpisodeIdentityError(
+                        "journal closure does not match its immutable episode identity"
+                    )
+                if not records:
+                    raise EpisodeServiceError(
+                        "a journaled episode closure requires durable telemetry"
+                    )
+                state = EpisodeLifecycleState.CLOSED
+            else:
+                state = EpisodeLifecycleState.OPEN
+            self._sessions[identity.episode_id] = _EpisodeSession(
+                identity=identity,
+                state=state,
+                receipts=receipts,
+                closure=closure,
+            )
+
+        for correction in self._journal.corrections():
+            session = self._sessions.get(correction.episode_id)
+            if (
+                session is None
+                or session.state is not EpisodeLifecycleState.CLOSED
+                or session.identity.world_split is not WorldSplit.TRAINING
+            ):
+                raise EpisodeServiceError("journaled corrections require a closed training episode")
+            if correction.correction_id in self._corrections:
+                raise EpisodeServiceError("duplicate correction in episode journal")
+            self._corrections[correction.correction_id] = correction
+
+        for approval in self._journal.approvals():
+            correction_id = approval.submission.correction_id
+            if self._corrections.get(correction_id) != approval.submission:
+                raise EpisodeServiceError(
+                    "journaled approval is detached from its correction submission"
+                )
+            if correction_id in self._approvals:
+                raise EpisodeServiceError("duplicate correction approval in episode journal")
+            self._approvals[correction_id] = approval
 
     async def open_episode(self, identity: EpisodeIdentity) -> EpisodeIdentity:
         async with self._lock:
@@ -130,6 +197,7 @@ class EpisodeService:
                 raise DuplicateEpisodeError(
                     f"episode {identity.episode_id!r} already has immutable telemetry"
                 )
+            self._journal.record_identity(identity)
             self._sessions[identity.episode_id] = _EpisodeSession(
                 identity=identity,
                 state=EpisodeLifecycleState.OPEN,
@@ -143,9 +211,7 @@ class EpisodeService:
     def closure_for(self, episode_id: str) -> EpisodeClosure | None:
         return self._session(episode_id).closure
 
-    async def append_telemetry(
-        self, record: EpisodeTelemetryRecord
-    ) -> EpisodeAppendReceipt:
+    async def append_telemetry(self, record: EpisodeTelemetryRecord) -> EpisodeAppendReceipt:
         async with self._lock:
             session = self._session(record.episode_id)
             self._require_open(session)
@@ -165,6 +231,7 @@ class EpisodeService:
                 provider_state=result.provider_state,
                 pending_local_records=result.pending_local_records,
             )
+            self._journal.record_receipt(receipt)
             session.receipts.append(receipt)
             return receipt
 
@@ -186,7 +253,7 @@ class EpisodeService:
             if ended_at.tzinfo is None or ended_at.utcoffset() is None:
                 raise ValueError("closed_at must be timezone-aware")
             digest = telemetry_digest(records)
-            failures = self._failure_records(result, ended_at)
+            failures = self._failure_records(result, records, ended_at)
             delivery = self._delivery_report(records, session.receipts)
 
             # The state transition happens before graph persistence by contract.
@@ -207,6 +274,11 @@ class EpisodeService:
                 graph=graph_report,
                 closed_at=ended_at,
             )
+            try:
+                self._journal.record_closure(closure)
+            except BaseException:
+                session.state = EpisodeLifecycleState.OPEN
+                raise
             session.closure = closure
             return closure
 
@@ -306,6 +378,7 @@ class EpisodeService:
             existing = self._corrections.get(submission.correction_id)
             if existing is not None:
                 return existing
+            self._journal.record_correction(submission)
             self._corrections[submission.correction_id] = submission
             return submission
 
@@ -343,6 +416,7 @@ class EpisodeService:
                 graph_receipt=None,
             )
             # Store the authenticated approval before any fallible provider write.
+            self._journal.record_approval(approval)
             self._approvals[correction_id] = approval
             graph_payload = canonical_json(
                 {
@@ -407,9 +481,7 @@ class EpisodeService:
     @staticmethod
     def _require_open(session: _EpisodeSession) -> None:
         if session.state is EpisodeLifecycleState.CLOSED:
-            raise EpisodeClosedError(
-                f"episode {session.identity.episode_id!r} is already closed"
-            )
+            raise EpisodeClosedError(f"episode {session.identity.episode_id!r} is already closed")
 
     @staticmethod
     def _validate_append(
@@ -450,12 +522,16 @@ class EpisodeService:
     ) -> None:
         actual = (
             record.episode_id,
+            record.world_id,
+            record.policy_id,
             record.robot_checksum,
             record.world_hash,
             record.policy_hash,
         )
         expected = (
             identity.episode_id,
+            identity.world_id,
+            identity.policy_id,
             identity.robot_checksum,
             identity.world_hash,
             identity.policy_hash,
@@ -484,9 +560,7 @@ class EpisodeService:
             record.verify_integrity()
 
     @staticmethod
-    def _validate_result_identity(
-        identity: EpisodeIdentity, result: PolicyEpisodeResult
-    ) -> None:
+    def _validate_result_identity(identity: EpisodeIdentity, result: PolicyEpisodeResult) -> None:
         actual = (
             result.episode_id,
             result.robot_checksum,
@@ -506,9 +580,7 @@ class EpisodeService:
             identity.policy_hash,
         )
         if actual != expected:
-            raise EpisodeIdentityError(
-                "measured result does not match the opened episode identity"
-            )
+            raise EpisodeIdentityError("measured result does not match the opened episode identity")
 
     @staticmethod
     def _delivery_report(
@@ -520,8 +592,7 @@ class EpisodeService:
             for receipt in receipts
         )
         local_count = sum(
-            receipt.delivery is TelemetryDelivery.DURABLE_LOCAL_CACHE_ONLY
-            for receipt in receipts
+            receipt.delivery is TelemetryDelivery.DURABLE_LOCAL_CACHE_ONLY for receipt in receipts
         )
         pending = receipts[-1].pending_local_records if receipts else len(records)
         return TelemetryDeliveryReport(
@@ -535,10 +606,19 @@ class EpisodeService:
 
     @staticmethod
     def _failure_records(
-        result: PolicyEpisodeResult, detected_at: datetime
+        result: PolicyEpisodeResult,
+        records: tuple[EpisodeTelemetryRecord, ...],
+        detected_at: datetime,
     ) -> tuple[FailureMemoryRecord, ...]:
+        event_failures = tuple(
+            record.failure_type for record in records if record.failure_type is not None
+        )
+        if result.success and event_failures:
+            raise EpisodeServiceError(
+                "a successful result cannot discard typed telemetry failure events"
+            )
         failures: list[FailureMemoryRecord] = []
-        for reason in dict.fromkeys(result.failed_reasons):
+        for reason in dict.fromkeys((*result.failed_reasons, *event_failures)):
             category = reason.lower()
             failure_digest = content_digest(
                 {

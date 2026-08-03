@@ -148,8 +148,7 @@ class GraphPersistenceReport:
     def provider_complete(self) -> bool:
         return self.complete and all(
             receipt.storage is GraphStorage.FALKORDB
-            and receipt.provider_state
-            in {ProviderState.HEALTHY, ProviderState.END_TO_END_VERIFIED}
+            and receipt.provider_state in {ProviderState.HEALTHY, ProviderState.END_TO_END_VERIFIED}
             for receipt in self.receipts
         )
 
@@ -292,8 +291,7 @@ class CorrectionApproval:
         return (
             receipt is not None
             and receipt.storage is GraphStorage.FALKORDB
-            and receipt.provider_state
-            in {ProviderState.HEALTHY, ProviderState.END_TO_END_VERIFIED}
+            and receipt.provider_state in {ProviderState.HEALTHY, ProviderState.END_TO_END_VERIFIED}
         )
 
 

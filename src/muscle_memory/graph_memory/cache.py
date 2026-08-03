@@ -127,11 +127,11 @@ class AppendOnlyGraphCache:
             lessons = self._by_type(LessonMemoryRecord)
             obstacles = self._by_type(ObstacleMemoryRecord)
 
-        grouped_episode_ids: dict[
-            tuple[str, str, str, str, str | None, str | None], set[str]
-        ] = defaultdict(set)
-        lesson_ids: dict[tuple[str, str, str, str, str | None, str | None], set[str]] = (
+        grouped_episode_ids: dict[tuple[str, str, str, str, str | None, str | None], set[str]] = (
             defaultdict(set)
+        )
+        lesson_ids: dict[tuple[str, str, str, str, str | None, str | None], set[str]] = defaultdict(
+            set
         )
 
         failures_by_id = {record.failure_id: record for record in failures}
@@ -315,9 +315,17 @@ class AppendOnlyGraphCache:
             if policy.checkpoint_hash != record.policy_hash:
                 raise GraphMemoryIntegrityError("episode policy hash does not match graph memory")
         elif isinstance(record, FailureMemoryRecord):
-            self._require("episode", record.episode_id)
+            episode = self._require("episode", record.episode_id)
             if record.obstacle_id is not None:
-                self._require("obstacle", record.obstacle_id)
+                obstacle = self._require("obstacle", record.obstacle_id)
+                if not isinstance(episode, EpisodeMemoryRecord) or not isinstance(
+                    obstacle, ObstacleMemoryRecord
+                ):
+                    raise GraphMemoryIntegrityError("failure references have invalid record types")
+                if obstacle.world_id != episode.world_id:
+                    raise GraphMemoryIntegrityError(
+                        "failure obstacle does not belong to the episode world"
+                    )
         elif isinstance(record, CorrectionMemoryRecord):
             self._require("failure", record.failure_id)
         elif isinstance(record, LessonMemoryRecord):
@@ -325,8 +333,18 @@ class AppendOnlyGraphCache:
             if record.trained_policy_id is not None:
                 self._require("evaluated_policy", record.trained_policy_id)
         elif isinstance(record, PolicyComparisonRecord):
-            self._require("evaluated_policy", record.candidate_policy_id)
-            self._require("evaluated_policy", record.baseline_policy_id)
+            candidate = self._require("evaluated_policy", record.candidate_policy_id)
+            baseline = self._require("evaluated_policy", record.baseline_policy_id)
+            if not isinstance(candidate, EvaluatedPolicyVersion) or not isinstance(
+                baseline, EvaluatedPolicyVersion
+            ):
+                raise GraphMemoryIntegrityError(
+                    "policy comparison references have invalid record types"
+                )
+            if candidate.evaluation_split != "held_out" or baseline.evaluation_split != "held_out":
+                raise GraphMemoryIntegrityError(
+                    "outperformance claims require held-out evaluation evidence"
+                )
 
     def _require(self, record_kind: str, record_id: str) -> GraphRecord:
         try:

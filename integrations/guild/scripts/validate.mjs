@@ -123,6 +123,7 @@ function validateCentralContracts() {
   expectEqual(manifest.contract_version, 1, "environment manifest version")
   expectEqual(manifest.provider, "guild.ai", "environment manifest provider")
   expectEqual(manifest.tested_cli_version, "0.17.0", "tested Guild CLI version")
+  expectEqual(manifest.publish_category, "development", "Guild publish category")
   if (!Array.isArray(manifest.publish_environment)) {
     errors.push("publish_environment must be an array")
   } else {

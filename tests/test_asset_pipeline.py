@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from muscle_memory.assets import (
     AdmissionState,
+    AssetApprovalError,
     AssetApprovalLedger,
     AssetCacheIntegrityError,
     AssetColliderKind,
@@ -152,6 +153,23 @@ def test_provider_timeouts_have_a_hard_upper_bound() -> None:
         TrellisHttpAdapter(endpoint="https://example.test", timeout_seconds=30.1)
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    (
+        "http://provider.example.test/generate",
+        "file:///tmp/provider.json",
+        "https://user:password@provider.example.test/generate",
+    ),
+)
+def test_provider_endpoints_reject_insecure_or_credential_bearing_urls(
+    endpoint: str,
+) -> None:
+    with pytest.raises(ValueError, match=r"HTTPS|credentials"):
+        ReferenceImageHttpAdapter(endpoint=endpoint)
+
+    assert ReferenceImageHttpAdapter(endpoint="http://127.0.0.1:9000/generate")
+
+
 def test_fallback_manifest_and_blob_checksums_are_verified(tmp_path: Path) -> None:
     cache = ContentAddressedAssetCache(tmp_path / "cache")
     manifest = seed_verified_fallback(cache)
@@ -231,6 +249,33 @@ def test_agent_physics_is_blocked_until_human_approval(tmp_path: Path) -> None:
     assert ready.admission_state is AdmissionState.READY
     assert ready.world_asset is not None
     assert ready.world_asset.physical.approval_reference == requirement.requirement_id
+
+
+def test_human_asset_decision_tampering_fails_closed(tmp_path: Path) -> None:
+    pipeline = _unconfigured_pipeline(tmp_path)
+    proposal = _proposal(origin=ProposalOrigin.AGENT)
+    blocked = pipeline.generate(
+        AssetRequest(request_id="tampered-decision", prompt="isolated household box"),
+        proposal,
+    )
+    assert blocked.approval_requirement_id is not None
+    ledger = AssetApprovalLedger(tmp_path / "approvals")
+    requirement = ledger.requirement_for(blocked.approval_requirement_id)
+    assert requirement is not None
+    decision = HumanAssetDecision.create(
+        requirement,
+        human_subject="operator@example.test",
+        verdict=HumanVerdict.REJECT,
+    )
+    ledger.record_human_decision(decision)
+
+    decision_path = tmp_path / "approvals" / "decisions" / f"{requirement.requirement_id}.json"
+    payload = json.loads(decision_path.read_text(encoding="utf-8"))
+    payload["verdict"] = "approve"
+    decision_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(AssetApprovalError, match="checksum"):
+        ledger.decision_for(requirement.requirement_id)
 
 
 def test_visual_mesh_cannot_be_supplied_as_a_physics_collider(tmp_path: Path) -> None:

@@ -38,15 +38,24 @@ from muscle_memory.orchestration.contracts import (
     ApprovalKind,
     ApprovalRequirement,
     ExecutionPlan,
+    PipelineCommand,
     PipelineStep,
 )
 
 _IMMUTABLE_TABLES = (
     "episodes",
     "held_out_episode_scopes",
+    "training_episode_sessions",
+    "training_episode_receipts",
+    "training_episode_closures",
+    "training_correction_submissions",
+    "training_correction_approvals",
+    "training_correction_rejections",
     "episode_transitions",
     "provider_evidence",
     "workflow_runs",
+    "workflow_reviews",
+    "workflow_run_snapshots",
     "approval_requirements",
     "human_decisions",
     "workflow_step_audits",
@@ -99,6 +108,47 @@ class CoordinatorStore:
                     held_out_world_set_id TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS training_episode_sessions (
+                    episode_id TEXT PRIMARY KEY REFERENCES episodes(episode_id),
+                    identity_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS training_episode_receipts (
+                    episode_id TEXT NOT NULL REFERENCES training_episode_sessions(episode_id),
+                    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                    receipt_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE,
+                    PRIMARY KEY (episode_id, sequence)
+                );
+
+                CREATE TABLE IF NOT EXISTS training_episode_closures (
+                    episode_id TEXT PRIMARY KEY REFERENCES training_episode_sessions(episode_id),
+                    closure_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS training_correction_submissions (
+                    correction_id TEXT PRIMARY KEY,
+                    episode_id TEXT NOT NULL REFERENCES training_episode_closures(episode_id),
+                    submission_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS training_correction_approvals (
+                    correction_id TEXT PRIMARY KEY
+                        REFERENCES training_correction_submissions(correction_id),
+                    approval_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS training_correction_rejections (
+                    correction_id TEXT PRIMARY KEY
+                        REFERENCES training_correction_submissions(correction_id),
+                    rejection_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
                 CREATE TABLE IF NOT EXISTS provider_evidence (
                     evidence_id TEXT PRIMARY KEY,
                     provider TEXT NOT NULL,
@@ -128,6 +178,20 @@ class CoordinatorStore:
                     plan_json TEXT NOT NULL,
                     created_at_utc TEXT NOT NULL,
                     content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS workflow_reviews (
+                    run_id TEXT PRIMARY KEY REFERENCES workflow_runs(run_id),
+                    review_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS workflow_run_snapshots (
+                    run_id TEXT NOT NULL REFERENCES workflow_runs(run_id),
+                    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                    run_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE,
+                    PRIMARY KEY (run_id, sequence)
                 );
 
                 CREATE TABLE IF NOT EXISTS approval_requirements (
@@ -256,9 +320,7 @@ class CoordinatorStore:
                     str(existing["kind"]) != EpisodeKind.TRAINING.value
                     or str(existing["content_hash"]) != metadata.content_hash
                 ):
-                    raise CoordinatorIntegrityError(
-                        f"episode {metadata.episode_id!r} is immutable"
-                    )
+                    raise CoordinatorIntegrityError(f"episode {metadata.episode_id!r} is immutable")
                 return self._training_episode_from_row(existing)
             self._insert_episode(
                 connection,
@@ -296,12 +358,9 @@ class CoordinatorStore:
                 if (
                     str(existing["kind"]) != EpisodeKind.HELD_OUT_EVALUATION.value
                     or str(existing["content_hash"]) != metadata.content_hash
-                    or str(existing["held_out_world_set_id"])
-                    != metadata.held_out_world_set_id
+                    or str(existing["held_out_world_set_id"]) != metadata.held_out_world_set_id
                 ):
-                    raise CoordinatorIntegrityError(
-                        f"episode {metadata.episode_id!r} is immutable"
-                    )
+                    raise CoordinatorIntegrityError(f"episode {metadata.episode_id!r} is immutable")
                 return self._held_out_episode_from_row(existing)
             self._insert_episode(
                 connection,
@@ -392,6 +451,247 @@ class CoordinatorStore:
                 (EpisodeKind.TRAINING.value,),
             ).fetchall()
         return tuple(self._training_episode_from_row(row) for row in rows)
+
+    def record_training_episode_session(
+        self,
+        episode_id: str,
+        identity_json: str,
+    ) -> None:
+        """Persist an exact training identity without exposing held-out storage."""
+
+        content_hash = self._canonical_payload_hash(identity_json)
+        with self._transaction() as connection:
+            self._require_training_episode(connection, episode_id)
+            self._insert_immutable_payload(
+                connection,
+                table="training_episode_sessions",
+                identity_column="episode_id",
+                identity=episode_id,
+                payload_column="identity_json",
+                payload_json=identity_json,
+                content_hash=content_hash,
+            )
+
+    def training_episode_sessions(self) -> tuple[str, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT identity_json FROM training_episode_sessions ORDER BY episode_id"
+            ).fetchall()
+        return tuple(str(row["identity_json"]) for row in rows)
+
+    def record_training_episode_receipt(
+        self,
+        episode_id: str,
+        sequence: int,
+        receipt_json: str,
+    ) -> None:
+        if sequence < 0:
+            raise ValueError("training episode receipt sequence must be non-negative")
+        content_hash = self._canonical_payload_hash(receipt_json)
+        with self._transaction() as connection:
+            self._require_training_session(connection, episode_id)
+            existing = connection.execute(
+                """
+                SELECT * FROM training_episode_receipts
+                WHERE episode_id = ? AND sequence = ?
+                """,
+                (episode_id, sequence),
+            ).fetchone()
+            if existing is not None:
+                if str(existing["content_hash"]) != content_hash:
+                    raise CoordinatorIntegrityError(
+                        "training episode delivery receipt is immutable"
+                    )
+                return
+            expected = connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM training_episode_receipts
+                WHERE episode_id = ?
+                """,
+                (episode_id,),
+            ).fetchone()
+            if expected is None or int(expected["count"]) != sequence:
+                raise CoordinatorStateError("training episode delivery receipts must be contiguous")
+            connection.execute(
+                """
+                INSERT INTO training_episode_receipts (
+                    episode_id, sequence, receipt_json, content_hash
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (episode_id, sequence, receipt_json, content_hash),
+            )
+
+    def training_episode_receipts(self, episode_id: str) -> tuple[str, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT receipt_json FROM training_episode_receipts
+                WHERE episode_id = ? ORDER BY sequence
+                """,
+                (episode_id,),
+            ).fetchall()
+        return tuple(str(row["receipt_json"]) for row in rows)
+
+    def record_training_episode_closure(
+        self,
+        episode_id: str,
+        closure_json: str,
+    ) -> None:
+        content_hash = self._canonical_payload_hash(closure_json)
+        with self._transaction() as connection:
+            self._require_training_session(connection, episode_id)
+            self._insert_immutable_payload(
+                connection,
+                table="training_episode_closures",
+                identity_column="episode_id",
+                identity=episode_id,
+                payload_column="closure_json",
+                payload_json=closure_json,
+                content_hash=content_hash,
+            )
+
+    def training_episode_closure(self, episode_id: str) -> str | None:
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT closure_json FROM training_episode_closures
+                WHERE episode_id = ?
+                """,
+                (episode_id,),
+            ).fetchone()
+        return None if row is None else str(row["closure_json"])
+
+    def record_training_correction_submission(
+        self,
+        correction_id: str,
+        episode_id: str,
+        submission_json: str,
+    ) -> None:
+        content_hash = self._canonical_payload_hash(submission_json)
+        with self._transaction() as connection:
+            self._require_training_closure(connection, episode_id)
+            existing = connection.execute(
+                """
+                SELECT * FROM training_correction_submissions
+                WHERE correction_id = ?
+                """,
+                (correction_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    str(existing["episode_id"]) != episode_id
+                    or str(existing["content_hash"]) != content_hash
+                ):
+                    raise CoordinatorIntegrityError("training correction is immutable")
+                return
+            connection.execute(
+                """
+                INSERT INTO training_correction_submissions (
+                    correction_id, episode_id, submission_json, content_hash
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (correction_id, episode_id, submission_json, content_hash),
+            )
+
+    def training_correction_submissions(self) -> tuple[str, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT submission_json FROM training_correction_submissions
+                ORDER BY correction_id
+                """
+            ).fetchall()
+        return tuple(str(row["submission_json"]) for row in rows)
+
+    def record_training_correction_approval(
+        self,
+        correction_id: str,
+        approval_json: str,
+    ) -> None:
+        content_hash = self._canonical_payload_hash(approval_json)
+        with self._transaction() as connection:
+            rejection = connection.execute(
+                """
+                SELECT 1 FROM training_correction_rejections
+                WHERE correction_id = ?
+                """,
+                (correction_id,),
+            ).fetchone()
+            if rejection is not None:
+                raise CoordinatorStateError("a rejected correction cannot be approved")
+            row = connection.execute(
+                """
+                SELECT episode_id FROM training_correction_submissions
+                WHERE correction_id = ?
+                """,
+                (correction_id,),
+            ).fetchone()
+            if row is None:
+                raise CoordinatorStateError("cannot approve an unknown training correction")
+            self._insert_immutable_payload(
+                connection,
+                table="training_correction_approvals",
+                identity_column="correction_id",
+                identity=correction_id,
+                payload_column="approval_json",
+                payload_json=approval_json,
+                content_hash=content_hash,
+            )
+
+    def training_correction_approvals(self) -> tuple[str, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT approval_json FROM training_correction_approvals
+                ORDER BY correction_id
+                """
+            ).fetchall()
+        return tuple(str(row["approval_json"]) for row in rows)
+
+    def record_training_correction_rejection(
+        self,
+        correction_id: str,
+        rejection_json: str,
+    ) -> None:
+        content_hash = self._canonical_payload_hash(rejection_json)
+        with self._transaction() as connection:
+            approval = connection.execute(
+                """
+                SELECT 1 FROM training_correction_approvals
+                WHERE correction_id = ?
+                """,
+                (correction_id,),
+            ).fetchone()
+            if approval is not None:
+                raise CoordinatorStateError("an approved correction cannot be rejected")
+            row = connection.execute(
+                """
+                SELECT 1 FROM training_correction_submissions
+                WHERE correction_id = ?
+                """,
+                (correction_id,),
+            ).fetchone()
+            if row is None:
+                raise CoordinatorStateError("cannot reject an unknown training correction")
+            self._insert_immutable_payload(
+                connection,
+                table="training_correction_rejections",
+                identity_column="correction_id",
+                identity=correction_id,
+                payload_column="rejection_json",
+                payload_json=rejection_json,
+                content_hash=content_hash,
+            )
+
+    def training_correction_rejections(self) -> tuple[str, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT rejection_json FROM training_correction_rejections
+                ORDER BY correction_id
+                """
+            ).fetchall()
+        return tuple(str(row["rejection_json"]) for row in rows)
 
     def held_out_evaluation_episode(
         self,
@@ -543,9 +843,7 @@ class CoordinatorStore:
                     str(existing["plan_digest"]) != plan.digest
                     or str(existing["content_hash"]) != content_hash
                 ):
-                    raise CoordinatorIntegrityError(
-                        f"workflow {plan.run_id!r} is immutable"
-                    )
+                    raise CoordinatorIntegrityError(f"workflow {plan.run_id!r} is immutable")
                 return plan.digest
             connection.execute(
                 """
@@ -564,6 +862,121 @@ class CoordinatorStore:
             for requirement in plan.approval_requirements:
                 self._insert_approval_requirement(connection, requirement)
         return plan.digest
+
+    def workflow_plan(self, run_id: str) -> ExecutionPlan | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT plan_json FROM workflow_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        return None if row is None else self._execution_plan(str(row["plan_json"]))
+
+    def workflow_plans(self) -> tuple[ExecutionPlan, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT plan_json FROM workflow_runs ORDER BY run_id"
+            ).fetchall()
+        return tuple(self._execution_plan(str(row["plan_json"])) for row in rows)
+
+    def pending_approval_requirements(
+        self,
+    ) -> tuple[tuple[ApprovalRequirement, datetime], ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT requirements.*, runs.created_at_utc
+                FROM approval_requirements AS requirements
+                JOIN workflow_runs AS runs ON runs.run_id = requirements.run_id
+                LEFT JOIN human_decisions AS decisions
+                    ON decisions.requirement_id = requirements.requirement_id
+                WHERE decisions.requirement_id IS NULL
+                ORDER BY runs.created_at_utc, requirements.requirement_id
+                """
+            ).fetchall()
+        return tuple(
+            (
+                ApprovalRequirement(
+                    requirement_id=str(row["requirement_id"]),
+                    run_id=str(row["run_id"]),
+                    plan_digest=str(row["plan_digest"]),
+                    step=PipelineStep(str(row["step"])),
+                    kind=ApprovalKind(str(row["kind"])),
+                    summary=str(row["summary"]),
+                ),
+                datetime.fromisoformat(str(row["created_at_utc"])),
+            )
+            for row in rows
+        )
+
+    def record_workflow_review(self, run_id: str, review_json: str) -> None:
+        content_hash = self._canonical_payload_hash(review_json)
+        with self._transaction() as connection:
+            if self._workflow_row(connection, run_id) is None:
+                raise KeyError(run_id)
+            self._insert_immutable_payload(
+                connection,
+                table="workflow_reviews",
+                identity_column="run_id",
+                identity=run_id,
+                payload_column="review_json",
+                payload_json=review_json,
+                content_hash=content_hash,
+            )
+
+    def workflow_reviews(self) -> tuple[str, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT review_json FROM workflow_reviews ORDER BY run_id"
+            ).fetchall()
+        return tuple(str(row["review_json"]) for row in rows)
+
+    def record_workflow_run_snapshot(self, run_id: str, run_json: str) -> None:
+        content_hash = self._canonical_payload_hash(run_json)
+        with self._transaction() as connection:
+            if self._workflow_row(connection, run_id) is None:
+                raise KeyError(run_id)
+            existing = connection.execute(
+                """
+                SELECT * FROM workflow_run_snapshots
+                WHERE run_id = ? AND content_hash = ?
+                """,
+                (run_id, content_hash),
+            ).fetchone()
+            if existing is not None:
+                return
+            latest = connection.execute(
+                """
+                SELECT sequence FROM workflow_run_snapshots
+                WHERE run_id = ? ORDER BY sequence DESC LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+            sequence = 0 if latest is None else int(latest["sequence"]) + 1
+            connection.execute(
+                """
+                INSERT INTO workflow_run_snapshots (
+                    run_id, sequence, run_json, content_hash
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (run_id, sequence, run_json, content_hash),
+            )
+
+    def latest_workflow_run_snapshots(self) -> tuple[str, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT snapshots.run_json
+                FROM workflow_run_snapshots AS snapshots
+                JOIN (
+                    SELECT run_id, MAX(sequence) AS sequence
+                    FROM workflow_run_snapshots GROUP BY run_id
+                ) AS latest
+                    ON latest.run_id = snapshots.run_id
+                    AND latest.sequence = snapshots.sequence
+                ORDER BY snapshots.run_id
+                """
+            ).fetchall()
+        return tuple(str(row["run_json"]) for row in rows)
 
     def record_human_decision(self, decision: HumanDecision) -> HumanDecision:
         if not decision.human_subject.strip():
@@ -590,9 +1003,7 @@ class CoordinatorStore:
             ).fetchone()
             if existing is not None:
                 if str(existing["content_hash"]) != decision_hash:
-                    raise CoordinatorIntegrityError(
-                        "human decisions are immutable once recorded"
-                    )
+                    raise CoordinatorIntegrityError("human decisions are immutable once recorded")
                 return self._human_decision_from_row(existing)
             connection.execute(
                 """
@@ -740,9 +1151,7 @@ class CoordinatorStore:
                     raise CoordinatorIntegrityError(
                         f"evaluated policy {checkpoint.policy_id!r} is immutable"
                     )
-                return EvaluatedPolicyVersion.model_validate_json(
-                    str(existing["record_json"])
-                )
+                return EvaluatedPolicyVersion.model_validate_json(str(existing["record_json"]))
             connection.execute(
                 """
                 INSERT INTO evaluated_checkpoints (
@@ -757,6 +1166,15 @@ class CoordinatorStore:
                 ),
             )
         return checkpoint
+
+    def evaluated_checkpoints(self) -> tuple[EvaluatedPolicyVersion, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT record_json FROM evaluated_checkpoints ORDER BY policy_id"
+            ).fetchall()
+        return tuple(
+            EvaluatedPolicyVersion.model_validate_json(str(row["record_json"])) for row in rows
+        )
 
     def initialize_policy_alias(
         self,
@@ -911,9 +1329,7 @@ class CoordinatorStore:
                 (decision.alias,),
             ).fetchone()
             current = (
-                None
-                if current_row is None
-                else self._policy_alias_event_from_row(current_row)
+                None if current_row is None else self._policy_alias_event_from_row(current_row)
             )
             if prior_event is not None:
                 existing = self._policy_alias_event_from_row(prior_event)
@@ -1102,6 +1518,41 @@ class CoordinatorStore:
         )
 
     @staticmethod
+    def _execution_plan(plan_json: str) -> ExecutionPlan:
+        try:
+            value = json.loads(plan_json)
+        except json.JSONDecodeError as exc:
+            raise CoordinatorIntegrityError("stored workflow plan is not JSON") from exc
+        if not isinstance(value, dict) or canonical_json(value) != plan_json:
+            raise CoordinatorIntegrityError("stored workflow plan is not canonical")
+        raw_commands = value.get("commands")
+        if not isinstance(raw_commands, list):
+            raise CoordinatorIntegrityError("stored workflow plan has no commands")
+        commands: list[PipelineCommand] = []
+        for item in raw_commands:
+            if not isinstance(item, dict):
+                raise CoordinatorIntegrityError("stored workflow command is invalid")
+            try:
+                command = PipelineCommand(
+                    step=PipelineStep(str(item["step"])),
+                    payload_json=str(item["payload_json"]),
+                    payload_sha256=str(item["payload_sha256"]),
+                )
+            except (KeyError, ValueError) as exc:
+                raise CoordinatorIntegrityError(
+                    "stored workflow command failed validation"
+                ) from exc
+            commands.append(command)
+        try:
+            return ExecutionPlan(
+                run_id=str(value["run_id"]),
+                commands=tuple(commands),
+                digest=str(value["plan_digest"]),
+            )
+        except (KeyError, ValueError) as exc:
+            raise CoordinatorIntegrityError("stored workflow plan failed validation") from exc
+
+    @staticmethod
     def _insert_approval_requirement(
         connection: sqlite3.Connection,
         requirement: ApprovalRequirement,
@@ -1214,9 +1665,7 @@ class CoordinatorStore:
                 raise CoordinatorStateError("workflow step cannot be started from its state")
             return
         if latest_same is None or latest_same.state is not WorkflowStepState.STARTED:
-            raise CoordinatorStateError(
-                f"workflow step must be started before it is {state.value}"
-            )
+            raise CoordinatorStateError(f"workflow step must be started before it is {state.value}")
 
     @staticmethod
     def _workflow_audit(
@@ -1278,9 +1727,7 @@ class CoordinatorStore:
             fall_count=int(metrics_payload["fall_count"]),
             median_clearance_m=float(metrics_payload["median_clearance_m"]),
             success_rate_delta=float(metrics_payload["success_rate_delta"]),
-            collision_reduction_fraction=float(
-                metrics_payload["collision_reduction_fraction"]
-            ),
+            collision_reduction_fraction=float(metrics_payload["collision_reduction_fraction"]),
             path_efficiency_regression_fraction=float(
                 metrics_payload["path_efficiency_regression_fraction"]
             ),
@@ -1291,9 +1738,7 @@ class CoordinatorStore:
             plan_digest=str(row["plan_digest"]),
             action=PolicyAction(str(row["action"])),
             alias=str(row["alias"]),
-            from_policy_id=(
-                None if row["from_policy_id"] is None else str(row["from_policy_id"])
-            ),
+            from_policy_id=(None if row["from_policy_id"] is None else str(row["from_policy_id"])),
             target_policy_id=str(row["target_policy_id"]),
             evaluation_evidence_hash=str(row["evaluation_evidence_hash"]),
             metrics=metrics,
@@ -1349,9 +1794,7 @@ class CoordinatorStore:
             action=str(row["action"]),
             occurred_at=datetime.fromisoformat(str(row["occurred_at_utc"])),
             numeric_decision_id=(
-                None
-                if row["numeric_decision_id"] is None
-                else str(row["numeric_decision_id"])
+                None if row["numeric_decision_id"] is None else str(row["numeric_decision_id"])
             ),
             approval_requirement_id=(
                 None
@@ -1402,6 +1845,113 @@ class CoordinatorStore:
         return None if row is None else str(row["target_policy_id"])
 
     @staticmethod
+    def _canonical_payload_hash(payload_json: str) -> str:
+        try:
+            decoded = json.loads(payload_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError("coordinator episode payload is not valid JSON") from exc
+        if not isinstance(decoded, dict) or canonical_json(decoded) != payload_json:
+            raise ValueError("coordinator episode payload must be a canonical JSON object")
+        return sha256_text(payload_json)
+
+    @staticmethod
+    def _insert_immutable_payload(
+        connection: sqlite3.Connection,
+        *,
+        table: str,
+        identity_column: str,
+        identity: str,
+        payload_column: str,
+        payload_json: str,
+        content_hash: str,
+    ) -> None:
+        allowed = {
+            (
+                "training_episode_sessions",
+                "episode_id",
+                "identity_json",
+            ),
+            (
+                "training_episode_closures",
+                "episode_id",
+                "closure_json",
+            ),
+            (
+                "training_correction_approvals",
+                "correction_id",
+                "approval_json",
+            ),
+            (
+                "training_correction_rejections",
+                "correction_id",
+                "rejection_json",
+            ),
+            ("workflow_reviews", "run_id", "review_json"),
+        }
+        if (table, identity_column, payload_column) not in allowed:
+            raise ValueError("unsupported coordinator payload table")
+        row = connection.execute(
+            f"SELECT content_hash FROM {table} WHERE {identity_column} = ?",
+            (identity,),
+        ).fetchone()
+        if row is not None:
+            if str(row["content_hash"]) != content_hash:
+                raise CoordinatorIntegrityError(f"{table.replace('_', ' ')} is immutable")
+            return
+        connection.execute(
+            f"""
+            INSERT INTO {table} (
+                {identity_column}, {payload_column}, content_hash
+            ) VALUES (?, ?, ?)
+            """,
+            (identity, payload_json, content_hash),
+        )
+
+    @staticmethod
+    def _require_training_episode(
+        connection: sqlite3.Connection,
+        episode_id: str,
+    ) -> None:
+        row = connection.execute(
+            "SELECT kind FROM episodes WHERE episode_id = ?",
+            (episode_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(episode_id)
+        if str(row["kind"]) != EpisodeKind.TRAINING.value:
+            raise CoordinatorStateError(
+                "operational episode journaling cannot access held-out evaluations"
+            )
+
+    @classmethod
+    def _require_training_session(
+        cls,
+        connection: sqlite3.Connection,
+        episode_id: str,
+    ) -> None:
+        cls._require_training_episode(connection, episode_id)
+        row = connection.execute(
+            "SELECT 1 FROM training_episode_sessions WHERE episode_id = ?",
+            (episode_id,),
+        ).fetchone()
+        if row is None:
+            raise CoordinatorStateError("training episode session is not registered")
+
+    @classmethod
+    def _require_training_closure(
+        cls,
+        connection: sqlite3.Connection,
+        episode_id: str,
+    ) -> None:
+        cls._require_training_session(connection, episode_id)
+        row = connection.execute(
+            "SELECT 1 FROM training_episode_closures WHERE episode_id = ?",
+            (episode_id,),
+        ).fetchone()
+        if row is None:
+            raise CoordinatorStateError("training episode is not durably closed")
+
+    @staticmethod
     def _require_episode(connection: sqlite3.Connection, episode_id: str) -> None:
         row = connection.execute(
             "SELECT 1 FROM episodes WHERE episode_id = ?",
@@ -1411,15 +1961,23 @@ class CoordinatorStore:
             raise KeyError(episode_id)
 
     @staticmethod
+    def _workflow_row(
+        connection: sqlite3.Connection,
+        run_id: str,
+    ) -> sqlite3.Row | None:
+        return connection.execute(
+            "SELECT * FROM workflow_runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+
+    @staticmethod
     def _require_evidence(connection: sqlite3.Connection, evidence_id: str) -> None:
         row = connection.execute(
             "SELECT 1 FROM provider_evidence WHERE evidence_id = ?",
             (evidence_id,),
         ).fetchone()
         if row is None:
-            raise CoordinatorIntegrityError(
-                f"provider evidence {evidence_id!r} is not registered"
-            )
+            raise CoordinatorIntegrityError(f"provider evidence {evidence_id!r} is not registered")
 
     @staticmethod
     def _require_policy(connection: sqlite3.Connection, policy_id: str) -> None:
@@ -1428,6 +1986,4 @@ class CoordinatorStore:
             (policy_id,),
         ).fetchone()
         if row is None:
-            raise CoordinatorIntegrityError(
-                f"evaluated policy {policy_id!r} is not registered"
-            )
+            raise CoordinatorIntegrityError(f"evaluated policy {policy_id!r} is not registered")

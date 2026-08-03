@@ -112,8 +112,12 @@ def telemetry_view(
         raise ValueError("public telemetry payloads must be JSON objects with string keys")
     return TelemetryRecordView(
         episode_id=record.episode_id,
+        world_id=record.world_id,
+        policy_id=record.policy_id,
         sequence=record.sequence,
         sim_time_seconds=record.sim_time_seconds,
+        event_time=record.event_time,
+        failure_type=record.failure_type,
         frame_id=record.frame_id,
         signal_use=record.signal_use.value,
         sensors=tuple(
@@ -167,9 +171,7 @@ def pipeline_run_view(run: PipelineRun) -> WorkflowRun:
             for result in run.completed_steps
         ),
         blocked_requirement_id=(
-            run.blocked_requirement.requirement_id
-            if run.blocked_requirement is not None
-            else None
+            run.blocked_requirement.requirement_id if run.blocked_requirement is not None else None
         ),
         failure=run.failure,
         provider=orchestration_provider_view(run.provider_status),

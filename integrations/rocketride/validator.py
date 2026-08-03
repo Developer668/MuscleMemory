@@ -22,6 +22,7 @@ EXPECTED_ARTIFACTS = frozenset(
         "live_verify.py",
         "protocol.py",
         "result.schema.json",
+        "runtime.py",
         "source-review.json",
         "validator.py",
     }

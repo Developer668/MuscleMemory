@@ -133,6 +133,8 @@ function publishAndVerifyProject({ guildBin, owner, workspace, project, stagingR
       "init",
       "--name",
       project.agent_name,
+      "--category",
+      manifest.publish_category,
       "--template",
       "AUTO_MANAGED_STATE",
       "--agent-type",
@@ -339,16 +341,20 @@ function findNamedString(value, names) {
 }
 
 function parseJsonOutput(result, label) {
-  const output = result.stdout.trim()
-  try {
-    return JSON.parse(output)
-  } catch {
-    const lines = output.split("\n").filter(Boolean)
-    for (let index = lines.length - 1; index >= 0; index -= 1) {
-      try {
-        return JSON.parse(lines[index])
-      } catch {
-        continue
+  for (const output of [result.stdout.trim(), result.stderr.trim()]) {
+    if (!output) {
+      continue
+    }
+    try {
+      return JSON.parse(output)
+    } catch {
+      const lines = output.split("\n").filter(Boolean)
+      for (let index = lines.length - 1; index >= 0; index -= 1) {
+        try {
+          return JSON.parse(lines[index])
+        } catch {
+          continue
+        }
       }
     }
   }

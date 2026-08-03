@@ -8,7 +8,7 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -105,7 +105,7 @@ class UrllibGuildTransport:
 @dataclass(frozen=True, slots=True)
 class GuildRoleEndpoint:
     role: GuildRole
-    basic_credentials: str
+    basic_credentials: str = field(repr=False)
 
     def __post_init__(self) -> None:
         if ":" not in self.basic_credentials:

@@ -21,6 +21,7 @@ from muscle_memory.graph_memory import (
     GraphStorage,
     LessonMemoryRecord,
     ObstacleMemoryRecord,
+    PolicyComparisonRecord,
     ProviderState,
     ResilientGraphMemory,
     WorldMemoryRecord,
@@ -90,12 +91,17 @@ def make_world(suffix: str, split: WorldSplit = WorldSplit.TRAINING) -> WorldMem
     )
 
 
-def make_policy(policy_id: str, checkpoint_hash: str) -> EvaluatedPolicyVersion:
+def make_policy(
+    policy_id: str,
+    checkpoint_hash: str,
+    *,
+    evaluation_split: str = "development",
+) -> EvaluatedPolicyVersion:
     return EvaluatedPolicyVersion.create(
         policy_id=policy_id,
         checkpoint_hash=checkpoint_hash,
         evaluation_evidence_hash=EVIDENCE_HASH,
-        evaluation_split="development",
+        evaluation_split=evaluation_split,
         metrics={"success_rate": 0.75},
         evaluated_at=NOW,
     )
@@ -174,9 +180,7 @@ def record_experience_chain(
 
 def test_world_gate_and_episode_robot_checksum_fail_closed() -> None:
     with pytest.raises(ValidationError, match="unvalidated worlds"):
-        WorldMemoryRecord.model_validate(
-            {**make_world("11").model_dump(), "validated": False}
-        )
+        WorldMemoryRecord.model_validate({**make_world("11").model_dump(), "validated": False})
 
 
 def test_obstacles_require_approved_physics_and_episodes_keep_signed_clearance() -> None:
@@ -283,8 +287,119 @@ def test_remote_curriculum_query_is_parameterized_and_training_only() -> None:
     assert params is not None
     assert params["training_split"] == "training"
     assert "world_split: $training_split" in query
+    assert "<-[:CONTAINS]-(:World)<-[:RAN_IN]-(episode)" in query
     assert "clearance_violation" not in query
     assert params["failure_categories"] == ["clearance_violation"]
+
+
+def test_failure_obstacle_must_belong_to_the_episode_world(tmp_path: Path) -> None:
+    cache = AppendOnlyGraphCache(tmp_path / "graph-events.jsonl")
+    first_world = make_world("11")
+    second_world = make_world("22")
+    policy = make_policy("policy-v0", POLICY_V0_HASH)
+    episode = EpisodeMemoryRecord(
+        episode_id="episode-cross-world",
+        robot_checksum=ROBOT_HASH,
+        world_id=first_world.world_id,
+        world_hash=first_world.world_hash,
+        world_split=first_world.split,
+        policy_id=policy.policy_id,
+        policy_hash=policy.checkpoint_hash,
+        outcome=EpisodeOutcome.FAILED,
+        completion_time_seconds=2.0,
+        collision_count=1,
+        fall_count=0,
+        minimum_clearance_m=-0.01,
+        human_interventions=0,
+        telemetry_digest=TELEMETRY_HASH,
+        ended_at=NOW,
+    )
+    other_obstacle = ObstacleMemoryRecord(
+        obstacle_id="obstacle-other-world",
+        obstacle_hash="2" * 64,
+        world_id=second_world.world_id,
+        category="laundry_basket",
+        collider_kind="box",
+        physical_properties_approved=True,
+        recorded_at=NOW,
+    )
+    cache.record_world(first_world)
+    cache.record_world(second_world)
+    cache.record_evaluated_policy(policy)
+    cache.record_obstacle(other_obstacle)
+    cache.record_episode(episode)
+
+    with pytest.raises(GraphMemoryIntegrityError, match="episode world"):
+        cache.record_failure(
+            FailureMemoryRecord(
+                failure_id="failure-cross-world",
+                episode_id=episode.episode_id,
+                category="body_collision",
+                obstacle_id=other_obstacle.obstacle_id,
+                severity=1.0,
+                summary="Collision attributed to an obstacle from another world.",
+                detected_at=NOW,
+            )
+        )
+
+
+def test_outperformance_claims_require_held_out_policy_evidence(tmp_path: Path) -> None:
+    comparison = PolicyComparisonRecord(
+        candidate_policy_id="policy-v1",
+        baseline_policy_id="policy-v0",
+        evidence_hash=EVIDENCE_HASH,
+        success_rate_delta=0.25,
+        collision_rate_delta=-0.5,
+        measured_at=NOW,
+    )
+    development = AppendOnlyGraphCache(tmp_path / "development-events.jsonl")
+    development.record_evaluated_policy(make_policy("policy-v0", POLICY_V0_HASH))
+    development.record_evaluated_policy(make_policy("policy-v1", POLICY_V1_HASH))
+    with pytest.raises(GraphMemoryIntegrityError, match="held-out"):
+        development.record_outperformance(comparison)
+
+    held_out = AppendOnlyGraphCache(tmp_path / "held-out-events.jsonl")
+    held_out.record_evaluated_policy(
+        make_policy("policy-v0", POLICY_V0_HASH, evaluation_split="held_out")
+    )
+    held_out.record_evaluated_policy(
+        make_policy("policy-v1", POLICY_V1_HASH, evaluation_split="held_out")
+    )
+    receipt = held_out.record_outperformance(comparison)
+    assert receipt.record_kind == "outperformance"
+
+
+def test_remote_failure_and_outperformance_queries_enforce_evidence_scope() -> None:
+    graph = FakeFalkorGraph()
+    memory = FalkorGraphMemory(graph, graph_name="muscle_memory", query_timeout_ms=500)
+    failure = FailureMemoryRecord(
+        failure_id="failure-remote-scope",
+        episode_id="episode-remote-scope",
+        category="body_collision",
+        obstacle_id="obstacle-remote-scope",
+        severity=1.0,
+        summary="Body collision.",
+        detected_at=NOW,
+    )
+    memory.record_failure(failure)
+    _, failure_query, _, _ = graph.calls[-1]
+    assert "(episode:Episode" in failure_query
+    assert "-[:RAN_IN]->(world:World)" in failure_query
+    assert "(world)-[:CONTAINS]->(obstacle:Obstacle" in failure_query
+
+    comparison = PolicyComparisonRecord(
+        candidate_policy_id="policy-v1",
+        baseline_policy_id="policy-v0",
+        evidence_hash=EVIDENCE_HASH,
+        success_rate_delta=0.25,
+        collision_rate_delta=-0.5,
+        measured_at=NOW,
+    )
+    memory.record_outperformance(comparison)
+    _, comparison_query, params, _ = graph.calls[-1]
+    assert "candidate.evaluation_split = $held_out_split" in comparison_query
+    assert params is not None
+    assert params["held_out_split"] == "held_out"
 
 
 def test_append_only_cache_reloads_and_excludes_held_out_experience(tmp_path: Path) -> None:
@@ -320,9 +435,7 @@ def test_append_only_cache_reloads_and_excludes_held_out_experience(tmp_path: Pa
     assert len(result.lessons) == 1
     assert result.lessons[0].support_count == 2
     assert result.lessons[0].source_episode_ids == ("episode-11", "episode-22")
-    excluded = reloaded.query_curriculum(
-        CurriculumQuery(exclude_trained_policy_ids=("policy-v1",))
-    )
+    excluded = reloaded.query_curriculum(CurriculumQuery(exclude_trained_policy_ids=("policy-v1",)))
     assert excluded.lessons == ()
 
 

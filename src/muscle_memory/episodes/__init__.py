@@ -1,5 +1,6 @@
 """Backend lifecycle for immutable episodes and authenticated corrections."""
 
+from muscle_memory.episodes.journal import EpisodeJournal, VolatileEpisodeJournal
 from muscle_memory.episodes.models import (
     AuthenticatedHuman,
     CorrectionApproval,
@@ -41,6 +42,7 @@ __all__ = [
     "EpisodeClosure",
     "EpisodeIdentity",
     "EpisodeIdentityError",
+    "EpisodeJournal",
     "EpisodeLifecycleState",
     "EpisodeNotFoundError",
     "EpisodeService",
@@ -49,5 +51,6 @@ __all__ = [
     "ReplayRecord",
     "TelemetryCadenceError",
     "TelemetryDeliveryReport",
+    "VolatileEpisodeJournal",
     "telemetry_digest",
 ]

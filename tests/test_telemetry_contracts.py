@@ -25,11 +25,13 @@ def make_record(
 ) -> EpisodeTelemetryRecord:
     return EpisodeTelemetryRecord.create(
         episode_id="episode-001",
+        world_id="world-seed-17",
+        policy_id="policy-v1",
         sequence=sequence,
         sim_time_seconds=float(sequence) if sim_time_seconds is None else sim_time_seconds,
-        robot_checksum="robot-fixed-checksum",
-        policy_hash="policy-v1-hash",
-        world_hash="world-seed-17-hash",
+        robot_checksum="a" * 64,
+        policy_hash="b" * 64,
+        world_hash="c" * 64,
         signal_use=SignalUseLabel.LOGGED_ONLY,
         sensors=SensorSnapshot.all_unavailable(),
         payload={"event": "tick"} if payload is None else payload,

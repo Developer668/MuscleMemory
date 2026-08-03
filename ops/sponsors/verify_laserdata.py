@@ -37,6 +37,8 @@ async def verify_live_provider() -> tuple[int, dict[str, object]]:
     frame_id = f"{episode_id}:00000000"
     record = EpisodeTelemetryRecord.create(
         episode_id=episode_id,
+        world_id="world-laserdata-verification",
+        policy_id="policy-laserdata-verification",
         sequence=0,
         sim_time_seconds=0.0,
         robot_checksum=robot.robot_checksum,
@@ -65,8 +67,7 @@ async def verify_live_provider() -> tuple[int, dict[str, object]]:
         position = await backend.verify_event(append.event_id)
         health = backend.health
         verified = (
-            position is not None
-            and health.state is LaserDataProviderState.END_TO_END_VERIFIED
+            position is not None and health.state is LaserDataProviderState.END_TO_END_VERIFIED
         )
         return (0 if verified else 1), {
             "provider": health.provider,

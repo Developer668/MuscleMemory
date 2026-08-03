@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -141,11 +142,13 @@ class AssetApprovalLedger:
             raise AssetApprovalError("human decision does not match the reviewed proposal")
         data = canonical_json_bytes(decision.model_dump(mode="json"))
         path = self._decisions / f"{decision.requirement_id}.json"
-        try:
-            with path.open("xb") as handle:
-                handle.write(data)
-        except FileExistsError as exc:
-            raise AssetApprovalError("human approval decisions are immutable") from exc
+        checksum = f"{sha256_bytes(data)}\n".encode("ascii")
+        self._write_once(
+            path.with_suffix(".json.sha256"),
+            checksum,
+            label="human approval decision checksum",
+        )
+        self._write_once(path, data, label="human approval decision")
 
     def requirement_for(self, requirement_id: str) -> AssetApprovalRequirement | None:
         path = self._requirements / f"{requirement_id}.json"
@@ -161,11 +164,19 @@ class AssetApprovalLedger:
 
     def decision_for(self, requirement_id: str) -> HumanAssetDecision | None:
         path = self._decisions / f"{requirement_id}.json"
-        if not path.exists():
+        checksum_path = path.with_suffix(".json.sha256")
+        if not path.exists() and not checksum_path.exists():
             return None
         try:
-            decision = HumanAssetDecision.model_validate_json(path.read_bytes())
-        except (OSError, ValueError) as exc:
+            data = path.read_bytes()
+            expected = checksum_path.read_text(encoding="ascii").strip()
+        except (OSError, UnicodeError) as exc:
+            raise AssetApprovalError("human approval decision or checksum is missing") from exc
+        if expected != sha256_bytes(data):
+            raise AssetApprovalError("human approval decision failed checksum validation")
+        try:
+            decision = HumanAssetDecision.model_validate_json(data)
+        except ValueError as exc:
             raise AssetApprovalError("human approval decision failed validation") from exc
         if decision.requirement_id != requirement_id:
             raise AssetApprovalError("human decision is stored under the wrong requirement")
@@ -179,6 +190,8 @@ class AssetApprovalLedger:
         try:
             with path.open("xb") as handle:
                 handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
         except FileExistsError:
             try:
                 existing = path.read_bytes()

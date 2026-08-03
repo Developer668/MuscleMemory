@@ -6,7 +6,7 @@ import importlib
 import json
 import os
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,9 +23,9 @@ from integrations.rocketride.validator import BUNDLE_ROOT, validate_bundle
 @dataclass(frozen=True, slots=True)
 class LiveVerificationConfig:
     uri: str
-    api_key: str
+    api_key: str = field(repr=False)
     coordinator_url: str
-    coordinator_token: str
+    coordinator_token: str = field(repr=False)
     envelope_path: Path
     pipeline_path: Path = BUNDLE_ROOT / "fixed-step.pipe"
     request_timeout_ms: float = 120_000.0
@@ -231,10 +231,8 @@ async def verify_live_provider(
             "verified": True,
             "run_id": envelope.run_id,
             "step": envelope.step,
-            "task_token": token,
-            "pipeline_sha256": cast(dict[str, Any], bundle["pipeline"])[
-                "pipeline_sha256"
-            ],
+            "task_token_sha256": sha256_text(token),
+            "pipeline_sha256": cast(dict[str, Any], bundle["pipeline"])["pipeline_sha256"],
             "request_sha256": request_sha256,
             "result_sha256": sha256_text(result_json),
             "output_sha256": result["output_sha256"],
@@ -246,10 +244,8 @@ async def verify_live_provider(
             "mode": "live",
             "state": "unhealthy",
             "verified": False,
-            "task_token": token or None,
-            "pipeline_sha256": cast(dict[str, Any], bundle["pipeline"])[
-                "pipeline_sha256"
-            ],
+            "task_token_sha256": sha256_text(token) if token else None,
+            "pipeline_sha256": cast(dict[str, Any], bundle["pipeline"])["pipeline_sha256"],
             "detail": str(exc),
             "pipeline_validation_received": validation is not None,
         }

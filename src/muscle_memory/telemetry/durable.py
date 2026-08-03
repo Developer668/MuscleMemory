@@ -134,8 +134,7 @@ class DurableTelemetrySpool:
                             f"{record.sequence} already exists"
                         )
                     raise TelemetryMutationError(
-                        f"episode {record.episode_id!r} sequence "
-                        f"{record.sequence} is immutable"
+                        f"episode {record.episode_id!r} sequence {record.sequence} is immutable"
                     )
 
                 latest = self._connection.execute(
@@ -257,6 +256,10 @@ class DurableTelemetrySpool:
                     (event_id, provider, accepted_at_utc),
                 )
             else:
+                if str(existing["provider"]) != provider:
+                    raise TelemetryMutationError(
+                        "provider acceptance cannot be rebound to another provider"
+                    )
                 receipt = ProviderDeliveryReceipt(
                     event_id=event_id,
                     provider=str(existing["provider"]),
@@ -294,7 +297,10 @@ class DurableTelemetrySpool:
                     (event_id, provider_position, verified_at_utc),
                 )
                 return provider_position
-            return str(existing["provider_position"])
+            existing_position = str(existing["provider_position"])
+            if existing_position != provider_position:
+                raise TelemetryMutationError("provider verification cannot move an immutable event")
+            return existing_position
 
     def accepted_receipt(self, event_id: str) -> ProviderDeliveryReceipt | None:
         with self._lock:

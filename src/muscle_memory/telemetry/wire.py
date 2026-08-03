@@ -16,7 +16,7 @@ from muscle_memory.telemetry.models import (
     SignalUseLabel,
 )
 
-LASERDATA_TELEMETRY_SCHEMA = "muscle-memory.episode-telemetry.v1"
+LASERDATA_TELEMETRY_SCHEMA = "muscle-memory.episode-event.v2"
 FRAME_JOIN_KEY = "frame_id"
 
 
@@ -55,8 +55,11 @@ class WireEpisodeTelemetryRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     episode_id: str = Field(min_length=1)
+    world_id: str = Field(min_length=1)
+    policy_id: str = Field(min_length=1)
     sequence: int = Field(ge=0)
     sim_time_seconds: float = Field(ge=0.0, allow_inf_nan=False)
+    event_time: float = Field(ge=0.0, allow_inf_nan=False)
     robot_checksum: str = Field(min_length=1)
     policy_hash: str = Field(min_length=1)
     world_hash: str = Field(min_length=1)
@@ -64,6 +67,7 @@ class WireEpisodeTelemetryRecord(BaseModel):
     sensors: tuple[WireSensorReading, ...] = Field(min_length=8, max_length=8)
     payload_json: str
     payload_checksum: str = Field(pattern=r"^[0-9a-f]{64}$")
+    failure_type: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     frame_id: str | None = None
 
     @model_validator(mode="after")
@@ -89,8 +93,11 @@ class WireEpisodeTelemetryRecord(BaseModel):
         record.verify_integrity()
         return cls(
             episode_id=record.episode_id,
+            world_id=record.world_id,
+            policy_id=record.policy_id,
             sequence=record.sequence,
             sim_time_seconds=record.sim_time_seconds,
+            event_time=record.event_time,
             robot_checksum=record.robot_checksum,
             policy_hash=record.policy_hash,
             world_hash=record.world_hash,
@@ -106,6 +113,7 @@ class WireEpisodeTelemetryRecord(BaseModel):
             ),
             payload_json=record.payload_json,
             payload_checksum=record.payload_checksum,
+            failure_type=record.failure_type,
             frame_id=record.frame_id,
         )
 
@@ -114,8 +122,11 @@ class WireEpisodeTelemetryRecord(BaseModel):
         snapshot = SensorSnapshot(*readings)
         return EpisodeTelemetryRecord(
             episode_id=self.episode_id,
+            world_id=self.world_id,
+            policy_id=self.policy_id,
             sequence=self.sequence,
             sim_time_seconds=self.sim_time_seconds,
+            event_time=self.event_time,
             robot_checksum=self.robot_checksum,
             policy_hash=self.policy_hash,
             world_hash=self.world_hash,
@@ -123,6 +134,7 @@ class WireEpisodeTelemetryRecord(BaseModel):
             sensors=snapshot,
             payload_json=self.payload_json,
             payload_checksum=self.payload_checksum,
+            failure_type=self.failure_type,
             frame_id=self.frame_id,
         )
 

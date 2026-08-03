@@ -102,6 +102,18 @@ server = make_callback_server(dispatcher, bearer_token=deployment_secret)
 server.serve_forever()
 ```
 
+Backend composition can load the checked artifact without duplicating paths or hashes:
+
+```python
+from integrations.rocketride import ReviewedPipelineArtifact
+
+artifact = ReviewedPipelineArtifact.from_env()
+# artifact.pipeline_path, artifact.pipeline_sha256, artifact.sdk_environment
+```
+
+`public_evidence` deliberately omits the callback token. Provider URI and API-key ownership
+remain with the backend provider registry; this object only supplies reviewed pipeline data.
+
 In production, terminate TLS in front of the callback, keep the bearer token in the deployment
 secret store, bind the callback to a private network, and use durable sequence/idempotency state.
 The health route exposes no credentials or execution data.
@@ -125,7 +137,8 @@ against `rocketride==1.3.0`; pin that version in the deployment image:
 uv pip install rocketride==1.3.0
 ```
 
-Set these only in the deployment secret/runtime environment:
+Set these only in the deployment secret/runtime environment. Runtime configuration reprs and
+verification evidence never render either credential in plaintext:
 
 ```text
 ROCKETRIDE_URI=https://cloud.rocketride.ai
@@ -143,6 +156,6 @@ uv run python -m ops.sponsors.verify_rocketride
 
 The verifier first validates the local checksums, calls the provider's `validate`, starts the
 reviewed `.pipe` with `use`, sends the supplied real command, validates the typed callback
-result, and terminates the task. Successful evidence includes the task token, pipeline hash,
+result, and terminates the task. Successful evidence includes the task-token checksum, pipeline hash,
 request hash, result hash, output hash, and provider state. Missing SDK/configuration exits
 nonzero and is labeled explicitly; it never emits fabricated provider proof.

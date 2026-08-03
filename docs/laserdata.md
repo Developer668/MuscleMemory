@@ -25,7 +25,7 @@ details, and verification output.
 ```text
 LASERDATA_CONNECTION_STRING=iggy://username:password@deployment-host:8090
 LASERDATA_STREAM=muscle-memory
-LASERDATA_TOPIC=episode-telemetry-v1
+LASERDATA_TOPIC=episode-events-v2
 LASERDATA_PARTITIONS=4
 LASERDATA_TIMEOUT_SECONDS=5
 MUSCLE_MEMORY_TELEMETRY_SPOOL=artifacts/telemetry/laserdata-spool.sqlite3
@@ -36,10 +36,12 @@ the same client surface, but it is development evidence rather than LaserData Cl
 
 ## Delivery contract
 
-Every record contains the permanent robot checksum, world and policy hashes, monotonic episode
-sequence, simulation timestamp, all eight labeled sensor categories, the canonical payload
-checksum, and an optional synchronized `frame_id`. Numeric telemetry is scheduled at exactly
-20 Hz by `NumericTelemetryCadence`; the 500 Hz physics clock emits every 25 physics steps.
+Every record contains typed and indexed `episode_id`, `world_id`, `policy_id`, `failure_type`,
+and deterministic `event_time` fields alongside the permanent robot checksum, world and policy
+hashes, monotonic sequence, all eight labeled sensor categories, and the canonical payload
+checksum. An optional synchronized `frame_id` remains the only video join key. Numeric telemetry
+is scheduled at exactly 20 Hz by `NumericTelemetryCadence`; the 500 Hz physics clock emits every
+25 physics steps.
 
 The backend always appends locally first. The SQLite spool uses triggers to reject every update
 or delete to episode records, provider acknowledgements, and replay verifications. A provider

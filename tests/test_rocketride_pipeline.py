@@ -37,6 +37,7 @@ from integrations.rocketride.protocol import (
     sha256_text,
     validate_result,
 )
+from integrations.rocketride.runtime import ReviewedPipelineArtifact
 from integrations.rocketride.validator import BUNDLE_ROOT, validate_bundle
 
 PLAN_DIGEST = sha256_text("plan")
@@ -140,6 +141,24 @@ def test_reviewed_bundle_hashes_and_pipeline_shape_are_valid() -> None:
     assert all("control" not in component for component in pipeline["components"])
 
 
+def test_reviewed_artifact_builds_only_callback_sdk_environment() -> None:
+    artifact = ReviewedPipelineArtifact.from_env(
+        {
+            "ROCKETRIDE_MM_COORDINATOR_URL": "https://coordinator.example.test",
+            "ROCKETRIDE_MM_COORDINATOR_TOKEN": CALLBACK_TOKEN,
+        }
+    )
+
+    assert artifact.pipeline_path == BUNDLE_ROOT / "fixed-step.pipe"
+    assert len(artifact.pipeline_sha256) == 64
+    assert artifact.sdk_environment == {
+        "ROCKETRIDE_MM_COORDINATOR_URL": "https://coordinator.example.test",
+        "ROCKETRIDE_MM_COORDINATOR_TOKEN": CALLBACK_TOKEN,
+    }
+    assert CALLBACK_TOKEN not in canonical_json(artifact.public_evidence)
+    assert CALLBACK_TOKEN not in repr(artifact)
+
+
 def test_dispatcher_executes_only_the_fixed_order_and_exact_retries_are_idempotent() -> None:
     calls: list[str] = []
     final_decision = sha256_text("final-approval")
@@ -175,9 +194,7 @@ def test_dispatcher_rejects_reordering_unknown_tools_and_runtime_teacher_input()
     with pytest.raises(ContractError, match="eight allowed"):
         StepEnvelope.parse(canonical_json(unknown))
 
-    evaluation = _payloads()["evaluate_candidate_policy"] | {
-        "expert_path": [[0.0, 0.0]]
-    }
+    evaluation = _payloads()["evaluate_candidate_policy"] | {"expert_path": [[0.0, 0.0]]}
     with pytest.raises(ContractError, match="only policy ids"):
         StepEnvelope.parse(_encoded("evaluate_candidate_policy", evaluation))
 
@@ -189,9 +206,7 @@ def test_promotion_requires_ledger_verified_matching_human_evidence() -> None:
         no_decisions.dispatch(_encoded(step, payloads[step]))
 
     with pytest.raises(ApprovalRejectedError, match="requires exactly"):
-        no_decisions.dispatch(
-            _encoded("promote_or_roll_back", payloads["promote_or_roll_back"])
-        )
+        no_decisions.dispatch(_encoded("promote_or_roll_back", payloads["promote_or_roll_back"]))
 
     forged = _approval("promote_or_roll_back", "policy_promotion", "forged")
     with pytest.raises(ApprovalRejectedError, match="not found"):
@@ -286,7 +301,7 @@ class _FakeRocketRideClient:
         self._events.append(("terminate", token))
 
 
-def test_live_verifier_captures_token_and_hashes_with_fake_sdk(tmp_path: Path) -> None:
+def test_live_verifier_redacts_token_and_returns_hashes_with_fake_sdk(tmp_path: Path) -> None:
     envelope_path = tmp_path / "envelope.json"
     envelope_path.write_text(
         _encoded("validate_world", _payloads()["validate_world"]),
@@ -300,18 +315,19 @@ def test_live_verifier_captures_token_and_hashes_with_fake_sdk(tmp_path: Path) -
         envelope_path=envelope_path,
     )
     events: list[object] = []
+    assert "provider-secret" not in repr(config)
+    assert CALLBACK_TOKEN not in repr(config)
 
     def factory(**kwargs: object) -> _FakeRocketRideClient:
         return _FakeRocketRideClient(events, **kwargs)
 
-    exit_code, evidence = asyncio.run(
-        verify_live_provider(config, client_factory=factory)
-    )
+    exit_code, evidence = asyncio.run(verify_live_provider(config, client_factory=factory))
 
     assert exit_code == 0
     assert evidence["verified"] is True
     assert evidence["state"] == "end_to_end_verified"
-    assert evidence["task_token"] == "real-looking-fake-task-token"
+    assert evidence["task_token_sha256"] == sha256_text("real-looking-fake-task-token")
+    assert "real-looking-fake-task-token" not in canonical_json(evidence)
     assert len(str(evidence["pipeline_sha256"])) == 64
     assert events[-2:] == [("terminate", "real-looking-fake-task-token"), "exit"]
 

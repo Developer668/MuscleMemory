@@ -88,8 +88,12 @@ def _telemetry(sequence: int = 0) -> TelemetryRecordView:
     )
     return TelemetryRecordView(
         episode_id="episode-1",
+        world_id="world-training-1",
+        policy_id="policy-v1",
         sequence=sequence,
         sim_time_seconds=sequence / 20,
+        event_time=sequence / 20,
+        failure_type=None,
         frame_id=f"frame-{sequence}",
         signal_use="Logged only",
         sensors=sensors,

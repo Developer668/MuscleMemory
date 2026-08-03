@@ -24,12 +24,10 @@ LASERDATA_PROVIDER_NAME = "LaserData"
 LASERDATA_SDK_REQUIREMENT = "laser-sdk==0.0.1rc16"
 NUMERIC_TELEMETRY_HZ = 20
 DEFAULT_LASERDATA_STREAM = "muscle-memory"
-DEFAULT_LASERDATA_TOPIC = "episode-telemetry-v1"
+DEFAULT_LASERDATA_TOPIC = "episode-events-v2"
 DEFAULT_LASERDATA_PARTITIONS = 4
 DEFAULT_LASERDATA_TIMEOUT_SECONDS = 5.0
-DEFAULT_DURABLE_SPOOL_PATH = (
-    REPOSITORY_ROOT / "artifacts" / "telemetry" / "laserdata-spool.sqlite3"
-)
+DEFAULT_DURABLE_SPOOL_PATH = REPOSITORY_ROOT / "artifacts" / "telemetry" / "laserdata-spool.sqlite3"
 
 
 class LaserDataProviderState(StrEnum):
@@ -111,9 +109,7 @@ class LaserDataConfig:
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> LaserDataConfig:
         source = os.environ if environ is None else environ
-        raw_partitions = source.get(
-            "LASERDATA_PARTITIONS", str(DEFAULT_LASERDATA_PARTITIONS)
-        )
+        raw_partitions = source.get("LASERDATA_PARTITIONS", str(DEFAULT_LASERDATA_PARTITIONS))
         raw_timeout = source.get(
             "LASERDATA_TIMEOUT_SECONDS", str(DEFAULT_LASERDATA_TIMEOUT_SECONDS)
         )
@@ -275,6 +271,10 @@ class OfficialLaserDataTransport:
             topic.publish(envelope)
             .partition_key(envelope.record.episode_id)
             .index("episode_id", envelope.record.episode_id)
+            .index("world_id", envelope.record.world_id)
+            .index("policy_id", envelope.record.policy_id)
+            .index("failure_type", envelope.record.failure_type or "none")
+            .index("event_time", f"{envelope.record.event_time:.9f}")
             .index("sequence", str(envelope.record.sequence))
             .index("event_id", envelope.event_id)
             .header("frame_id", envelope.record.frame_id or "")
@@ -466,12 +466,47 @@ class LaserDataTelemetryBackend:
         for envelope in self.spool.pending_envelopes():
             if not self._provider_active:
                 break
-            if not await self._publish_locked(envelope):
+            recovered = await self._recover_pending_locked(envelope)
+            if recovered is None:
+                break
+            if not recovered and not await self._publish_locked(envelope):
                 break
             flushed += 1
         if flushed:
             self._detail = f"provider healthy; flushed {flushed} durable local record(s)"
         return flushed
+
+    async def _recover_pending_locked(
+        self,
+        envelope: LaserDataTelemetryEnvelope,
+    ) -> bool | None:
+        """Recover a receipt after a publish/crash window without duplicating the event."""
+
+        transport = self._transport
+        if transport is None:
+            return None
+        try:
+            position = await transport.find_event(envelope.event_id)
+        except Exception as error:
+            self._mark_degraded("pending-event replay check", error)
+            await self._close_transport_locked()
+            return None
+        if position is None:
+            return False
+        observed_at = _utc_now()
+        self.spool.mark_provider_accepted(
+            envelope.event_id,
+            provider=LASERDATA_PROVIDER_NAME,
+            accepted_at_utc=observed_at,
+        )
+        self.spool.mark_provider_verified(
+            envelope.event_id,
+            provider_position=position,
+            verified_at_utc=observed_at,
+        )
+        self._state = LaserDataProviderState.END_TO_END_VERIFIED
+        self._detail = "provider replay recovered an exact pending event without republishing"
+        return True
 
     async def verify_event(self, event_id: str) -> str | None:
         async with self._lock:
@@ -503,9 +538,7 @@ class LaserDataTelemetryBackend:
         error_type = type(error).__name__
         self._state = LaserDataProviderState.DEGRADED
         self._last_error_type = error_type
-        self._detail = (
-            f"LaserData {operation} failed ({error_type}); durable local cache only"
-        )
+        self._detail = f"LaserData {operation} failed ({error_type}); durable local cache only"
 
     async def _close_transport_locked(self) -> None:
         transport = self._transport
