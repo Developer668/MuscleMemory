@@ -9,6 +9,8 @@ from muscle_memory.backend.approvals import CoordinatorApprovalLedger
 from muscle_memory.backend.config import BackendConfig
 from muscle_memory.backend.episode_journal import CoordinatorEpisodeJournal
 from muscle_memory.backend.episode_runtime import OperationalEpisodeRuntime
+from muscle_memory.backend.evaluation_import import admit_held_out_evaluation_from_env
+from muscle_memory.backend.graph_prerequisites import CoordinatorGraphPrerequisiteResolver
 from muscle_memory.backend.providers import build_provider_bundle
 from muscle_memory.backend.rocketride_artifact import (
     ReviewedPipelineArtifact,
@@ -41,6 +43,18 @@ def build_api_backend(
             approval_ledger=approval_ledger,
             coordinator=coordinator,
         )
+        evaluation_admission = admit_held_out_evaluation_from_env(
+            coordinator,
+            config.environ,
+        )
+        if evaluation_admission is not None:
+            admitted_policy_ids = {
+                evaluation_admission.baseline_policy_id,
+                evaluation_admission.candidate_policy_id,
+            }
+            for checkpoint in coordinator.evaluated_checkpoints():
+                if checkpoint.policy_id in admitted_policy_ids:
+                    providers.graph_memory.record_evaluated_policy(checkpoint)
         journal = CoordinatorEpisodeJournal(
             coordinator,
             expected_robot_checksum=verification.robot_checksum,
@@ -50,6 +64,10 @@ def build_api_backend(
             telemetry_store=providers.laserdata.spool,
             graph_memory=providers.graph_memory,
             journal=journal,
+            graph_prerequisites=CoordinatorGraphPrerequisiteResolver(
+                coordinator,
+                expected_robot_checksum=verification.robot_checksum,
+            ),
         )
         episode_runtime = OperationalEpisodeRuntime(
             episode_service,

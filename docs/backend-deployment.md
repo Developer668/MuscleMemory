@@ -1,12 +1,14 @@
-# Backend deployment
+# Local backend packaging
 
-The repository ships one reproducible container image and a Compose stack for backend
+The repository ships one reproducible container image and a Compose stack for optional backend
 development. The API runs with persistent coordinator, telemetry-outbox, graph-cache, and
 asset-cache volumes. The local data services are pinned self-hosted instances of FalkorDB and
 the LaserData Apache Iggy fork required by the stable SDK's VSR wire protocol.
 
-This stack is deployment tooling, not cloud-readiness evidence. A healthy local FalkorDB or
-Iggy container proves only the self-hosted development path. Managed LaserData, FalkorDB,
+This stack is local-development tooling, not the production deployment and not cloud-readiness
+evidence. Production runs directly under `uv` on Daytona as described in
+[`daytona-deployment.md`](daytona-deployment.md). A healthy local FalkorDB or Iggy container
+proves only the self-hosted development path. Managed LaserData, FalkorDB,
 Guild.ai, RocketRide, reference-image, and TRELLIS integrations remain unconfigured until
 their runtime variables are supplied and their provider-specific verification succeeds.
 

@@ -154,7 +154,7 @@ def _environment(tmp_path: Path) -> dict[str, str]:
     return {
         "MUSCLE_MEMORY_COORDINATOR_DB_PATH": str(tmp_path / "coordinator.sqlite3"),
         "MUSCLE_MEMORY_FALKORDB_CACHE_PATH": str(tmp_path / "graph.jsonl"),
-        "LASERDATA_SPOOL_PATH": str(tmp_path / "laser-spool.jsonl"),
+        "MUSCLE_MEMORY_TELEMETRY_SPOOL": str(tmp_path / "laser-spool.sqlite3"),
         "MM_ASSET_CACHE_DIR": str(tmp_path / "assets"),
         "MM_ASSET_APPROVAL_LEDGER_DIR": str(tmp_path / "approvals"),
         "ROCKETRIDE_MM_COORDINATOR_URL": "http://127.0.0.1:8000",

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from pydantic import TypeAdapter
 
 from muscle_memory.coordinator import (
@@ -17,12 +19,14 @@ from muscle_memory.episodes import (
     EpisodeAppendReceipt,
     EpisodeClosure,
     EpisodeIdentity,
+    GraphPersistenceReport,
 )
 from muscle_memory.graph_memory import WorldSplit
 
 _IDENTITY_ADAPTER = TypeAdapter(EpisodeIdentity)
 _RECEIPT_ADAPTER = TypeAdapter(EpisodeAppendReceipt)
 _CLOSURE_ADAPTER = TypeAdapter(EpisodeClosure)
+_GRAPH_REPORT_ADAPTER = TypeAdapter(GraphPersistenceReport)
 _CORRECTION_ADAPTER = TypeAdapter(CorrectionSubmission)
 _APPROVAL_ADAPTER = TypeAdapter(CorrectionApproval)
 
@@ -60,7 +64,16 @@ class CoordinatorEpisodeJournal:
 
     def closure_for(self, episode_id: str) -> EpisodeClosure | None:
         payload = self._store.training_episode_closure(episode_id)
-        return None if payload is None else _CLOSURE_ADAPTER.validate_json(payload)
+        if payload is None:
+            return None
+        closure = _CLOSURE_ADAPTER.validate_json(payload)
+        deliveries = self._store.training_episode_graph_deliveries(episode_id)
+        if not deliveries:
+            return closure
+        return replace(
+            closure,
+            graph=_GRAPH_REPORT_ADAPTER.validate_json(deliveries[-1]),
+        )
 
     def corrections(self) -> tuple[CorrectionSubmission, ...]:
         return tuple(
@@ -148,6 +161,21 @@ class CoordinatorEpisodeJournal:
             )
         elif state is not terminal:
             raise CoordinatorStateError("durable closure conflicts with episode state")
+
+    def record_graph_delivery(
+        self,
+        episode_id: str,
+        report: GraphPersistenceReport,
+    ) -> None:
+        closure = self.closure_for(episode_id)
+        if closure is None:
+            raise CoordinatorStateError("graph delivery requires a durable episode closure")
+        if report.expected_records != closure.graph.expected_records:
+            raise CoordinatorStateError("graph delivery record count conflicts with closure")
+        self._store.record_training_episode_graph_delivery(
+            episode_id,
+            _encode(_GRAPH_REPORT_ADAPTER, report),
+        )
 
     def record_correction(self, correction: CorrectionSubmission) -> None:
         self._store.record_training_correction_submission(

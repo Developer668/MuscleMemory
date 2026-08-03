@@ -57,6 +57,10 @@ from muscle_memory.api.models import (
 from muscle_memory.backend.approvals import CoordinatorApprovalLedger
 from muscle_memory.backend.episode_journal import CoordinatorEpisodeJournal
 from muscle_memory.backend.episode_runtime import OperationalEpisodeRuntime
+from muscle_memory.backend.evidence_admission import (
+    TrustedWorkflowEvidenceAdmitter,
+    WorkflowEvidenceAdmissionError,
+)
 from muscle_memory.backend.providers import ProviderBundle
 from muscle_memory.backend.rocketride_callback import FixedStepDispatcher
 from muscle_memory.coordinator import CoordinatorStore
@@ -120,6 +124,11 @@ class MuscleMemoryApiBackend:
         self.approval_ledger = approval_ledger
         self.rocketride_callback = rocketride_callback
         self.orchestrator = SponsorOrchestrator(providers.guild, providers.rocketride)
+        self.evidence_admitter = TrustedWorkflowEvidenceAdmitter(
+            coordinator=coordinator,
+            journal=journal,
+            graph_memory=providers.graph_memory,
+        )
         self._reviewed: dict[str, ReviewedExecution] = {}
         self._runs: dict[str, PipelineRun] = {}
         self._started = False
@@ -161,6 +170,8 @@ class MuscleMemoryApiBackend:
             raise RuntimeError("backend resources have already been closed")
         if self._started:
             return
+        # A health probe also replays any append-only cache prefix to a recovered FalkorDB.
+        self.providers.graph_memory.health()
         await self.providers.laserdata.initialize()
         self._started = True
 
@@ -387,14 +398,27 @@ class MuscleMemoryApiBackend:
             raise ApiBackendError(409, "workflow_immutable", "workflow id is immutable")
         if existing is None:
             self.coordinator.register_workflow(plan, created_at=datetime.now(UTC))
-        try:
-            self.coordinator.record_workflow_guild_evidence(plan.run_id, request.evidence)
-        except (CoordinatorIntegrityError, ValueError) as exc:
+        stored_evidence = self.coordinator.workflow_guild_evidence(plan.run_id)
+        if stored_evidence is None:
+            try:
+                self.evidence_admitter.admit(plan, request.evidence)
+                self.coordinator.record_workflow_guild_evidence(plan.run_id, request.evidence)
+            except (
+                CoordinatorIntegrityError,
+                WorkflowEvidenceAdmissionError,
+                ValueError,
+            ) as exc:
+                raise ApiBackendError(
+                    422,
+                    "workflow_evidence_invalid",
+                    "workflow evidence is not backed by matching coordinator artifacts",
+                ) from exc
+        elif stored_evidence != request.evidence:
             raise ApiBackendError(
-                422,
-                "workflow_evidence_invalid",
-                "workflow evidence is not backed by matching coordinator artifacts",
-            ) from exc
+                409,
+                "workflow_evidence_immutable",
+                "workflow evidence is immutable once admitted",
+            )
         prior_review = self._reviewed.get(plan.run_id)
         if prior_review is not None:
             return reviewed_execution_view(prior_review)

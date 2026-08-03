@@ -72,8 +72,8 @@ export function LandingPage() {
           <a href="#memory">Memory</a>
           <a href="#proof">Proof</a>
         </nav>
-        <a className="header-action" href="#platform">
-          Explore platform
+        <a className="header-action" href="/">
+          Open console
           <ChevronRight size={16} strokeWidth={1.8} />
         </a>
       </header>

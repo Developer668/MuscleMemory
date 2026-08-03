@@ -33,3 +33,13 @@ POLICY_V1_CHECKPOINT = REPOSITORY_ROOT / "models" / "policy" / "delivery-v1.npz"
 POLICY_V1_TRAINING_EVIDENCE = (
     REPOSITORY_ROOT / "evidence" / "policy" / "delivery-v1" / "training.json"
 )
+POLICY_V2_CHECKPOINT = REPOSITORY_ROOT / "models" / "policy" / "delivery-v2.npz"
+POLICY_V2_TRAINING_EVIDENCE = (
+    REPOSITORY_ROOT / "evidence" / "policy" / "delivery-v2" / "training.json"
+)
+POLICY_V2_DEVELOPMENT_EVIDENCE = (
+    REPOSITORY_ROOT / "evidence" / "policy" / "delivery-v2" / "development-evaluation.json"
+)
+POLICY_V2_HELDOUT_EVIDENCE = (
+    REPOSITORY_ROOT / "evidence" / "policy" / "delivery-v2" / "heldout-evaluation.json"
+)

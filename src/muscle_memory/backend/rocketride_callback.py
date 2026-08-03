@@ -438,8 +438,16 @@ class FixedStepDispatcher:
         if decision is None:
             raise CallbackContractError("numeric policy decision is not recorded")
         action = PolicyAction(str(payload.get("action", "")))
-        if decision.action is not action or decision.target_policy_id != payload.get(
-            "candidate_policy_id"
+        evaluation = self._required_evidence(plan).evaluation.evaluation_evidence
+        expected_target_policy_id = (
+            evaluation.candidate.policy_id
+            if action is PolicyAction.PROMOTE
+            else evaluation.baseline.policy_id
+        )
+        if (
+            decision.action is not action
+            or payload.get("candidate_policy_id") != evaluation.candidate.policy_id
+            or decision.target_policy_id != expected_target_policy_id
         ):
             raise CallbackContractError("numeric policy decision does not match the final command")
         requirement = next(

@@ -18,7 +18,9 @@ from muscle_memory.coordinator.models import (
     EpisodeKind,
     EpisodeState,
     EpisodeTransition,
+    HeldOutEvaluationArtifact,
     HeldOutEvaluationEpisodeMetadata,
+    HeldOutEvaluationResult,
     NumericPolicyDecision,
     PolicyAction,
     PolicyAliasEvent,
@@ -50,9 +52,12 @@ from muscle_memory.orchestration.evidence import (
 _IMMUTABLE_TABLES = (
     "episodes",
     "held_out_episode_scopes",
+    "held_out_evaluation_artifacts",
+    "held_out_episode_results",
     "training_episode_sessions",
     "training_episode_receipts",
     "training_episode_closures",
+    "training_episode_graph_deliveries",
     "training_correction_submissions",
     "training_correction_approvals",
     "training_correction_graph_deliveries",
@@ -116,6 +121,22 @@ class CoordinatorStore:
                     held_out_world_set_id TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS held_out_evaluation_artifacts (
+                    artifact_hash TEXT PRIMARY KEY,
+                    held_out_world_set_id TEXT NOT NULL,
+                    artifact_json TEXT NOT NULL,
+                    evaluated_at_utc TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS held_out_episode_results (
+                    episode_id TEXT PRIMARY KEY REFERENCES held_out_episode_scopes(episode_id),
+                    evaluation_artifact_hash TEXT NOT NULL
+                        REFERENCES held_out_evaluation_artifacts(artifact_hash),
+                    result_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
                 CREATE TABLE IF NOT EXISTS training_episode_sessions (
                     episode_id TEXT PRIMARY KEY REFERENCES episodes(episode_id),
                     identity_json TEXT NOT NULL,
@@ -134,6 +155,14 @@ class CoordinatorStore:
                     episode_id TEXT PRIMARY KEY REFERENCES training_episode_sessions(episode_id),
                     closure_json TEXT NOT NULL,
                     content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS training_episode_graph_deliveries (
+                    episode_id TEXT NOT NULL REFERENCES training_episode_closures(episode_id),
+                    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                    delivery_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE,
+                    PRIMARY KEY (episode_id, sequence)
                 );
 
                 CREATE TABLE IF NOT EXISTS training_correction_submissions (
@@ -592,6 +621,47 @@ class CoordinatorStore:
             ).fetchone()
         return None if row is None else str(row["closure_json"])
 
+    def record_training_episode_graph_delivery(
+        self,
+        episode_id: str,
+        delivery_json: str,
+    ) -> int:
+        """Append one retryable graph-delivery attempt after durable closure."""
+
+        content_hash = self._canonical_payload_hash(delivery_json)
+        with self._transaction() as connection:
+            self._require_training_closure(connection, episode_id)
+            latest = connection.execute(
+                """
+                SELECT sequence, content_hash FROM training_episode_graph_deliveries
+                WHERE episode_id = ? ORDER BY sequence DESC LIMIT 1
+                """,
+                (episode_id,),
+            ).fetchone()
+            if latest is not None and str(latest["content_hash"]) == content_hash:
+                return int(latest["sequence"])
+            sequence = 0 if latest is None else int(latest["sequence"]) + 1
+            connection.execute(
+                """
+                INSERT INTO training_episode_graph_deliveries (
+                    episode_id, sequence, delivery_json, content_hash
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (episode_id, sequence, delivery_json, content_hash),
+            )
+        return sequence
+
+    def training_episode_graph_deliveries(self, episode_id: str) -> tuple[str, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT delivery_json FROM training_episode_graph_deliveries
+                WHERE episode_id = ? ORDER BY sequence
+                """,
+                (episode_id,),
+            ).fetchall()
+        return tuple(str(row["delivery_json"]) for row in rows)
+
     def record_training_correction_submission(
         self,
         correction_id: str,
@@ -778,6 +848,184 @@ class CoordinatorStore:
                 (episode_id, EpisodeKind.HELD_OUT_EVALUATION.value),
             ).fetchone()
         return None if row is None else self._held_out_episode_from_row(row)
+
+    def held_out_evaluation_episodes_for_set(
+        self,
+        held_out_world_set_id: str,
+    ) -> tuple[HeldOutEvaluationEpisodeMetadata, ...]:
+        """Evaluation-only projection used to verify paired held-out provenance."""
+
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT episodes.*, scopes.held_out_world_set_id
+                FROM episodes
+                JOIN held_out_episode_scopes AS scopes
+                    ON scopes.episode_id = episodes.episode_id
+                WHERE episodes.kind = ? AND scopes.held_out_world_set_id = ?
+                ORDER BY episodes.episode_id
+                """,
+                (EpisodeKind.HELD_OUT_EVALUATION.value, held_out_world_set_id),
+            ).fetchall()
+        return tuple(self._held_out_episode_from_row(row) for row in rows)
+
+    def record_held_out_evaluation_artifact(
+        self,
+        artifact: HeldOutEvaluationArtifact,
+    ) -> HeldOutEvaluationArtifact:
+        """Persist the canonical artifact only after its external hash was verified."""
+
+        with self._transaction() as connection:
+            existing = connection.execute(
+                """
+                SELECT * FROM held_out_evaluation_artifacts
+                WHERE artifact_hash = ?
+                """,
+                (artifact.artifact_hash,),
+            ).fetchone()
+            if existing is not None:
+                current = self._held_out_artifact_from_row(existing)
+                if current.content_hash != artifact.content_hash:
+                    raise CoordinatorIntegrityError(
+                        "held-out evaluation artifact is immutable"
+                    )
+                return current
+            connection.execute(
+                """
+                INSERT INTO held_out_evaluation_artifacts (
+                    artifact_hash, held_out_world_set_id, artifact_json,
+                    evaluated_at_utc, content_hash
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    artifact.artifact_hash,
+                    artifact.held_out_world_set_id,
+                    artifact.artifact_json,
+                    isoformat_utc(artifact.evaluated_at),
+                    artifact.content_hash,
+                ),
+            )
+        return artifact
+
+    def held_out_evaluation_artifact(
+        self,
+        artifact_hash: str,
+    ) -> HeldOutEvaluationArtifact | None:
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT * FROM held_out_evaluation_artifacts
+                WHERE artifact_hash = ?
+                """,
+                (artifact_hash,),
+            ).fetchone()
+        return None if row is None else self._held_out_artifact_from_row(row)
+
+    def record_held_out_evaluation_result(
+        self,
+        result: HeldOutEvaluationResult,
+    ) -> HeldOutEvaluationResult:
+        """Bind a measured result to its immutable episode and source artifact."""
+
+        decoded = json.loads(result.result_json)
+        with self._transaction() as connection:
+            row = connection.execute(
+                """
+                SELECT episodes.*, scopes.held_out_world_set_id,
+                       artifacts.held_out_world_set_id AS artifact_world_set_id
+                FROM episodes
+                JOIN held_out_episode_scopes AS scopes
+                    ON scopes.episode_id = episodes.episode_id
+                JOIN held_out_evaluation_artifacts AS artifacts
+                    ON artifacts.artifact_hash = ?
+                WHERE episodes.episode_id = ? AND episodes.kind = ?
+                """,
+                (
+                    result.evaluation_artifact_hash,
+                    result.episode_id,
+                    EpisodeKind.HELD_OUT_EVALUATION.value,
+                ),
+            ).fetchone()
+            if row is None:
+                raise CoordinatorStateError(
+                    "held-out result requires an admitted artifact and evaluation episode"
+                )
+            if str(row["held_out_world_set_id"]) != str(row["artifact_world_set_id"]):
+                raise CoordinatorIntegrityError(
+                    "held-out result world set does not match its evaluation artifact"
+                )
+            expected_identity = {
+                "episode_id": result.episode_id,
+                "robot_checksum": str(row["robot_checksum"]),
+                "world_hash": str(row["world_hash"]),
+                "policy_hash": str(row["policy_hash"]),
+                "world_split": "held_out",
+            }
+            if any(decoded.get(name) != value for name, value in expected_identity.items()):
+                raise CoordinatorIntegrityError(
+                    "held-out result payload does not match its immutable episode identity"
+                )
+            latest = connection.execute(
+                """
+                SELECT state FROM episode_transitions
+                WHERE episode_id = ?
+                ORDER BY sequence DESC
+                LIMIT 1
+                """,
+                (result.episode_id,),
+            ).fetchone()
+            expected_state = (
+                EpisodeState.SUCCEEDED.value
+                if decoded.get("success") is True
+                else EpisodeState.FAILED.value
+            )
+            if latest is None or str(latest["state"]) != expected_state:
+                raise CoordinatorStateError(
+                    "held-out result outcome does not match the terminal episode state"
+                )
+            existing = connection.execute(
+                "SELECT * FROM held_out_episode_results WHERE episode_id = ?",
+                (result.episode_id,),
+            ).fetchone()
+            if existing is not None:
+                current = self._held_out_result_from_row(existing)
+                if current.content_hash != result.content_hash:
+                    raise CoordinatorIntegrityError("held-out evaluation result is immutable")
+                return current
+            connection.execute(
+                """
+                INSERT INTO held_out_episode_results (
+                    episode_id, evaluation_artifact_hash, result_json, content_hash
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    result.episode_id,
+                    result.evaluation_artifact_hash,
+                    result.result_json,
+                    result.content_hash,
+                ),
+            )
+        return result
+
+    def held_out_evaluation_results_for_set(
+        self,
+        held_out_world_set_id: str,
+    ) -> tuple[HeldOutEvaluationResult, ...]:
+        """Evaluation-only projection of measured results, never training input."""
+
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT results.*
+                FROM held_out_episode_results AS results
+                JOIN held_out_episode_scopes AS scopes
+                    ON scopes.episode_id = results.episode_id
+                WHERE scopes.held_out_world_set_id = ?
+                ORDER BY results.episode_id
+                """,
+                (held_out_world_set_id,),
+            ).fetchall()
+        return tuple(self._held_out_result_from_row(row) for row in rows)
 
     def transition_episode(
         self,
@@ -1630,6 +1878,33 @@ class CoordinatorStore:
         return metadata
 
     @staticmethod
+    def _held_out_artifact_from_row(row: sqlite3.Row) -> HeldOutEvaluationArtifact:
+        artifact = HeldOutEvaluationArtifact(
+            artifact_hash=str(row["artifact_hash"]),
+            held_out_world_set_id=str(row["held_out_world_set_id"]),
+            artifact_json=str(row["artifact_json"]),
+            evaluated_at=datetime.fromisoformat(str(row["evaluated_at_utc"])),
+        )
+        if artifact.content_hash != str(row["content_hash"]):
+            raise CoordinatorIntegrityError(
+                "held-out evaluation artifact content hash mismatch"
+            )
+        return artifact
+
+    @staticmethod
+    def _held_out_result_from_row(row: sqlite3.Row) -> HeldOutEvaluationResult:
+        result = HeldOutEvaluationResult(
+            episode_id=str(row["episode_id"]),
+            evaluation_artifact_hash=str(row["evaluation_artifact_hash"]),
+            result_json=str(row["result_json"]),
+        )
+        if result.content_hash != str(row["content_hash"]):
+            raise CoordinatorIntegrityError(
+                "held-out evaluation result content hash mismatch"
+            )
+        return result
+
+    @staticmethod
     def _episode_transition(
         *,
         episode_id: str,
@@ -2067,11 +2342,21 @@ class CoordinatorStore:
         validate_evidence_plan_binding(bundle, plan)
         evaluation = bundle.evaluation.evaluation_evidence
         final_command = plan.commands[FIXED_PIPELINE.index(PipelineStep.PROMOTE_OR_ROLL_BACK)]
+        expected_target_policy_id = (
+            evaluation.candidate.policy_id
+            if decision.action is PolicyAction.PROMOTE
+            else evaluation.baseline.policy_id
+        )
+        valid_source_policy_ids = (
+            {evaluation.baseline.policy_id}
+            if decision.action is PolicyAction.PROMOTE
+            else {evaluation.baseline.policy_id, evaluation.candidate.policy_id}
+        )
         if (
             decision.plan_digest != plan.digest
             or decision.action.value != final_command.payload.get("action")
-            or decision.from_policy_id != evaluation.baseline.policy_id
-            or decision.target_policy_id != evaluation.candidate.policy_id
+            or decision.from_policy_id not in valid_source_policy_ids
+            or decision.target_policy_id != expected_target_policy_id
         ):
             raise CoordinatorIntegrityError(
                 "numeric policy decision identities do not match trusted evaluation evidence"

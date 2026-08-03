@@ -105,6 +105,40 @@ def test_startup_requires_real_laserdata_append_and_readback() -> None:
     assert "/var/lib/iggy" in compose
 
 
+def test_daytona_runner_uses_locked_uv_and_persistent_data() -> None:
+    runner = (REPOSITORY_ROOT / "ops/deployment/daytona_run.sh").read_text(encoding="utf-8")
+
+    assert "uv sync --frozen --no-dev" in runner
+    assert "uv run --frozen --no-sync mm-verify-robot" in runner
+    assert "exec uv run --frozen --no-sync python -m ops.api.serve" in runner
+    assert "MM_DAYTONA_DATA_DIR:-/data" in runner
+    assert "MM_API_HOST:-0.0.0.0" in runner
+    assert "docker" not in runner.lower()
+
+
+def test_daytona_deploy_enforces_cloud_runtime_shape_and_provider_gate() -> None:
+    deploy = (REPOSITORY_ROOT / "ops/deployment/daytona_deploy.sh").read_text(encoding="utf-8")
+
+    assert 'payload.get("autoStopInterval") != 0' in deploy
+    assert 'payload.get("public") is not True' in deploy
+    assert 'item.get("mountPath") == "/data"' in deploy
+    assert '"${#REVISION}" -ne 40' in deploy
+    assert "ops.deployment.daytona_process" in deploy
+    assert "nohup" not in deploy
+    assert "ops.sponsors.verify_laserdata" in deploy
+    for provider in ("LaserData", "FalkorDB", "guild.ai", "rocketride.ai"):
+        assert f"--require-provider {provider}" in deploy
+
+
+def test_daytona_process_supervisor_guards_against_pid_reuse() -> None:
+    supervisor = (REPOSITORY_ROOT / "ops/deployment/daytona_process.py").read_text(encoding="utf-8")
+
+    assert 'Path(f"/proc/{pid}/stat")' in supervisor
+    assert 'payload["start_ticks"]' in supervisor
+    assert "start_new_session=True" in supervisor
+    assert '"MM_DAYTONA_SKIP_PREPARE": "1"' in supervisor
+
+
 def test_compose_resolves_hardened_persistent_local_stack() -> None:
     if shutil.which("docker") is None:
         pytest.skip("Docker CLI is not installed")

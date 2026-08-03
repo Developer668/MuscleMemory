@@ -200,8 +200,15 @@ class AppendOnlyGraphCache:
     def replay_to(self, target: GraphMemory) -> int:
         """Replay immutable events in dependency order to a recovered provider."""
 
+        replayed, _cursor = self.replay_to_with_cursor(target)
+        return replayed
+
+    def replay_to_with_cursor(self, target: GraphMemory) -> tuple[int, int]:
+        """Replay one atomic cache snapshot and return its exact event cursor."""
+
         with self._lock:
             records = tuple(self._records.values())
+            event_cursor = len(self._events)
         for record in records:
             if isinstance(record, WorldMemoryRecord):
                 target.record_world(record)
@@ -219,7 +226,7 @@ class AppendOnlyGraphCache:
                 target.record_lesson(record)
             else:
                 target.record_outperformance(record)
-        return len(records)
+        return len(records), event_cursor
 
     def _record(self, record: GraphRecord) -> GraphWriteReceipt:
         record_kind, record_id = self._identity(record)

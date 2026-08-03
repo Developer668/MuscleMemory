@@ -17,10 +17,13 @@ from muscle_memory.paths import (
     POLICY_V1_TRAINING_EVIDENCE,
 )
 from muscle_memory.policy.network import (
+    CONTINUOUS_INFERENCE_STRATEGY,
     POLICY_CHECKPOINT_SCHEMA_VERSION,
     POLICY_MAXIMUM_FORWARD_SPEED_MPS,
     POLICY_MAXIMUM_TURNING_RATE_RAD_S,
     POLICY_OUTPUT_COUNT,
+    SENSOR_FUSION_CHECKPOINT_SCHEMA_VERSION,
+    SENSOR_FUSION_INFERENCE_STRATEGY,
 )
 from muscle_memory.policy.observation import NAVIGATION_OBSERVATION_SIZE
 from muscle_memory.robot.identity import verify_mm01_bundle
@@ -38,6 +41,14 @@ class BehaviorCloneConfig:
     seed: int = 668
     condition_on_previous_action: bool = False
     mirror_training_fraction: float = 0.5
+    policy_id: str = "delivery-v1-bc"
+    inference_strategy: str = CONTINUOUS_INFERENCE_STRATEGY
+    avoidance_distance_m: float = 2.6
+    avoidance_gain: float = 1.35
+    avoidance_exponent: float = 2.0
+    avoidance_activation: float = 0.2
+    avoidance_docking_suppression_m: float = 1.0
+    learned_turn_blend: float = 0.0
 
 
 DEFAULT_BEHAVIOR_CLONE_CONFIG = BehaviorCloneConfig()
@@ -332,14 +343,40 @@ def train_behavior_clone(
         validation_targets,
         best_parameters,
     )
-    policy_id = "delivery-v1-bc"
+    policy_id = config.policy_id
+    if not policy_id:
+        raise ValueError("policy ID must not be empty")
+    if config.inference_strategy not in (
+        CONTINUOUS_INFERENCE_STRATEGY,
+        SENSOR_FUSION_INFERENCE_STRATEGY,
+    ):
+        raise ValueError("unsupported inference strategy")
+    if output_path.exists():
+        raise FileExistsError(f"immutable task-policy checkpoint already exists: {output_path}")
+    if evidence_path.exists():
+        raise FileExistsError(f"immutable training evidence already exists: {evidence_path}")
+    schema_version = (
+        SENSOR_FUSION_CHECKPOINT_SCHEMA_VERSION
+        if config.inference_strategy == SENSOR_FUSION_INFERENCE_STRATEGY
+        else POLICY_CHECKPOINT_SCHEMA_VERSION
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         output_path,
-        schema_version=np.asarray(POLICY_CHECKPOINT_SCHEMA_VERSION, dtype=np.int64),
+        schema_version=np.asarray(schema_version, dtype=np.int64),
         policy_id=np.asarray(policy_id),
         robot_checksum=np.asarray(robot.robot_checksum),
         dataset_sha256=np.asarray(dataset_sha256),
+        inference_strategy=np.asarray(config.inference_strategy),
+        avoidance_distance_m=np.asarray(config.avoidance_distance_m, dtype=np.float32),
+        avoidance_gain=np.asarray(config.avoidance_gain, dtype=np.float32),
+        avoidance_exponent=np.asarray(config.avoidance_exponent, dtype=np.float32),
+        avoidance_activation=np.asarray(config.avoidance_activation, dtype=np.float32),
+        avoidance_docking_suppression_m=np.asarray(
+            config.avoidance_docking_suppression_m,
+            dtype=np.float32,
+        ),
+        learned_turn_blend=np.asarray(config.learned_turn_blend, dtype=np.float32),
         input_mean=input_mean,
         input_std=input_std,
         weight_1=best_parameters["weight_1"],

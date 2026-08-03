@@ -1,4 +1,4 @@
-"""Evaluate V0 and V1 on disposable, non-held-out development worlds."""
+"""Select a candidate on disposable worlds that are disjoint from training."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from muscle_memory.evaluation.promotion import evaluate_promotion
 from muscle_memory.evaluation.runner import PolicyEpisodeResult, run_policy_episode
-from muscle_memory.paths import POLICY_V1_CHECKPOINT
+from muscle_memory.paths import POLICY_V2_CHECKPOINT, POLICY_V2_DEVELOPMENT_EVIDENCE
 from muscle_memory.policy.baseline import DirectGoalPolicy
 from muscle_memory.policy.network import BehaviorClonedPolicy
 from muscle_memory.training.expert import (
@@ -20,10 +20,10 @@ from muscle_memory.worlds.generation import generate_training_world
 from muscle_memory.worlds.generation.models import ValidatedTrainingWorld
 from muscle_memory.worlds.rules import load_world_rules
 
-DEVELOPMENT_SEED_START = 500_000_000
+DEVELOPMENT_SEED_START = 600_000_000
 DEFAULT_DEVELOPMENT_WORLDS = 12
 MAXIMUM_EXPERT_PATH_LENGTH_M = 8.2
-DEFAULT_OUTPUT = Path("artifacts/policy/development-evaluation.json")
+DEFAULT_OUTPUT = POLICY_V2_DEVELOPMENT_EVIDENCE
 
 
 def _development_worlds(
@@ -73,7 +73,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--worlds", type=int, default=DEFAULT_DEVELOPMENT_WORLDS)
     parser.add_argument("--seed-start", type=int, default=DEVELOPMENT_SEED_START)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--checkpoint", type=Path, default=POLICY_V1_CHECKPOINT)
+    parser.add_argument("--checkpoint", type=Path, default=POLICY_V2_CHECKPOINT)
     return parser
 
 
@@ -81,16 +81,28 @@ def main() -> int:
     args = _parser().parse_args()
     worlds = _development_worlds(args.worlds, args.seed_start)
     baseline = _evaluate(worlds, DirectGoalPolicy())
-    candidate = _evaluate(worlds, BehaviorClonedPolicy.load(args.checkpoint))
+    loaded_candidate = BehaviorClonedPolicy.load(args.checkpoint)
+    candidate = _evaluate(worlds, loaded_candidate)
     decision = evaluate_promotion(baseline, candidate)
     payload = {
         "schema_version": 1,
         "purpose": "development_only_not_held_out",
+        "selection_status": "locked_for_blinded_heldout_evaluation",
+        "seed_search_start": args.seed_start,
+        "seed_search_rule": (
+            "first validated worlds with an expert path at most 8.2 m "
+            "whose direct route requires avoidance"
+        ),
+        "candidate_policy_id": loaded_candidate.policy_id,
+        "candidate_policy_sha256": loaded_candidate.policy_hash,
         "world_ids": [world.world.world_id for world in worlds],
+        "world_seeds": [world.world.seed for world in worlds],
         "baseline_results": [asdict(result) for result in baseline],
         "candidate_results": [asdict(result) for result in candidate],
         "promotion_preview": asdict(decision),
     }
+    if args.output.exists():
+        raise FileExistsError(f"immutable development evidence already exists: {args.output}")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(asdict(decision), indent=2), flush=True)

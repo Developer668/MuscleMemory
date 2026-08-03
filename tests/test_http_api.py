@@ -305,6 +305,28 @@ def test_health_episode_telemetry_and_replay_are_typed_and_operational_only() ->
     assert backend.live_publisher is not None
 
 
+def test_built_operator_console_is_served_on_root_and_about(
+    tmp_path,  # type: ignore[no-untyped-def]
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text(
+        '<!doctype html><div id="root">operator-console</div>',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MM_FRONTEND_DIST", str(dist))
+
+    with _client(FakeBackend()) as client:
+        root = client.get("/")
+        about = client.get("/about")
+
+    assert root.status_code == 200
+    assert about.status_code == 200
+    assert "operator-console" in root.text
+    assert root.headers["cache-control"] == "no-cache"
+
+
 def test_mutations_fail_closed_and_authenticated_identity_is_not_body_controlled() -> None:
     backend = FakeBackend()
     with _client(backend) as client:

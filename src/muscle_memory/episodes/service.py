@@ -32,9 +32,12 @@ from muscle_memory.graph_memory import (
     CorrectionMemoryRecord,
     EpisodeMemoryRecord,
     EpisodeOutcome,
+    EvaluatedPolicyVersion,
     FailureMemoryRecord,
     GraphMemory,
     GraphWriteReceipt,
+    ObstacleMemoryRecord,
+    WorldMemoryRecord,
     WorldSplit,
 )
 from muscle_memory.telemetry import (
@@ -91,6 +94,25 @@ class TelemetryRecordStore(Protocol):
     def records_for(self, episode_id: str) -> tuple[EpisodeTelemetryRecord, ...]: ...
 
 
+@dataclass(frozen=True, slots=True)
+class EpisodeGraphPrerequisites:
+    """Trusted parents that must exist before an episode enters graph memory."""
+
+    world: WorldMemoryRecord
+    obstacles: tuple[ObstacleMemoryRecord, ...]
+    policy: EvaluatedPolicyVersion
+
+
+class EpisodeGraphPrerequisiteResolver(Protocol):
+    def resolve(
+        self,
+        identity: EpisodeIdentity,
+        result: PolicyEpisodeResult,
+        *,
+        recorded_at: datetime,
+    ) -> EpisodeGraphPrerequisites: ...
+
+
 @dataclass(slots=True)
 class _EpisodeSession:
     identity: EpisodeIdentity
@@ -113,11 +135,13 @@ class EpisodeService:
         telemetry_store: TelemetryRecordStore,
         graph_memory: GraphMemory,
         journal: EpisodeJournal | None = None,
+        graph_prerequisites: EpisodeGraphPrerequisiteResolver | None = None,
     ) -> None:
         self._telemetry_backend = telemetry_backend
         self._telemetry_store = telemetry_store
         self._graph_memory = graph_memory
         self._journal = journal or VolatileEpisodeJournal()
+        self._graph_prerequisites = graph_prerequisites
         self._sessions: dict[str, _EpisodeSession] = {}
         self._corrections: dict[str, CorrectionSubmission] = {}
         self._approvals: dict[str, CorrectionApproval] = {}
@@ -187,6 +211,8 @@ class EpisodeService:
                 raise EpisodeServiceError("duplicate correction approval in episode journal")
             self._approvals[correction_id] = approval
 
+        self._retry_incomplete_graph_deliveries()
+
     async def open_episode(self, identity: EpisodeIdentity) -> EpisodeIdentity:
         async with self._lock:
             if identity.episode_id in self._sessions:
@@ -255,30 +281,56 @@ class EpisodeService:
             digest = telemetry_digest(records)
             failures = self._failure_records(result, records, ended_at)
             delivery = self._delivery_report(records, session.receipts)
+            prerequisites = self._resolve_graph_prerequisites(
+                session.identity,
+                result,
+                recorded_at=ended_at,
+            )
+            expected_graph_records = (
+                1
+                + len(failures)
+                + (
+                    0
+                    if prerequisites is None
+                    else 2 + len(prerequisites.obstacles)
+                )
+            )
+            pending_graph = GraphPersistenceReport(
+                expected_records=expected_graph_records,
+                receipts=(),
+                error_type="GraphDeliveryPending",
+                detail="measured closure is durable; graph delivery has not yet been attempted",
+            )
+            measured_closure = EpisodeClosure(
+                identity=session.identity,
+                result=result,
+                telemetry_digest=digest,
+                telemetry=delivery,
+                failures=failures,
+                graph=pending_graph,
+                closed_at=ended_at,
+            )
 
-            # The state transition happens before graph persistence by contract.
+            # Commit the measured terminal fact before any external graph side effect.
             session.state = EpisodeLifecycleState.CLOSED
+            try:
+                self._journal.record_closure(measured_closure)
+            except BaseException:
+                session.state = EpisodeLifecycleState.OPEN
+                raise
+            session.closure = measured_closure
+
             graph_report = self._persist_closed_episode(
                 identity=session.identity,
                 result=result,
                 failures=failures,
                 telemetry_digest_value=digest,
                 ended_at=ended_at,
+                prerequisites=prerequisites,
+                expected_records=expected_graph_records,
             )
-            closure = EpisodeClosure(
-                identity=session.identity,
-                result=result,
-                telemetry_digest=digest,
-                telemetry=delivery,
-                failures=failures,
-                graph=graph_report,
-                closed_at=ended_at,
-            )
-            try:
-                self._journal.record_closure(closure)
-            except BaseException:
-                session.state = EpisodeLifecycleState.OPEN
-                raise
+            self._journal.record_graph_delivery(result.episode_id, graph_report)
+            closure = replace(measured_closure, graph=graph_report)
             session.closure = closure
             return closure
 
@@ -649,10 +701,18 @@ class EpisodeService:
         failures: tuple[FailureMemoryRecord, ...],
         telemetry_digest_value: str,
         ended_at: datetime,
+        prerequisites: EpisodeGraphPrerequisites | None,
+        expected_records: int,
     ) -> GraphPersistenceReport:
         receipts: list[GraphWriteReceipt] = []
-        expected_records = 1 + len(failures)
         try:
+            if prerequisites is not None:
+                receipts.append(self._graph_memory.record_world(prerequisites.world))
+                for obstacle in prerequisites.obstacles:
+                    receipts.append(self._graph_memory.record_obstacle(obstacle))
+                receipts.append(
+                    self._graph_memory.record_evaluated_policy(prerequisites.policy)
+                )
             episode_record = EpisodeMemoryRecord(
                 episode_id=identity.episode_id,
                 robot_checksum=identity.robot_checksum,
@@ -684,6 +744,63 @@ class EpisodeService:
             expected_records=expected_records,
             receipts=tuple(receipts),
         )
+
+    def _resolve_graph_prerequisites(
+        self,
+        identity: EpisodeIdentity,
+        result: PolicyEpisodeResult,
+        *,
+        recorded_at: datetime,
+    ) -> EpisodeGraphPrerequisites | None:
+        resolver = self._graph_prerequisites
+        if resolver is None:
+            return None
+        prerequisites = resolver.resolve(
+            identity,
+            result,
+            recorded_at=recorded_at,
+        )
+        if (
+            prerequisites.world.world_id != identity.world_id
+            or prerequisites.world.world_hash != identity.world_hash
+            or prerequisites.world.split is not identity.world_split
+            or prerequisites.policy.policy_id != identity.policy_id
+            or prerequisites.policy.checkpoint_hash != identity.policy_hash
+            or any(obstacle.world_id != identity.world_id for obstacle in prerequisites.obstacles)
+        ):
+            raise EpisodeIdentityError(
+                "trusted graph prerequisites do not match the episode identity"
+            )
+        return prerequisites
+
+    def _retry_incomplete_graph_deliveries(self) -> None:
+        for session in self._sessions.values():
+            closure = session.closure
+            if closure is None or closure.graph.complete:
+                continue
+            prerequisites = self._resolve_graph_prerequisites(
+                closure.identity,
+                closure.result,
+                recorded_at=closure.closed_at,
+            )
+            expected = 1 + len(closure.failures) + (
+                0 if prerequisites is None else 2 + len(prerequisites.obstacles)
+            )
+            if expected != closure.graph.expected_records:
+                raise EpisodeServiceError(
+                    "retry graph prerequisites changed after measured episode closure"
+                )
+            report = self._persist_closed_episode(
+                identity=closure.identity,
+                result=closure.result,
+                failures=closure.failures,
+                telemetry_digest_value=closure.telemetry_digest,
+                ended_at=closure.closed_at,
+                prerequisites=prerequisites,
+                expected_records=expected,
+            )
+            self._journal.record_graph_delivery(closure.identity.episode_id, report)
+            session.closure = replace(closure, graph=report)
 
 
 def telemetry_digest(records: tuple[EpisodeTelemetryRecord, ...]) -> str:

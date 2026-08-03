@@ -12,11 +12,15 @@ from pathlib import Path
 from muscle_memory.evaluation.heldout import load_heldout_worlds
 from muscle_memory.evaluation.promotion import evaluate_promotion
 from muscle_memory.evaluation.runner import PolicyEpisodeResult, run_policy_episode
-from muscle_memory.paths import HELDOUT_WORLDS_BUNDLE
+from muscle_memory.paths import (
+    HELDOUT_WORLDS_BUNDLE,
+    POLICY_V2_CHECKPOINT,
+    POLICY_V2_HELDOUT_EVIDENCE,
+)
 from muscle_memory.policy.baseline import DirectGoalPolicy
 from muscle_memory.policy.network import BehaviorClonedPolicy
 
-DEFAULT_OUTPUT = Path("evidence/policy/delivery-v1/heldout-evaluation.json")
+DEFAULT_OUTPUT = POLICY_V2_HELDOUT_EVIDENCE
 
 
 def _sha256_file(path: Path) -> str:
@@ -63,18 +67,23 @@ def _evaluate(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--checkpoint", type=Path, default=POLICY_V2_CHECKPOINT)
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
+    if args.output.exists():
+        raise FileExistsError(f"immutable held-out evidence already exists: {args.output}")
     _assert_evaluation_import_isolation()
+    candidate_policy = BehaviorClonedPolicy.load(args.checkpoint)
     baseline = _evaluate(DirectGoalPolicy())
-    candidate = _evaluate(BehaviorClonedPolicy.load())
+    candidate = _evaluate(candidate_policy)
     decision = evaluate_promotion(baseline, candidate)
     payload = {
         "schema_version": 1,
         "heldout_bundle_sha256": _sha256_file(HELDOUT_WORLDS_BUNDLE),
+        "candidate_checkpoint_sha256": candidate_policy.policy_hash,
         "baseline_results": [asdict(result) for result in baseline],
         "candidate_results": [asdict(result) for result in candidate],
         "promotion_decision": asdict(decision),

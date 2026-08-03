@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path as FsPath
 from typing import Annotated, Any
 
 from fastapi import (
@@ -24,10 +26,11 @@ from fastapi import (
     status,
 )
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
+from starlette.staticfiles import StaticFiles
 
 from muscle_memory.api.auth import (
     APPROVAL_WRITE_SCOPE,
@@ -91,6 +94,38 @@ COMMON_ERROR_RESPONSES: ErrorResponses = {
     422: {"model": ApiErrorResponse, "description": "Request validation failed"},
     503: {"model": ApiErrorResponse, "description": "Required provider unavailable"},
 }
+
+
+class _CallbackBodyTooLargeError(RuntimeError):
+    pass
+
+
+async def _bounded_callback_body(request: Request) -> bytes:
+    """Consume the ASGI stream without ever accumulating more than the limit."""
+
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            if int(declared) > MAX_CALLBACK_BODY_BYTES:
+                raise _CallbackBodyTooLargeError
+        except ValueError as exc:
+            raise CallbackContractError("callback content length is invalid") from exc
+    body = bytearray()
+    async for chunk in request.stream():
+        remaining = MAX_CALLBACK_BODY_BYTES - len(body)
+        if len(chunk) > remaining:
+            raise _CallbackBodyTooLargeError
+        body.extend(chunk)
+    if not body:
+        raise CallbackContractError("callback body is empty")
+    return bytes(body)
+
+
+def _frontend_dist() -> FsPath:
+    configured = os.environ.get("MM_FRONTEND_DIST")
+    if configured:
+        return FsPath(configured).expanduser().resolve()
+    return FsPath(__file__).resolve().parents[3] / "frontend" / "dist"
 
 
 @dataclass(frozen=True, slots=True)
@@ -537,11 +572,17 @@ def create_app(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 content={"error": "content_type_must_be_application_json"},
             )
-        body = await request.body()
-        if not body or len(body) > MAX_CALLBACK_BODY_BYTES:
+        try:
+            body = await _bounded_callback_body(request)
+        except _CallbackBodyTooLargeError:
             return JSONResponse(
                 status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 content={"error": "body_too_large"},
+            )
+        except CallbackContractError as exc:
+            return JSONResponse(
+                status_code=422,
+                content={"error": "contract_violation", "detail": str(exc)},
             )
         try:
             wrapper = json.loads(body)
@@ -645,6 +686,17 @@ def create_app(
         )
 
     app.include_router(_build_router())
+    frontend_dist = _frontend_dist()
+    index_file = frontend_dist / "index.html"
+    assets_dir = frontend_dist / "assets"
+    if index_file.is_file() and assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+
+        @app.get("/", include_in_schema=False)
+        @app.get("/about", include_in_schema=False)
+        async def frontend() -> FileResponse:
+            return FileResponse(index_file, headers={"Cache-Control": "no-cache"})
+
     return app
 
 

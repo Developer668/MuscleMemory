@@ -17,14 +17,26 @@ health endpoint can diagnose it.
 
 - The operational episode journal accepts training episodes only. Held-out
   evaluation remains behind the evaluation-only coordinator methods.
-- Episode identity, provider receipts, closure, human route or keep-out
-  corrections, and authenticated approvals are append-only coordinator facts.
+- Episode identity, provider receipts, measured closure, graph-delivery attempts,
+  human route or keep-out corrections, and authenticated approvals are
+  append-only coordinator facts. The measured closure becomes terminal before
+  any FalkorDB side effect; incomplete graph delivery is retried after restart.
+- Before a closed episode or failure is written to graph memory, the backend
+  regenerates and validates the exact seeded training world, registers its
+  approved primitive-collider obstacle facts, and requires the exact immutable
+  evaluated checkpoint from the coordinator.
+- A recovered FalkorDB receives the complete append-only local cache before a
+  remote curriculum query is allowed. Failed reconciliation is explicit in
+  health and curriculum continues from the local cache instead of omitting facts.
 - Guild reviews and RocketRide run snapshots are content-addressed and recovered
   after restart. A run can resume only from its exact reviewed plan.
 - Guild role evidence is strict, content-addressed, and anchored to a coordinator
-  provider-evidence record. The world reviewer receives only world evidence, the
-  curriculum reviewer receives only training evidence, and the safety reviewer
-  receives only paired aggregate evaluation evidence.
+  provider-evidence record. Those references are created only after the server
+  reproduces the seeded world, recurring training failures plus reconciled graph
+  query, and twenty-world paired held-out provenance from durable domain state.
+  The world reviewer receives only world evidence, the curriculum reviewer
+  receives only training evidence, and the safety reviewer receives only paired
+  aggregate evaluation evidence.
 - RocketRide calls the authenticated
   `/webhook/muscle-memory-fixed-step` route. Callback results are an append-only
   fixed-pipeline prefix, so an exact retry survives restart while changed or

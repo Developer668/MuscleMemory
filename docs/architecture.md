@@ -21,9 +21,11 @@ The application is split by responsibility rather than by demo screen:
 - Guild.ai coordinates three distinct specialist agents and the required human decisions.
 - RocketRide runs the reviewed fixed pipeline and contains no policy or agent reasoning.
 
-The first cloud target is a public CPU coordinator plus burst simulation/training workers. The
-exact provider remains an operational choice; service adapters and acceptance evidence cannot
-depend on a provider-specific shortcut.
+The production coordinator runs directly from the locked `uv` environment in a public Daytona
+sandbox with auto-stop disabled and a persistent `/data` volume. Docker and Compose remain
+optional local-development packaging only. Simulation and training may use separate burst
+workers, but sponsor adapters and acceptance evidence cannot depend on a provider-specific
+shortcut.
 
 ## Control boundary
 
@@ -63,14 +65,24 @@ to training and curriculum processes.
 Health reporting distinguishes `unconfigured`, `configured`, `healthy`, and
 `end_to_end_verified` per service.
 
-- RocketRide account access and an active hackathon key record are present; the secret and a
-  completed pipeline run still need verification.
-- Guild.ai account access is present and an internal safety agent exists; three published,
-  schema-validated agents and observed approval traces are still required.
-- LaserData Cloud signup is pending administrator approval. Local or self-hosted Laser Stack is
-  an acceptable development path, but it is not cloud proof.
-- FalkorDB has no current repository configuration. Development may use its official container;
-  final proof requires a persistent remotely reachable instance.
+The observed cloud state on 2026-08-03 is deliberately split from final workflow proof:
+
+- LaserData has a managed deployment and the four-partition `muscle-memory / episode-events-v2`
+  topic. The repository verifier completed a real append and exact provider readback. A full
+  20 Hz episode remains the stronger demo artifact.
+- FalkorDB has a healthy managed instance. The application adapter wrote immutable world,
+  episode, failure, lesson, and policy facts and completed a matching multi-hop curriculum
+  query. The graph remains outside every robot-control path.
+- RocketRide Cloud accepted the reviewed fixed pipeline and completed a real task startup and
+  teardown. A validated callback result through the public Daytona coordinator is still
+  required before calling the workflow end to end verified.
+- Guild.ai has an authenticated workspace and locally schema-validated source for the exact
+  three roles. Provider publication is currently blocked by Guild's own private package
+  registry returning HTTP 401 during dependency installation; the existing safety agent is not
+  substituted for the required three-role evidence.
+- Daytona has the public, persistent production sandbox shape. A pushed immutable revision,
+  provider environment, public UI/API smoke, and cross-provider callback are required before
+  the application itself is described as deployed.
 
 ## End-to-end sponsor proof
 

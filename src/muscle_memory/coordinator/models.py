@@ -172,6 +172,75 @@ class HeldOutEvaluationEpisodeMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class HeldOutEvaluationArtifact:
+    """Canonical, independently verified output of one paired held-out run."""
+
+    artifact_hash: str
+    held_out_world_set_id: str
+    artifact_json: str
+    evaluated_at: datetime
+
+    def __post_init__(self) -> None:
+        require_hash(self.artifact_hash, "artifact_hash")
+        require_identifier(self.held_out_world_set_id, "held_out_world_set_id")
+        isoformat_utc(self.evaluated_at)
+        try:
+            decoded = json.loads(self.artifact_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError("held-out evaluation artifact is not valid JSON") from exc
+        if not isinstance(decoded, dict) or canonical_json(decoded) != self.artifact_json:
+            raise ValueError("held-out evaluation artifact must be a canonical JSON object")
+        if sha256_text(self.artifact_json) != self.artifact_hash:
+            raise ValueError("held-out evaluation artifact hash does not match its content")
+
+    @property
+    def content_hash(self) -> str:
+        return sha256_text(
+            canonical_json(
+                {
+                    "artifact_hash": self.artifact_hash,
+                    "held_out_world_set_id": self.held_out_world_set_id,
+                    "artifact_json": self.artifact_json,
+                    "evaluated_at": isoformat_utc(self.evaluated_at),
+                }
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class HeldOutEvaluationResult:
+    """One immutable measured result admitted from a verified evaluation artifact."""
+
+    episode_id: str
+    evaluation_artifact_hash: str
+    result_json: str
+
+    def __post_init__(self) -> None:
+        require_identifier(self.episode_id, "episode_id")
+        require_hash(self.evaluation_artifact_hash, "evaluation_artifact_hash")
+        try:
+            decoded = json.loads(self.result_json)
+        except json.JSONDecodeError as exc:
+            raise ValueError("held-out evaluation result is not valid JSON") from exc
+        if not isinstance(decoded, dict) or canonical_json(decoded) != self.result_json:
+            raise ValueError("held-out evaluation result must be a canonical JSON object")
+        if decoded.get("episode_id") != self.episode_id:
+            raise ValueError("held-out evaluation result identity does not match its payload")
+
+    @property
+    def content_hash(self) -> str:
+        return sha256_text(
+            canonical_json(
+                {
+                    "episode_id": self.episode_id,
+                    "evaluation_artifact_hash": self.evaluation_artifact_hash,
+                    "result_json": self.result_json,
+                }
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderEvidenceReference:
     """Content-addressed pointer proving one provider-side observation."""
 
@@ -314,8 +383,11 @@ class NumericPolicyDecision:
         require_identifier(self.target_policy_id, "target_policy_id")
         require_hash(self.evaluation_evidence_hash, "evaluation_evidence_hash")
         isoformat_utc(self.decided_at)
-        if self.from_policy_id == self.target_policy_id:
-            raise ValueError("policy action must move the alias to a different checkpoint")
+        if (
+            self.action is PolicyAction.PROMOTE
+            and self.from_policy_id == self.target_policy_id
+        ):
+            raise ValueError("policy promotion must move the alias to a new checkpoint")
         if self.action is PolicyAction.PROMOTE and not self.metrics.passes_promotion_gate:
             raise ValueError("a promotion decision must pass the numeric promotion gate")
 

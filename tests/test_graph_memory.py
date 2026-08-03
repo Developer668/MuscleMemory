@@ -506,6 +506,81 @@ def test_resilient_service_reports_provider_outage_and_local_only_write(
     assert settings.url.get_secret_value() not in receipt.detail
 
 
+def test_outage_restart_replays_cache_before_remote_curriculum_reads(
+    tmp_path: Path,
+) -> None:
+    settings = FalkorDBSettings.model_validate(
+        {
+            "url": "redis://provider.example.test:6379",
+            "cache_path": tmp_path / "recovery-events.jsonl",
+        }
+    )
+    unavailable_graph = FakeFalkorGraph()
+    unavailable_graph.fail = True
+    unavailable = ResilientGraphMemory(
+        settings=settings,
+        cache=AppendOnlyGraphCache(settings.cache_path),
+        remote=FalkorGraphMemory(
+            unavailable_graph,
+            graph_name=settings.graph_name,
+            query_timeout_ms=500,
+        ),
+    )
+    unavailable.record_evaluated_policy(make_policy("policy-v0", POLICY_V0_HASH))
+    unavailable.record_evaluated_policy(make_policy("policy-v1", POLICY_V1_HASH))
+    signature_hash = "1" * 64
+    record_experience_chain(
+        unavailable,  # type: ignore[arg-type]
+        suffix="11",
+        split=WorldSplit.TRAINING,
+        signature_hash=signature_hash,
+    )
+    record_experience_chain(
+        unavailable,  # type: ignore[arg-type]
+        suffix="22",
+        split=WorldSplit.TRAINING,
+        signature_hash=signature_hash,
+    )
+
+    cached = unavailable.query_curriculum(CurriculumQuery())
+    assert cached.storage is GraphStorage.LOCAL_CACHE
+    assert cached.lessons[0].support_count == 2
+
+    cached_event_count = len(AppendOnlyGraphCache(settings.cache_path).events)
+    recovered_graph = FakeFalkorGraph()
+    recovered_graph.curriculum_rows = [
+        [
+            "lesson-11",
+            "clearance_margin",
+            "Increase clearance around laundry baskets.",
+            "clearance_violation",
+            "laundry_basket",
+            2,
+            ["episode-11", "episode-22"],
+            "policy-v1",
+        ]
+    ]
+    recovered = ResilientGraphMemory(
+        settings=settings,
+        cache=AppendOnlyGraphCache(settings.cache_path),
+        remote=FalkorGraphMemory(
+            recovered_graph,
+            graph_name=settings.graph_name,
+            query_timeout_ms=500,
+        ),
+    )
+
+    health = recovered.health()
+    assert health.provider_state is ProviderState.HEALTHY
+    assert f"{cached_event_count} cached facts are reconciled" in health.detail
+    assert len([call for call in recovered_graph.calls if call[0] == "write"]) == (
+        cached_event_count
+    )
+    remote_result = recovered.query_curriculum(CurriculumQuery())
+    assert remote_result.storage is GraphStorage.FALKORDB
+    assert remote_result.lessons[0].source_episode_ids == ("episode-11", "episode-22")
+
+
 def test_fresh_falkor_graph_health_initializes_then_verifies_read_only() -> None:
     graph = FreshFalkorGraph()
     service = FalkorGraphMemory(graph, graph_name="muscle_memory", query_timeout_ms=500)

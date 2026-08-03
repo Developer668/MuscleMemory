@@ -10,6 +10,7 @@ from muscle_memory.episodes.models import (
     EpisodeAppendReceipt,
     EpisodeClosure,
     EpisodeIdentity,
+    GraphPersistenceReport,
 )
 
 
@@ -31,6 +32,12 @@ class EpisodeJournal(Protocol):
     def record_receipt(self, receipt: EpisodeAppendReceipt) -> None: ...
 
     def record_closure(self, closure: EpisodeClosure) -> None: ...
+
+    def record_graph_delivery(
+        self,
+        episode_id: str,
+        report: GraphPersistenceReport,
+    ) -> None: ...
 
     def record_correction(self, correction: CorrectionSubmission) -> None: ...
 
@@ -67,6 +74,13 @@ class VolatileEpisodeJournal:
 
     def record_closure(self, closure: EpisodeClosure) -> None:
         del closure
+
+    def record_graph_delivery(
+        self,
+        episode_id: str,
+        report: GraphPersistenceReport,
+    ) -> None:
+        del episode_id, report
 
     def record_correction(self, correction: CorrectionSubmission) -> None:
         del correction
