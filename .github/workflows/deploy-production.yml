@@ -107,9 +107,13 @@ jobs:
           sudo install /tmp/daytona /usr/local/bin/daytona
           daytona --version
 
-      - name: Deploy exact commit to Daytona
+      - name: Authenticate Daytona CLI
         env:
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+        run: daytona login --api-key "${DAYTONA_API_KEY}"
+
+      - name: Deploy exact commit to Daytona
+        env:
           MM_DAYTONA_SANDBOX: muscle-memory-backend
           MM_PRODUCTION_HEALTH_URL: https://musclememory.space/api/v1/health
         run: ./ops/deployment/daytona_deploy.sh "${GITHUB_SHA}"
