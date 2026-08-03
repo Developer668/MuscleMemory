@@ -125,6 +125,23 @@ Official 1X information describes dual stereo fisheye cameras, linkwise IMUs, fo
 | Dashboard charts | 10 Hz |
 | Robot POV | 30 FPS |
 
+### Run the verified simulator
+
+Python 3.12 is pinned by `.python-version`, and `uv.lock` fixes the environment.
+
+```bash
+uv sync --frozen --group dev
+uv run mm-verify-robot
+uv run mm-smoke
+uv run ruff check .
+uv run mypy src
+uv run pytest
+```
+
+`mm-verify-robot` fails closed unless the qualified 100 Hz controller, complete frozen robot
+identity, physical qualification measurements, raw trials, parity record, and completed
+training contract all match `config/robot/mm01-v1.json` byte for byte.
+
 ---
 
 ## Hierarchical control system

@@ -31,16 +31,22 @@ The learned task policy has exactly three outputs: forward speed, turning rate, 
 probability. A command adapter converts these to `[forward, 0, yaw]`; there is no lateral or
 joint-level task action.
 
-The upstream MuJoCo Playground G1 artifact is a real executable candidate, but it is not the
-final MM-01 controller. Its immutable ONNX inference cadence is 50 Hz while the product requires
-a 100 Hz frozen walking subsystem, and characterization shows unacceptable motion after a zero
-command. The candidate therefore sits behind a fail-closed qualification gate. It must not be
-described as the final frozen robot or used for a promotion claim.
+The vendored upstream MuJoCo Playground G1 artifact remains a provenance-only, unqualified
+50 Hz candidate. Production loads `models/mm01/gait-controller-v1.onnx`, selected from one
+completed 200-million-step 100 Hz run only after straight-line, turning, stopping, payload,
+fall, collision, repeatability, and 60-second standstill gates passed. The task policy still
+has no access to joint targets or the controller's 29-action output.
 
-The implementation schedules a controller supervisor at 100 Hz and physics at 500 Hz. A final
-controller is eligible for MM-01 only after its own 100 Hz artifact passes straight-line,
-turning, stopping, payload, fall, and 60-second stability tests. Once accepted, the complete
-robot/controller/sensor manifest is hashed and cannot be replaced in place.
+The runtime schedules both gait inference and a fixed command supervisor at 100 Hz over 500 Hz
+physics. The supervisor transfers normal commands unchanged and applies a fixed 0.75 m/s^2
+deceleration envelope only after a stop request, preventing a discontinuous command transition
+without modifying controller weights, the robot, rewards, sensors, or task-policy outputs.
+
+`config/robot/mm01-v1.json` binds the selected ONNX bytes, candidate robot assets, controller
+runtime, command adapter, sensor profile, qualification program, training contract, parity
+record, and native trial evidence. Startup and episode assembly recompute this manifest and the
+permanent robot checksum before execution; the unqualified candidate remains reachable only by
+the qualification fixture.
 
 ## Data and identity
 

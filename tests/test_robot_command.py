@@ -16,7 +16,11 @@ def test_task_command_is_the_complete_policy_output_boundary() -> None:
 
 
 def test_stop_probability_yields_zero_velocity_command() -> None:
-    assert TaskCommand(0.4, -0.2, 0.5).frozen_controller_command() == (0.0, 0.0, 0.0)
+    command = TaskCommand(0.4, -0.2, 0.5)
+
+    assert command.stop_requested
+    assert command.frozen_controller_command() == (0.0, 0.0, 0.0)
+    assert not TaskCommand(0.4, -0.2, 0.49).stop_requested
 
 
 @pytest.mark.parametrize(

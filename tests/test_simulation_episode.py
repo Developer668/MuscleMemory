@@ -13,7 +13,7 @@ import pytest
 
 from muscle_memory.paths import G1_SCENE_XML, REPOSITORY_ROOT
 from muscle_memory.robot.command import TaskCommand
-from muscle_memory.robot.identity import verify_candidate_bundle
+from muscle_memory.robot.identity import verify_mm01_bundle
 from muscle_memory.simulation.metrics import EpisodeMetricsTracker
 from muscle_memory.simulation.runtime import HeadlessG1Simulation
 from muscle_memory.simulation.sensors import (
@@ -78,13 +78,13 @@ def test_raw_world_cannot_bypass_validation_envelope(validated_world) -> None:  
         assemble_episode_scene(validated_world.world)  # type: ignore[arg-type]
 
 
-def test_assembly_is_deterministic_and_preserves_candidate_checksum(
+def test_assembly_is_deterministic_and_preserves_qualified_robot_checksum(
     validated_world, scene  # type: ignore[no-untyped-def]
 ) -> None:
     second = assemble_episode_scene(validated_world)
-    verification = verify_candidate_bundle()
+    verification = verify_mm01_bundle()
 
-    assert scene.robot_checksum == verification.aggregate_sha256
+    assert scene.robot_checksum == verification.robot_checksum
     assert second.robot_checksum == scene.robot_checksum
     assert second.world_hash == scene.world_hash
     assert second.assembly_hash == scene.assembly_hash
@@ -179,7 +179,7 @@ def test_composed_scene_runs_real_controller_without_world_joint_leakage(scene) 
     for _ in range(20):
         simulation.step(lambda _time: TaskCommand(0.0, 0.0, 1.0))
 
-    assert simulation.controller.inference_count == 2
+    assert simulation.controller.inference_count == 4
     assert np.isfinite(simulation.data.qpos).all()
     assert np.isfinite(simulation.data.qvel).all()
 

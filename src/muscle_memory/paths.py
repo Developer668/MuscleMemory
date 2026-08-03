@@ -11,3 +11,12 @@ G1_XML_ROOT = PLAYGROUND_ROOT / "_src" / "locomotion" / "g1" / "xmls"
 G1_SCENE_XML = G1_XML_ROOT / "scene_mjx_feetonly_flat_terrain.xml"
 G1_POLICY_ONNX = PLAYGROUND_ROOT / "experimental" / "sim2sim" / "onnx" / "g1_policy.onnx"
 ROBOT_MANIFEST = REPOSITORY_ROOT / "config" / "robot" / "mm01-candidate.json"
+MM01_CONTROLLER_ONNX = REPOSITORY_ROOT / "models" / "mm01" / "gait-controller-v1.onnx"
+MM01_MANIFEST = REPOSITORY_ROOT / "config" / "robot" / "mm01-v1.json"
+MM01_CONTROLLER_EVIDENCE_ROOT = REPOSITORY_ROOT / "evidence" / "controller" / "gait-v1"
+MM01_ONNX_PARITY_EVIDENCE = MM01_CONTROLLER_EVIDENCE_ROOT / "onnx-parity.json"
+MM01_QUALIFICATION_EVIDENCE = (
+    MM01_CONTROLLER_EVIDENCE_ROOT / "qualification-evidence.json"
+)
+MM01_QUALIFICATION_TRIALS = MM01_CONTROLLER_EVIDENCE_ROOT / "qualification-trials.json"
+MM01_TRAINING_CONTRACT = MM01_CONTROLLER_EVIDENCE_ROOT / "training-contract.json"

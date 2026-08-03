@@ -1,4 +1,4 @@
-"""Fast real-physics smoke test for the unqualified candidate controller."""
+"""Fast real-physics smoke test for the qualified MM-01 controller."""
 
 from pathlib import Path
 
@@ -13,22 +13,17 @@ from muscle_memory.robot.identity import (
     CONTROLLER_SUPERVISOR_HZ,
     PHYSICS_HZ,
     TASK_POLICY_HZ,
-    verify_candidate_bundle,
+    verify_mm01_bundle,
 )
 from muscle_memory.simulation.runtime import HeadlessG1Simulation
 
-QUALIFICATION_BLOCKERS = (
-    "candidate ONNX gait inference is 50 Hz, not the required 100 Hz",
-    "zero-command stopping has not passed qualification",
-)
-
 
 class SmokeResult(BaseModel):
-    """Measured smoke evidence, explicitly distinct from qualification."""
+    """Measured startup evidence for the already-qualified frozen bundle."""
 
     model_config = ConfigDict(frozen=True)
 
-    candidate_bundle_valid: bool
+    robot_bundle_valid: bool
     smoke_passed: bool
     qualified: bool
     qualification_blockers: tuple[str, ...]
@@ -67,8 +62,8 @@ def run_smoke(
     command: TaskCommand | None = None,
     render_path: Path | None = None,
 ) -> SmokeResult:
-    """Run real MuJoCo and ONNX steps without claiming controller acceptance."""
-    bundle = verify_candidate_bundle()
+    """Verify the immutable bundle, then run real MuJoCo and ONNX steps."""
+    bundle = verify_mm01_bundle()
     if not np.isfinite(duration_seconds) or duration_seconds <= 0.0:
         raise ValueError("duration_seconds must be positive and finite")
     physics_steps = round(duration_seconds * PHYSICS_HZ)
@@ -101,10 +96,10 @@ def run_smoke(
     saved_render = _render(simulation, render_path) if render_path is not None else None
     smoke_passed = bundle.valid and finite_state and moved and not fell
     return SmokeResult(
-        candidate_bundle_valid=bundle.valid,
+        robot_bundle_valid=bundle.valid,
         smoke_passed=smoke_passed,
-        qualified=False,
-        qualification_blockers=QUALIFICATION_BLOCKERS,
+        qualified=bundle.qualified,
+        qualification_blockers=bundle.blockers,
         physics_hz=PHYSICS_HZ,
         controller_supervisor_hz=CONTROLLER_SUPERVISOR_HZ,
         controller_inference_hz=CONTROLLER_INFERENCE_HZ,

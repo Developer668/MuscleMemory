@@ -15,7 +15,7 @@ import numpy as np
 import numpy.typing as npt
 
 from muscle_memory.robot.command import TaskCommand
-from muscle_memory.robot.identity import PHYSICS_HZ, verify_candidate_bundle
+from muscle_memory.robot.identity import PHYSICS_HZ, robot_bundle_checksum
 from muscle_memory.simulation.runtime import HeadlessG1Simulation
 from muscle_memory.simulation.world_scene import assemble_payload_qualification_scene
 from ops.controller.contract import (
@@ -29,9 +29,6 @@ from ops.controller.contract import (
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-SENSOR_PROFILE_PATH = REPOSITORY_ROOT / "config" / "robot" / "mm01-sensor-profile.json"
-CONTROLLER_SOURCE_PATH = REPOSITORY_ROOT / "src" / "muscle_memory" / "simulation" / "controller.py"
-RUNTIME_SOURCE_PATH = REPOSITORY_ROOT / "src" / "muscle_memory" / "simulation" / "runtime.py"
 FALL_HEIGHT_M = 0.35
 FALL_UP_Z = 0.0
 PACKAGE_SLIP_THRESHOLD_M = 0.02
@@ -212,19 +209,6 @@ def _run_trial(
     )
 
 
-def _bundle_checksum(policy_path: Path) -> str:
-    verification = verify_candidate_bundle()
-    payload = {
-        "candidate_robot": verification.aggregate_sha256,
-        "controller_onnx": sha256_file(policy_path),
-        "controller_runtime": sha256_file(CONTROLLER_SOURCE_PATH),
-        "rate_runtime": sha256_file(RUNTIME_SOURCE_PATH),
-        "sensor_profile": sha256_file(SENSOR_PROFILE_PATH),
-    }
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("ascii")
-    return hashlib.sha256(canonical).hexdigest()
-
-
 def generate_evidence(policy_path: Path) -> tuple[QualificationEvidence, dict[str, object]]:
     """Execute every physical trial and return strict evidence plus raw summaries."""
     forward_command = TaskCommand(0.4, 0.0, 0.0)
@@ -317,7 +301,7 @@ def generate_evidence(policy_path: Path) -> tuple[QualificationEvidence, dict[st
         maximum_payload_tray_tilt_degrees=payload.maximum_tray_tilt_degrees,
         payload_package_slipped=payload.package_slipped,
         deterministic_repeat_max_metric_delta=repeat_delta,
-        robot_checksum=_bundle_checksum(policy_path),
+        robot_checksum=robot_bundle_checksum(policy_path),
         controller_onnx_sha256=sha256_file(policy_path),
         qualification_program_sha256=sha256_file(Path(__file__)),
         qualification_trials_sha256=hashlib.sha256(raw_trial_bytes).hexdigest(),

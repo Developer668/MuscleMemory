@@ -13,7 +13,7 @@ import numpy as np
 import numpy.typing as npt
 
 from muscle_memory.paths import G1_SCENE_XML
-from muscle_memory.robot.identity import verify_candidate_bundle
+from muscle_memory.robot.identity import verify_candidate_bundle, verify_mm01_bundle
 from muscle_memory.worlds.models import ColliderKind, TrainingWorld, WorldObject
 
 ASSEMBLY_SCHEMA_VERSION = 1
@@ -433,12 +433,12 @@ def assemble_payload_qualification_scene() -> PayloadQualificationScene:
 
 
 def assemble_episode_scene(envelope: ValidatedWorldEnvelope) -> EpisodeScene:
-    """Compile a validated training world around unchanged candidate robot bytes."""
+    """Compile a validated training world around the frozen qualified MM-01 bytes."""
     world = getattr(envelope, "world", None)
     if not isinstance(world, TrainingWorld):
         raise TypeError("episode assembly requires a validated training-world envelope")
 
-    verification_before = verify_candidate_bundle()
+    verification_before = verify_mm01_bundle()
     spec = mujoco.MjSpec.from_file(G1_SCENE_XML.as_posix())
     base_model = mujoco.MjModel.from_xml_path(G1_SCENE_XML.as_posix())
     base_signature = _robot_signature(base_model)
@@ -492,8 +492,8 @@ def assemble_episode_scene(envelope: ValidatedWorldEnvelope) -> EpisodeScene:
     model = spec.compile()
     if _robot_signature(model) != base_signature:
         raise WorldAssemblyError("world assembly changed frozen robot model fields")
-    verification_after = verify_candidate_bundle()
-    if verification_after.aggregate_sha256 != verification_before.aggregate_sha256:
+    verification_after = verify_mm01_bundle()
+    if verification_after.robot_checksum != verification_before.robot_checksum:
         raise WorldAssemblyError("world assembly changed the frozen robot checksum")
 
     robot_geom_ids = frozenset(
@@ -512,7 +512,7 @@ def assemble_episode_scene(envelope: ValidatedWorldEnvelope) -> EpisodeScene:
     assembly_payload = json.dumps(
         {
             "schema_version": ASSEMBLY_SCHEMA_VERSION,
-            "robot_checksum": verification_after.aggregate_sha256,
+            "robot_checksum": verification_after.robot_checksum,
             "world_hash": world_hash,
         },
         sort_keys=True,
@@ -521,7 +521,7 @@ def assemble_episode_scene(envelope: ValidatedWorldEnvelope) -> EpisodeScene:
     return EpisodeScene(
         model=model,
         world=world,
-        robot_checksum=verification_after.aggregate_sha256,
+        robot_checksum=verification_after.robot_checksum,
         world_hash=world_hash,
         assembly_hash=hashlib.sha256(assembly_payload.encode("ascii")).hexdigest(),
         robot_geom_ids=robot_geom_ids,

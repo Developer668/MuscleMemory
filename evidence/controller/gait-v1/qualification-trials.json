@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "trials": {
+    "forward": {
+      "body_collisions": 0,
+      "controller_inferences": 1000,
+      "controller_supervisor_ticks": 1000,
+      "cumulative_yaw_radians": 0.1401970487070332,
+      "duration_seconds": 10.0,
+      "fell": false,
+      "finite_state": true,
+      "last_second_maximum_speed_mps": 0.5292341465713399,
+      "maximum_drift_m": 3.9290020491869826,
+      "maximum_tray_tilt_degrees": 0.0,
+      "package_slipped": false,
+      "physics_steps": 5000,
+      "planar_delta_m": [
+        3.9269714387010857,
+        0.12630289838889677
+      ]
+    },
+    "forward_repeat": {
+      "body_collisions": 0,
+      "controller_inferences": 1000,
+      "controller_supervisor_ticks": 1000,
+      "cumulative_yaw_radians": 0.1401970487070332,
+      "duration_seconds": 10.0,
+      "fell": false,
+      "finite_state": true,
+      "last_second_maximum_speed_mps": 0.5292341465713399,
+      "maximum_drift_m": 3.9290020491869826,
+      "maximum_tray_tilt_degrees": 0.0,
+      "package_slipped": false,
+      "physics_steps": 5000,
+      "planar_delta_m": [
+        3.9269714387010857,
+        0.12630289838889677
+      ]
+    },
+    "left": {
+      "body_collisions": 0,
+      "controller_inferences": 400,
+      "controller_supervisor_ticks": 400,
+      "cumulative_yaw_radians": 2.0505730349116704,
+      "duration_seconds": 4.0,
+      "fell": false,
+      "finite_state": true,
+      "last_second_maximum_speed_mps": 0.20727104318288397,
+      "maximum_drift_m": 0.17483496365507376,
+      "maximum_tray_tilt_degrees": 0.0,
+      "package_slipped": false,
+      "physics_steps": 2000,
+      "planar_delta_m": [
+        0.11236440353751823,
+        0.13394590450599347
+      ]
+    },
+    "payload": {
+      "body_collisions": 0,
+      "controller_inferences": 1900,
+      "controller_supervisor_ticks": 1900,
+      "cumulative_yaw_radians": 0.13201312440801163,
+      "duration_seconds": 19.0,
+      "fell": false,
+      "finite_state": true,
+      "last_second_maximum_speed_mps": 0.0478254587983441,
+      "maximum_drift_m": 2.3677322827898184,
+      "maximum_tray_tilt_degrees": 8.081050368882956,
+      "package_slipped": false,
+      "physics_steps": 9500,
+      "planar_delta_m": [
+        2.3426212570425817,
+        -0.2876091395962378
+      ]
+    },
+    "right": {
+      "body_collisions": 0,
+      "controller_inferences": 400,
+      "controller_supervisor_ticks": 400,
+      "cumulative_yaw_radians": -1.774164152357911,
+      "duration_seconds": 4.0,
+      "fell": false,
+      "finite_state": true,
+      "last_second_maximum_speed_mps": 0.16558282961091628,
+      "maximum_drift_m": 0.06407603992613746,
+      "maximum_tray_tilt_degrees": 0.0,
+      "package_slipped": false,
+      "physics_steps": 2000,
+      "planar_delta_m": [
+        0.03445523557965237,
+        -0.019633301069054417
+      ]
+    },
+    "standstill": {
+      "body_collisions": 0,
+      "controller_inferences": 6000,
+      "controller_supervisor_ticks": 6000,
+      "cumulative_yaw_radians": 0.05137680207681549,
+      "duration_seconds": 60.0,
+      "fell": false,
+      "finite_state": true,
+      "last_second_maximum_speed_mps": 0.04786438360807073,
+      "maximum_drift_m": 0.03058056415626402,
+      "maximum_tray_tilt_degrees": 0.0,
+      "package_slipped": false,
+      "physics_steps": 30000,
+      "planar_delta_m": [
+        -0.03054173066387915,
+        0.0015406466728111127
+      ]
+    },
+    "stop": {
+      "body_collisions": 0,
+      "controller_inferences": 1500,
+      "controller_supervisor_ticks": 1500,
+      "cumulative_yaw_radians": -0.02822827989109614,
+      "duration_seconds": 15.0,
+      "fell": false,
+      "finite_state": true,
+      "last_second_maximum_speed_mps": 0.04772446004133359,
+      "maximum_drift_m": 2.200109465068149,
+      "maximum_tray_tilt_degrees": 0.0,
+      "package_slipped": false,
+      "physics_steps": 7500,
+      "planar_delta_m": [
+        2.1987026182399165,
+        -0.004668951942236941
+      ]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "checkpoint": "attempts/attempt-0001/G1JoystickFlatTerrain-20260803-012119-mm01-full-seed-1/checkpoints/000181043200",
+  "limit": 1e-05,
+  "maximum_absolute_delta": 2.2649765014648438e-06,
+  "passed": true,
+  "sample_count": 8,
+  "schema_version": 1
+}

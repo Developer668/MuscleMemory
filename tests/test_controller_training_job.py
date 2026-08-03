@@ -51,7 +51,9 @@ from ops.controller.remote_job import (  # noqa: E402
     _is_local_cpu_backend,
     _new_contract,
     _recover_attempts,
+    _selection_provenance,
     _training_command,
+    select_qualified_checkpoint,
     validate_run_id,
 )
 
@@ -198,6 +200,44 @@ def test_local_entrypoint_uses_explicit_backend_and_runtime_paths(tmp_path: Path
     ]
 
 
+def test_checkpoint_selection_rejects_smoke_runs_before_artifact_access(tmp_path: Path) -> None:
+    run_root = tmp_path / "g1-100hz-smoke-seed-1-20260803T070102Z"
+    run_root.mkdir()
+    contract = _new_contract(
+        run_root.name,
+        RunMode.SMOKE,
+        1,
+        SourceVerification(
+            playground_commit=PLAYGROUND_COMMIT,
+            playground_tag_commit=PLAYGROUND_COMMIT,
+            menagerie_commit="1b86ece576591213e2b666ebf59508454200ca97",
+            patch_sha256=PATCH_SHA256,
+            joystick_sha256=PATCHED_JOYSTICK_SHA256,
+            patched=True,
+        ),
+    )
+    (run_root / "training-contract.json").write_text(json.dumps(contract), encoding="utf-8")
+
+    with pytest.raises(ContractError, match="completed full run"):
+        select_qualified_checkpoint(run_root, tmp_path / "missing", tmp_path, ())
+
+
+def test_revalidating_same_checkpoint_preserves_first_selection_provenance() -> None:
+    selected = "attempts/attempt-0001/run/checkpoints/000181043200"
+    final = "attempts/attempt-0001/run/checkpoints/000202342400"
+    first_selected_at = "2026-08-03T14:17:04.057491+00:00"
+    contract = {
+        "exported_checkpoint": selected,
+        "checkpoint_selection": {
+            "selected_checkpoint": selected,
+            "previous_exported_checkpoint": final,
+            "selected_at": first_selected_at,
+        },
+    }
+
+    assert _selection_provenance(contract, selected) == (final, first_selected_at)
+
+
 def test_patch_changes_only_rate_and_documented_phase_hold() -> None:
     patch = PATCH_PATH.read_text(encoding="utf-8")
     changed_lines = tuple(
@@ -241,6 +281,19 @@ def test_native_qualification_cannot_import_world_generator_or_path_teacher() ->
         check=False,
     )
     assert audit.returncode == 0, audit.stderr
+
+
+def test_qualification_binding_cli_declares_patched_source_flag() -> None:
+    result = subprocess.run(
+        (sys.executable, "-m", "ops.controller.run_qualification", "qualify", "--help"),
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--patched" in result.stdout
 
 
 def test_both_modes_preserve_twenty_second_physical_horizon() -> None:

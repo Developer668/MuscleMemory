@@ -37,6 +37,11 @@ class TaskCommand:
 
     def frozen_controller_command(self) -> tuple[float, float, float]:
         """Return the gait command as forward, fixed-zero lateral, and yaw."""
-        if self.stop_probability >= STOP_THRESHOLD:
+        if self.stop_requested:
             return (0.0, 0.0, 0.0)
         return (self.forward_speed_mps, 0.0, self.turning_rate_rad_s)
+
+    @property
+    def stop_requested(self) -> bool:
+        """Return whether the task policy requested the frozen stop behavior."""
+        return self.stop_probability >= STOP_THRESHOLD

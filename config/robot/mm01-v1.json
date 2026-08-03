@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "robot_id": "MM-01",
+  "controller_id": "gait-controller-v1",
+  "qualified": true,
+  "source": {
+    "mujoco_playground_tag": "v0.2.0",
+    "mujoco_playground_commit": "124a73fa3303f75a62f8fe04d329b829ed0ebdfb",
+    "mujoco_menagerie_commit": "1b86ece576591213e2b666ebf59508454200ca97",
+    "mujoco_version": "3.6.0",
+    "onnxruntime_version": "1.28.0"
+  },
+  "rates": {
+    "physics_hz": 500,
+    "controller_supervisor_hz": 100,
+    "controller_inference_hz": 100,
+    "task_policy_hz": 10
+  },
+  "training_run_id": "g1-100hz-full-seed-1-20260803T082115Z",
+  "training_seed": 1,
+  "selected_checkpoint": "attempts/attempt-0001/G1JoystickFlatTerrain-20260803-012119-mm01-full-seed-1/checkpoints/000181043200",
+  "final_checkpoint": "attempts/attempt-0001/G1JoystickFlatTerrain-20260803-012119-mm01-full-seed-1/checkpoints/000202342400",
+  "later_rejected_checkpoints": [
+    "000191692800",
+    "000202342400"
+  ],
+  "base_candidate_aggregate_sha256": "fe0c6b7c40fec749b8b40e149fbfde99796ceb8491cd5419b1f6f24f96e58f29",
+  "robot_checksum": "f5186d9b03a6c40be6ad119e74e4ab452afb79303070fd880d55df2c12ad48f8",
+  "files": [
+    {
+      "path": "config/robot/mm01-candidate.json",
+      "size_bytes": 10385,
+      "sha256": "64e1d02034d8bf91ddd6fa706321d06f61125bb4c64f924b7d8b311e6ad27803"
+    },
+    {
+      "path": "config/robot/mm01-sensor-profile.json",
+      "size_bytes": 1287,
+      "sha256": "121c0b9bdb3c0936771fc42263b7694b0831e3df022768d7c59860eaa4135397"
+    },
+    {
+      "path": "evidence/controller/gait-v1/onnx-parity.json",
+      "size_bytes": 256,
+      "sha256": "b0a48f22e3d7e9bb1623b121f333bc8b15cca7c1472491b4abae566530226cd4"
+    },
+    {
+      "path": "evidence/controller/gait-v1/qualification-evidence.json",
+      "size_bytes": 1201,
+      "sha256": "8d3578668788d50626d4d332d281dc5f1847620a4c1e28326a9623dab79b978b"
+    },
+    {
+      "path": "evidence/controller/gait-v1/qualification-trials.json",
+      "size_bytes": 3995,
+      "sha256": "14ca6fbdf1ebd694ad7baf683fff574e35afba7ff42408ff74f9950968d298dd"
+    },
+    {
+      "path": "evidence/controller/gait-v1/training-contract.json",
+      "size_bytes": 4207,
+      "sha256": "413844b2295622b4b18fc25f2b51b7fb4920fd7b98de622ef8c50cfaa5b96702"
+    },
+    {
+      "path": "models/mm01/gait-controller-v1.onnx",
+      "size_bytes": 902240,
+      "sha256": "39b44d538c84bc9f865ecbf10a1f18be397f813afeab8b758d9c35a6bcb88b63"
+    },
+    {
+      "path": "ops/controller/contract.py",
+      "size_bytes": 15463,
+      "sha256": "8aa23bab13fb2839b93c730bc3e281a0af8d5104fd68f1f1f5b0ab781743c9b1"
+    },
+    {
+      "path": "ops/controller/mm01_g1_100hz.patch",
+      "size_bytes": 1357,
+      "sha256": "dbae77a33cc433ef0e9bf7987faadcd12b418180ea6d79844de88a9d0fb85de0"
+    },
+    {
+      "path": "ops/controller/native_qualify.py",
+      "size_bytes": 13502,
+      "sha256": "61855a8bd72d9187b4ebab89b246162ff8e897de99066a134b5a5c07317a4dcc"
+    },
+    {
+      "path": "src/muscle_memory/robot/command.py",
+      "size_bytes": 1748,
+      "sha256": "21fb2cbc9cea9bcdfa1ee9035bb8a059d1ebf33e41193ac418cf9fa7b2ab2f7c"
+    },
+    {
+      "path": "src/muscle_memory/robot/identity.py",
+      "size_bytes": 39773,
+      "sha256": "bd07f559b36364e2b30d0a10d805e8af2c52dfae1c93232efe29e5a55942809c"
+    },
+    {
+      "path": "src/muscle_memory/simulation/controller.py",
+      "size_bytes": 5781,
+      "sha256": "129d8444b227eb6cea98d730f8822fe8fc94749ff1e226c1aa82213f267f0293"
+    },
+    {
+      "path": "src/muscle_memory/simulation/runtime.py",
+      "size_bytes": 4755,
+      "sha256": "c7cb76d99bfb621b5b04ebf59df9225c3f73ea71f170fb2f4ca5b972a72f4547"
+    }
+  ],
+  "aggregate_sha256": "67cbb8cb19aa555c27fa10780176ad39ba02e12196f6e1d076d3ef04759f9f2a"
+}

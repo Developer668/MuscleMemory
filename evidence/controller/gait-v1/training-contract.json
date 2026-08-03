@@ -1,0 +1,103 @@
+{
+  "attempts": [
+    {
+      "attempt_id": "attempt-0001",
+      "checkpoint": "attempts/attempt-0001/G1JoystickFlatTerrain-20260803-012119-mm01-full-seed-1/checkpoints/000202342400",
+      "command": [
+        "/Users/m3-max/Documents/GitHub/MuscleMemory/tmp/controller-bootstrap/mujoco_playground/.venv/bin/python",
+        "/Users/m3-max/Documents/GitHub/MuscleMemory/tmp/controller-bootstrap/mujoco_playground/learning/train_jax_ppo.py",
+        "--env_name=G1JoystickFlatTerrain",
+        "--impl=jax",
+        "--seed=1",
+        "--logdir=/Users/m3-max/Documents/GitHub/MuscleMemory/artifacts/controller/local-full/g1-100hz-full-seed-1-20260803T082115Z/attempts/attempt-0001",
+        "--suffix=mm01-full-seed-1",
+        "--use_wandb=false",
+        "--use_tb=false",
+        "--domain_randomization=false",
+        "--num_videos=1",
+        "--episode_length=2000"
+      ],
+      "completed_at": "2026-08-03T14:09:16.962845+00:00",
+      "execution_backend": "local-macos-cpu-8-device",
+      "log": "attempts/attempt-0001/training.log",
+      "optimizer_state_restored": false,
+      "policy_warm_start_used": false,
+      "process_return_code": 0,
+      "restart_kind": "fresh_complete_plan",
+      "root": "attempts/attempt-0001",
+      "started_at": "2026-08-03T08:21:15.366484+00:00",
+      "status": "training_complete",
+      "stopped_after_smoke_checkpoint": false
+    }
+  ],
+  "checkpoint_selection": {
+    "controller_onnx_sha256": "39b44d538c84bc9f865ecbf10a1f18be397f813afeab8b758d9c35a6bcb88b63",
+    "later_rejected_checkpoints": [
+      {
+        "checkpoint": "000191692800",
+        "controller_onnx_sha256": "bafd15bb5c1949c2a897bd163b3664eb4f1e709fbf554d4058f4bedd7a7e5859",
+        "failures": [
+          "right-turn angular error exceeded its bound"
+        ]
+      },
+      {
+        "checkpoint": "000202342400",
+        "controller_onnx_sha256": "8fbc7f2b35139ebfe778a31dd04f22ae36bc1d520242b33e9fded71a1e25d551",
+        "failures": [
+          "stop speed exceeded its bound"
+        ]
+      }
+    ],
+    "previous_exported_checkpoint": "attempts/attempt-0001/G1JoystickFlatTerrain-20260803-012119-mm01-full-seed-1/checkpoints/000202342400",
+    "qualification_trials_sha256": "14ca6fbdf1ebd694ad7baf683fff574e35afba7ff42408ff74f9950968d298dd",
+    "selected_at": "2026-08-03T14:17:04.057491+00:00",
+    "selected_checkpoint": "attempts/attempt-0001/G1JoystickFlatTerrain-20260803-012119-mm01-full-seed-1/checkpoints/000181043200",
+    "strategy": "latest_checkpoint_passing_full_native_qualification"
+  },
+  "environment": {
+    "controller_hz": 100,
+    "ctrl_dt_seconds": 0.01,
+    "name": "G1JoystickFlatTerrain",
+    "physical_episode_seconds": 20.0,
+    "physics_hz": 500
+  },
+  "execution_backend": "local-macos-cpu-8-device",
+  "execution_configuration": {
+    "host_platform_device_count": 8,
+    "jax_platform": "cpu"
+  },
+  "exported_checkpoint": "attempts/attempt-0001/G1JoystickFlatTerrain-20260803-012119-mm01-full-seed-1/checkpoints/000181043200",
+  "mode": "full",
+  "preserved_upstream_settings": {
+    "g1_network_configuration": true,
+    "reward_configuration": true,
+    "robot_and_sensors": true
+  },
+  "restart_semantics": {
+    "completed_attempt_requirement": "one attempt must finish the entire plan",
+    "interrupted_attempt_action": "start a fresh complete plan with the same seed",
+    "optimizer_state_restored": false,
+    "policy_warm_start_used": false
+  },
+  "run_id": "g1-100hz-full-seed-1-20260803T082115Z",
+  "schema_version": 2,
+  "seed": 1,
+  "selected_attempt_id": "attempt-0001",
+  "source": {
+    "joystick_sha256": "7604c887863c5d2a4a3e7355318139e1a75416e87609085e5e62d5ba74b94da2",
+    "menagerie_commit": "1b86ece576591213e2b666ebf59508454200ca97",
+    "patch_sha256": "dbae77a33cc433ef0e9bf7987faadcd12b418180ea6d79844de88a9d0fb85de0",
+    "patched": true,
+    "playground_commit": "124a73fa3303f75a62f8fe04d329b829ed0ebdfb",
+    "playground_tag_commit": "124a73fa3303f75a62f8fe04d329b829ed0ebdfb"
+  },
+  "status": "qualified_checkpoint_selected",
+  "training_plan": {
+    "episode_length": 2000,
+    "mode": "full",
+    "num_envs": 8192,
+    "num_eval_envs": 128,
+    "num_evals": 20,
+    "num_timesteps": 200000000
+  }
+}

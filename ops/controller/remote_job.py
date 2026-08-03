@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 from dataclasses import asdict
@@ -21,6 +22,7 @@ from ops.controller.contract import (
     SourceVerification,
     build_artifact_manifest,
     evaluate_qualification,
+    sha256_file,
     verify_qualification_binding,
     verify_source_checkout,
     write_artifact_manifest,
@@ -54,6 +56,27 @@ def validate_run_id(run_id: str, *, mode: RunMode | None = None, seed: int | Non
 
 def _timestamp() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _selection_provenance(
+    contract: dict[str, Any],
+    selected_checkpoint: str,
+) -> tuple[str, str]:
+    """Preserve the first selection's time and previously exported checkpoint."""
+    existing = contract.get("checkpoint_selection")
+    same_selection = (
+        isinstance(existing, dict)
+        and existing.get("selected_checkpoint") == selected_checkpoint
+    )
+    previous = (
+        existing.get("previous_exported_checkpoint")
+        if same_selection
+        else contract.get("exported_checkpoint")
+    )
+    selected_at = existing.get("selected_at") if same_selection else _timestamp()
+    if not isinstance(previous, str) or not isinstance(selected_at, str):
+        raise ContractError("checkpoint selection provenance is incomplete")
+    return previous, selected_at
 
 
 def _is_local_cpu_backend(execution_backend: str) -> bool:
@@ -486,6 +509,160 @@ def qualify_training_run(run_root: Path) -> dict[str, object]:
         seed=seed,
         source=source,
         qualification=result,
+    )
+    write_artifact_manifest(run_root, manifest)
+    return manifest
+
+
+def _load_qualification_probe(
+    evidence_root: Path,
+    *,
+    mode: RunMode,
+) -> tuple[QualificationEvidence, dict[str, object]]:
+    evidence_payload = json.loads(
+        (evidence_root / "qualification-evidence.json").read_text(encoding="utf-8")
+    )
+    parity_payload = json.loads(
+        (evidence_root / "onnx-parity.json").read_text(encoding="utf-8")
+    )
+    if not isinstance(evidence_payload, dict) or not isinstance(parity_payload, dict):
+        raise ContractError("checkpoint probe evidence must contain JSON objects")
+    if parity_payload.get("passed") is not True:
+        raise ContractError("checkpoint probe does not contain passing ONNX parity")
+    evidence = QualificationEvidence.from_mapping(evidence_payload)
+    verify_qualification_binding(
+        evidence,
+        evidence_root,
+        Path(__file__).with_name("native_qualify.py"),
+    )
+    result = evaluate_qualification(evidence, mode)
+    return evidence, {
+        **parity_payload,
+        "qualified": result.qualified,
+        "failures": list(result.failures),
+    }
+
+
+def select_qualified_checkpoint(
+    run_root: Path,
+    checkpoint_path: Path,
+    evidence_root: Path,
+    later_evidence_roots: tuple[Path, ...],
+) -> dict[str, object]:
+    """Select the latest physically qualified checkpoint from one completed full attempt."""
+
+    validate_run_id(run_root.name)
+    contract_path = run_root / "training-contract.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    if not isinstance(contract, dict):
+        raise ContractError("training contract must be a JSON object")
+    mode = RunMode(contract["mode"])
+    if mode is not RunMode.FULL:
+        raise ContractError("only a completed full run can select a qualified checkpoint")
+    if contract.get("status") not in {"exported_unqualified", "qualified_checkpoint_selected"}:
+        raise ContractError("training run has not completed and exported successfully")
+
+    attempts = contract.get("attempts")
+    selected_attempt_id = contract.get("selected_attempt_id")
+    if not isinstance(attempts, list) or not isinstance(selected_attempt_id, str):
+        raise ContractError("training contract has no selected completed attempt")
+    attempt = next(
+        (
+            item
+            for item in attempts
+            if isinstance(item, dict) and item.get("attempt_id") == selected_attempt_id
+        ),
+        None,
+    )
+    if attempt is None or attempt.get("status") != "training_complete":
+        raise ContractError("selected training attempt is not complete")
+    attempt_relative = attempt.get("root")
+    if not isinstance(attempt_relative, str):
+        raise ContractError("selected training attempt has no artifact root")
+    attempt_root = (run_root / attempt_relative).resolve(strict=True)
+    checkpoint = checkpoint_path.resolve(strict=True)
+    if not checkpoint.is_relative_to(attempt_root) or not checkpoint.name.isdigit():
+        raise ContractError("selected checkpoint is outside the completed attempt")
+    _validate_checkpoint_config(checkpoint)
+
+    seed = int(contract["seed"])
+    selected_step = int(checkpoint.name)
+    evidence, selected_probe = _load_qualification_probe(evidence_root, mode=mode)
+    if selected_probe["qualified"] is not True:
+        raise ContractError("selected checkpoint did not pass full physical qualification")
+    parity_checkpoint = Path(str(selected_probe.get("checkpoint", ""))).name
+    if parity_checkpoint != checkpoint.name:
+        raise ContractError("selected qualification probe names a different checkpoint")
+
+    later_checkpoints = {
+        path.name
+        for path in checkpoint.parent.iterdir()
+        if path.is_dir() and path.name.isdigit() and int(path.name) > selected_step
+    }
+    later_outcomes: list[dict[str, object]] = []
+    provided_later: set[str] = set()
+    for later_root in later_evidence_roots:
+        later_evidence, later_probe = _load_qualification_probe(later_root, mode=mode)
+        later_name = Path(str(later_probe.get("checkpoint", ""))).name
+        if not later_name.isdigit() or int(later_name) <= selected_step:
+            raise ContractError("later qualification evidence does not name a later checkpoint")
+        if later_probe["qualified"] is True:
+            raise ContractError("a later checkpoint passed and must be selected instead")
+        provided_later.add(later_name)
+        later_outcomes.append(
+            {
+                "checkpoint": later_name,
+                "controller_onnx_sha256": later_evidence.controller_onnx_sha256,
+                "failures": later_probe["failures"],
+            }
+        )
+    if provided_later != later_checkpoints:
+        raise ContractError(
+            "qualification evidence must cover every checkpoint later than the selection"
+        )
+
+    source = verify_source_checkout(CHECKOUT_ROOT, PATCH_PATH, patched=True)
+    _export_checkpoint(run_root, seed, checkpoint)
+    if sha256_file(run_root / "controller.onnx") != evidence.controller_onnx_sha256:
+        raise ContractError("fresh selected-checkpoint export differs from qualification evidence")
+    shutil.copyfile(
+        evidence_root / "qualification-evidence.json",
+        run_root / "qualification-evidence.json",
+    )
+    shutil.copyfile(
+        evidence_root / "qualification-trials.json",
+        run_root / "qualification-trials.json",
+    )
+    verify_qualification_binding(
+        evidence,
+        run_root,
+        Path(__file__).with_name("native_qualify.py"),
+    )
+
+    selected_relative = checkpoint.relative_to(run_root.resolve()).as_posix()
+    previous_checkpoint, selected_at = _selection_provenance(contract, selected_relative)
+    contract["exported_checkpoint"] = selected_relative
+    contract["status"] = "qualified_checkpoint_selected"
+    contract["checkpoint_selection"] = {
+        "strategy": "latest_checkpoint_passing_full_native_qualification",
+        "selected_at": selected_at,
+        "selected_checkpoint": selected_relative,
+        "previous_exported_checkpoint": previous_checkpoint,
+        "controller_onnx_sha256": evidence.controller_onnx_sha256,
+        "qualification_trials_sha256": evidence.qualification_trials_sha256,
+        "later_rejected_checkpoints": sorted(
+            later_outcomes,
+            key=lambda item: int(str(item["checkpoint"])),
+        ),
+    }
+    _atomic_write_json(contract_path, contract)
+    qualification = evaluate_qualification(evidence, mode)
+    manifest = build_artifact_manifest(
+        run_root,
+        mode=mode,
+        seed=seed,
+        source=source,
+        qualification=qualification,
     )
     write_artifact_manifest(run_root, manifest)
     return manifest

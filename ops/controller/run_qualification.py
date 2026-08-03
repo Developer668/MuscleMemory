@@ -30,6 +30,7 @@ def _parser() -> argparse.ArgumentParser:
     qualify = commands.add_parser("qualify")
     qualify.add_argument("--checkout", type=Path, required=True)
     qualify.add_argument("--patch", type=Path, required=True)
+    qualify.add_argument("--patched", action="store_true")
     qualify.add_argument("--run-root", type=Path, required=True)
     qualify.add_argument("--evidence", type=Path, required=True)
     qualify.add_argument("--mode", type=RunMode, choices=tuple(RunMode), required=True)

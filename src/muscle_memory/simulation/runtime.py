@@ -1,4 +1,4 @@
-"""Rate-separated native MuJoCo runtime for the candidate controller."""
+"""Rate-separated native MuJoCo runtime for the frozen MM-01 controller."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
-from muscle_memory.paths import G1_POLICY_ONNX, G1_SCENE_XML
+from muscle_memory.paths import G1_SCENE_XML, MM01_CONTROLLER_ONNX
 from muscle_memory.robot.command import TaskCommand
 from muscle_memory.robot.identity import (
     CONTROLLER_INFERENCE_HZ,
@@ -20,26 +20,34 @@ PHYSICS_DT = 1.0 / PHYSICS_HZ
 CONTROLLER_SUPERVISOR_INTERVAL_STEPS = PHYSICS_HZ // CONTROLLER_SUPERVISOR_HZ
 CONTROLLER_INTERVAL_STEPS = PHYSICS_HZ // CONTROLLER_INFERENCE_HZ
 TASK_POLICY_INTERVAL_STEPS = PHYSICS_HZ // TASK_POLICY_HZ
+STOP_FORWARD_DECELERATION_MPS2 = 0.75
+STOP_TURN_DECELERATION_RAD_S2 = 5.0
+
+
+def _approach_zero(value: float, maximum_delta: float) -> float:
+    if abs(value) <= maximum_delta + 1e-12:
+        return 0.0
+    return float(np.copysign(abs(value) - maximum_delta, value))
 
 
 class HeadlessG1Simulation:
-    """Runs one real native-MuJoCo candidate scene without training hooks."""
+    """Runs one real native-MuJoCo MM-01 scene without training hooks."""
 
     def __init__(
         self,
         model: mujoco.MjModel | None = None,
         initialize_data: Callable[[mujoco.MjModel, mujoco.MjData], None] | None = None,
         *,
-        controller_policy_path: Path = G1_POLICY_ONNX,
+        controller_policy_path: Path = MM01_CONTROLLER_ONNX,
         controller_inference_hz: int = CONTROLLER_INFERENCE_HZ,
     ) -> None:
         if mujoco.__version__ != "3.6.0":
-            raise RuntimeError(f"candidate requires MuJoCo 3.6.0, found {mujoco.__version__}")
+            raise RuntimeError(f"MM-01 requires MuJoCo 3.6.0, found {mujoco.__version__}")
         if any(
             PHYSICS_HZ % rate
             for rate in (TASK_POLICY_HZ, CONTROLLER_SUPERVISOR_HZ, controller_inference_hz)
         ):
-            raise RuntimeError("candidate rates must divide the physics rate exactly")
+            raise RuntimeError("MM-01 rates must divide the physics rate exactly")
         self.model = model or mujoco.MjModel.from_xml_path(G1_SCENE_XML.as_posix())
         self.model.opt.timestep = PHYSICS_DT
         self.data = mujoco.MjData(self.model)
@@ -47,7 +55,7 @@ class HeadlessG1Simulation:
             self.model, mujoco.mjtObj.mjOBJ_KEY, "knees_bent"
         )
         if keyframe_id < 0:
-            raise RuntimeError("candidate model is missing the knees_bent keyframe")
+            raise RuntimeError("MM-01 model is missing the knees_bent keyframe")
         mujoco.mj_resetDataKeyframe(self.model, self.data, keyframe_id)
         if initialize_data is not None:
             initialize_data(self.model, self.data)
@@ -69,6 +77,22 @@ class HeadlessG1Simulation:
     def controller_command(self) -> TaskCommand:
         return self._controller_command
 
+    def _supervise_command(self) -> TaskCommand:
+        pending = self._pending_task_command
+        if not pending.stop_requested:
+            return pending
+
+        forward = _approach_zero(
+            self._controller_command.forward_speed_mps,
+            STOP_FORWARD_DECELERATION_MPS2 / CONTROLLER_SUPERVISOR_HZ,
+        )
+        turning = _approach_zero(
+            self._controller_command.turning_rate_rad_s,
+            STOP_TURN_DECELERATION_RAD_S2 / CONTROLLER_SUPERVISOR_HZ,
+        )
+        stopped = forward == 0.0 and turning == 0.0
+        return TaskCommand(forward, turning, 1.0 if stopped else 0.0)
+
     def step(self, task_policy: Callable[[float], TaskCommand]) -> None:
         """Advance exactly one 500 Hz physics step with separated rate gates."""
         if self.step_index % TASK_POLICY_INTERVAL_STEPS == 0:
@@ -78,12 +102,7 @@ class HeadlessG1Simulation:
             self._pending_task_command = command
             self.task_policy_updates += 1
         if self.step_index % CONTROLLER_SUPERVISOR_INTERVAL_STEPS == 0:
-            # The 100 Hz supervisor validates and transfers the held policy command.
-            self._controller_command = TaskCommand(
-                self._pending_task_command.forward_speed_mps,
-                self._pending_task_command.turning_rate_rad_s,
-                self._pending_task_command.stop_probability,
-            )
+            self._controller_command = self._supervise_command()
             self.controller_supervisor_ticks += 1
         if self.step_index % self._controller_interval_steps == 0:
             self.controller.infer(self.model, self.data, self._controller_command)
