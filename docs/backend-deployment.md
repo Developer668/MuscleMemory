@@ -3,7 +3,7 @@
 The repository ships one reproducible container image and a Compose stack for backend
 development. The API runs with persistent coordinator, telemetry-outbox, graph-cache, and
 asset-cache volumes. The local data services are pinned self-hosted instances of FalkorDB and
-Apache Iggy.
+the LaserData Apache Iggy fork required by the stable SDK's VSR wire protocol.
 
 This stack is deployment tooling, not cloud-readiness evidence. A healthy local FalkorDB or
 Iggy container proves only the self-hosted development path. Managed LaserData, FalkorDB,
@@ -77,8 +77,9 @@ The API factory is the zero-argument composition root:
 MM_API_BACKEND_FACTORY=muscle_memory.runtime:create_api_backend
 ```
 
-Local defaults connect the API to `iggy:8090` and `falkordb:6379` on the private Compose
-network. Supplying `LASERDATA_CONNECTION_STRING` or `MUSCLE_MEMORY_FALKORDB_URL` overrides
+Local defaults connect the API to `laserdata:8090` and `falkordb:6379` on the private Compose
+network. Laser uses the SDK's bare `user:password@host:port` connection form. Supplying
+`LASERDATA_CONNECTION_STRING` or `MUSCLE_MEMORY_FALKORDB_URL` overrides
 those addresses for the API without relabeling the local services as managed-provider proof.
 The Guild.ai, RocketRide, and asset-provider variables are passed through only when present;
 empty values remain truthfully unconfigured.
@@ -109,13 +110,15 @@ The data volumes are:
 - `falkordb-data`: self-hosted graph persistence
 - `iggy-data`: self-hosted operational event-log persistence
 
-Apache Iggy receives the `SYS_NICE`, unconfined seccomp, and unlimited memlock settings its
-documented `io_uring` runtime requires. FalkorDB uses its server-only image with AOF and
-`appendfsync everysec`. Image versions and multi-platform digests are pinned in
-`docker-compose.yml`; upgrades must be intentional and followed by the deployment tests and
-real provider readback.
+Iggy receives the `SYS_NICE`, unconfined seccomp, and unlimited memlock settings its
+documented `io_uring` runtime requires. The public LaserData Iggy server image is pinned by
+immutable multi-platform digest because the stable Laser SDK wheel always uses VSR; standard
+Apache Iggy images use the classic protocol and cannot satisfy the append/readback gate.
+FalkorDB uses its server-only image with AOF and `appendfsync everysec`. Image upgrades must
+be intentional and followed by the deployment tests and real provider readback.
 
 Provider references:
 
 - [Apache Iggy Docker deployment](https://iggy.apache.org/docs/server/docker/)
 - [FalkorDB Docker deployment](https://docs.falkordb.com/operations/docker)
+- [Laser SDK local server contract](https://github.com/laserdata/laser-sdk)

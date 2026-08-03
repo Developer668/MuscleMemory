@@ -30,6 +30,12 @@ from muscle_memory.orchestration.contracts import (
     sha256_text,
 )
 
+_ROLE_EVIDENCE_FIELD = {
+    GuildRole.WORLD_AND_PHYSICS: "world_evidence",
+    GuildRole.FAILURE_AND_CURRICULUM: "failure_curriculum_evidence",
+    GuildRole.SAFETY_AND_EVALUATION: "evaluation_evidence",
+}
+
 
 class GuildUnavailableError(RuntimeError):
     """The live Guild provider could not produce a validated review set."""
@@ -40,6 +46,16 @@ class GuildCoordinator(Protocol):
     def status(self) -> ProviderStatus: ...
 
     async def review_plan(self, plan: ExecutionPlan) -> GuildReviewSet: ...
+
+
+class GuildEvidenceSource(Protocol):
+    """Projects only the trusted evidence admitted for one specialist role."""
+
+    def evidence_for(
+        self,
+        plan: ExecutionPlan,
+        role: GuildRole,
+    ) -> Mapping[str, object] | None: ...
 
 
 class UnconfiguredGuildCoordinator:
@@ -99,7 +115,9 @@ class UrllibGuildTransport:
             with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (OSError, ValueError, urllib.error.HTTPError) as exc:
-            raise GuildUnavailableError(f"Guild request failed: {exc}") from exc
+            raise GuildUnavailableError(
+                f"Guild request failed ({type(exc).__name__})"
+            ) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +126,8 @@ class GuildRoleEndpoint:
     basic_credentials: str = field(repr=False)
 
     def __post_init__(self) -> None:
-        if ":" not in self.basic_credentials:
+        key_id, separator, secret = self.basic_credentials.partition(":")
+        if not separator or not key_id.strip() or not secret.strip():
             raise ContractViolationError("Guild credentials must be api_key_id:api_key_secret")
 
 
@@ -141,9 +160,11 @@ class GuildApiCoordinator:
         self,
         config: GuildApiConfig,
         transport: GuildHttpTransport | None = None,
+        evidence_source: GuildEvidenceSource | None = None,
     ) -> None:
         self._config = config
         self._transport = transport or UrllibGuildTransport()
+        self._evidence_source = evidence_source
         self._status = ProviderStatus(
             provider=ProviderName.GUILD,
             mode=ProviderMode.LIVE,
@@ -191,28 +212,38 @@ class GuildApiCoordinator:
         endpoint: GuildRoleEndpoint,
         plan: ExecutionPlan,
     ) -> GuildReview:
+        role_evidence = (
+            None
+            if self._evidence_source is None
+            else self._evidence_source.evidence_for(plan, endpoint.role)
+        )
+        if role_evidence is None:
+            raise GuildUnavailableError(
+                f"trusted evidence is unavailable for {endpoint.role.value}"
+            )
         auth = base64.b64encode(endpoint.basic_credentials.encode("utf-8")).decode("ascii")
         headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
         session_url = (
             f"{self._config.base_url.rstrip('/')}/api/workspaces/"
             f"{self._config.owner}/{self._config.workspace}/sessions"
         )
-        body = json.dumps(
-            {
-                "session_type": "api_trigger",
-                "agent_input": {
-                    "contract_version": 1,
-                    "role": endpoint.role.value,
-                    "plan_digest": plan.digest,
-                    "run_id": plan.run_id,
-                    "pipeline_steps": [step.value for step in plan_steps(plan)],
-                    "requested_output": {
-                        "recommendation": "proceed | revise | block",
-                        "summary": "non-empty string",
-                        "requested_approvals": [kind.value for kind in ApprovalKind],
-                    },
-                },
+        agent_input: dict[str, object] = {
+            "contract_version": 1,
+            "role": endpoint.role.value,
+            "plan_digest": plan.digest,
+            "run_id": plan.run_id,
+            "pipeline_steps": [step.value for step in plan_steps(plan)],
+            "requested_output": {
+                "recommendation": "proceed | revise | block",
+                "summary": "non-empty string",
+                "requested_approvals": [kind.value for kind in ApprovalKind],
             },
+        }
+        if set(role_evidence) != {_ROLE_EVIDENCE_FIELD[endpoint.role]}:
+            raise GuildUnavailableError("Guild evidence source crossed a specialist boundary")
+        agent_input.update(role_evidence)
+        body = json.dumps(
+            {"session_type": "api_trigger", "agent_input": agent_input},
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
@@ -308,6 +339,15 @@ def _parse_review(
     role: GuildRole,
     plan_digest: str,
 ) -> GuildReview:
+    required = {
+        "plan_digest",
+        "role",
+        "recommendation",
+        "summary",
+        "requested_approvals",
+    }
+    if set(value) != required:
+        raise ContractViolationError("Guild review has missing or unexpected fields")
     try:
         recommendation = ReviewRecommendation(str(value["recommendation"]))
     except (KeyError, ValueError) as exc:
@@ -315,17 +355,27 @@ def _parse_review(
     summary = value.get("summary")
     if not isinstance(summary, str) or not summary.strip():
         raise ContractViolationError("Guild review summary must be a non-empty string")
-    raw_approvals = value.get("requested_approvals", [])
+    raw_approvals = value["requested_approvals"]
     if not isinstance(raw_approvals, list):
         raise ContractViolationError("Guild requested_approvals must be a list")
     try:
         requested = tuple(ApprovalKind(str(item)) for item in raw_approvals)
     except ValueError as exc:
         raise ContractViolationError("Guild requested an unknown approval kind") from exc
-    returned_digest = value.get("plan_digest", plan_digest)
+    allowed_approvals = {
+        GuildRole.WORLD_AND_PHYSICS: {ApprovalKind.UNCERTAIN_PHYSICAL_PROPERTIES},
+        GuildRole.FAILURE_AND_CURRICULUM: {ApprovalKind.CURRICULUM_CHANGE},
+        GuildRole.SAFETY_AND_EVALUATION: {
+            ApprovalKind.POLICY_PROMOTION,
+            ApprovalKind.POLICY_ROLLBACK,
+        },
+    }
+    if len(requested) > 1 or any(item not in allowed_approvals[role] for item in requested):
+        raise ContractViolationError("Guild review requested approval outside its role")
+    returned_digest = value["plan_digest"]
     if returned_digest != plan_digest:
         raise ContractViolationError("Guild review references a different plan digest")
-    returned_role = value.get("role", role.value)
+    returned_role = value["role"]
     if returned_role != role.value:
         raise ContractViolationError("Guild review references a different specialist role")
     return GuildReview(

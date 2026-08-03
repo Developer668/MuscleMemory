@@ -173,7 +173,7 @@ def pipeline_run_view(run: PipelineRun) -> WorkflowRun:
         blocked_requirement_id=(
             run.blocked_requirement.requirement_id if run.blocked_requirement is not None else None
         ),
-        failure=run.failure,
+        failure=(redact_sensitive_text(run.failure) if run.failure is not None else None),
         provider=orchestration_provider_view(run.provider_status),
     )
 

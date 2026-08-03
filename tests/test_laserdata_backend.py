@@ -26,6 +26,7 @@ from muscle_memory.telemetry import (
     SignalUseLabel,
     TelemetryDelivery,
 )
+from muscle_memory.telemetry.laserdata import LASERDATA_SDK_REQUIREMENT
 
 
 def make_record(
@@ -63,6 +64,10 @@ def make_record(
         failure_type=None,
         frame_id=joined_frame_id,
     )
+
+
+def test_adapter_pins_the_validated_sdk() -> None:
+    assert LASERDATA_SDK_REQUIREMENT == "laser-sdk==0.0.1rc16"
 
 
 class FakeLaserDataTransport:

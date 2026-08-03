@@ -21,6 +21,8 @@ from muscle_memory.telemetry.models import EpisodeTelemetryRecord
 from muscle_memory.telemetry.wire import LaserDataTelemetryEnvelope
 
 LASERDATA_PROVIDER_NAME = "LaserData"
+# The first stable release uses Iggy's VSR wire protocol, while the supported
+# self-hosted Apache Iggy image remains on the classic protocol.
 LASERDATA_SDK_REQUIREMENT = "laser-sdk==0.0.1rc16"
 NUMERIC_TELEMETRY_HZ = 20
 DEFAULT_LASERDATA_STREAM = "muscle-memory"

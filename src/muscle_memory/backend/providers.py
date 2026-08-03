@@ -10,7 +10,6 @@ from enum import StrEnum
 from pathlib import Path
 from urllib.parse import urlparse
 
-from integrations.rocketride import ContractError, ReviewedPipelineArtifact
 from muscle_memory.api.adapters import (
     asset_provider_view,
     graph_provider_view,
@@ -31,6 +30,12 @@ from muscle_memory.assets import (
     TrellisHttpAdapter,
 )
 from muscle_memory.backend.config import BackendConfig
+from muscle_memory.backend.guild_evidence import CoordinatorGuildEvidenceSource
+from muscle_memory.backend.rocketride_artifact import (
+    ReviewedPipelineArtifact,
+    ReviewedPipelineError,
+)
+from muscle_memory.coordinator import CoordinatorStore
 from muscle_memory.graph_memory import (
     FalkorDBSettings,
     ResilientGraphMemory,
@@ -47,6 +52,7 @@ from muscle_memory.orchestration.guild import (
     GuildApiConfig,
     GuildApiCoordinator,
     GuildCoordinator,
+    GuildEvidenceSource,
     GuildRoleEndpoint,
     InMemoryGuildReviewCache,
     ResilientGuildCoordinator,
@@ -195,6 +201,8 @@ def _deployment(endpoint: str | None) -> ProviderDeployment:
     parsed = urlparse(value if "://" in value else f"scheme://{value}")
     hostname = parsed.hostname
     if hostname is not None:
+        if "." not in hostname:
+            return ProviderDeployment.SELF_HOSTED
         try:
             if ipaddress.ip_address(hostname).is_private:
                 return ProviderDeployment.SELF_HOSTED
@@ -210,7 +218,10 @@ _GUILD_CREDENTIAL_ENV = {
 }
 
 
-def _build_guild(values: Mapping[str, str]) -> ResilientGuildCoordinator:
+def _build_guild(
+    values: Mapping[str, str],
+    evidence_source: GuildEvidenceSource | None,
+) -> ResilientGuildCoordinator:
     owner = values.get("MUSCLE_MEMORY_GUILD_OWNER", "").strip()
     workspace = values.get("MUSCLE_MEMORY_GUILD_WORKSPACE", "").strip()
     credentials = tuple(
@@ -230,7 +241,8 @@ def _build_guild(values: Mapping[str, str]) -> ResilientGuildCoordinator:
                     for role, credential in zip(EXACT_GUILD_ROLES, credentials, strict=True)
                 ),
                 base_url=values.get("MUSCLE_MEMORY_GUILD_BASE_URL", "https://app.guild.ai"),
-            )
+            ),
+            evidence_source=evidence_source,
         )
     return ResilientGuildCoordinator(live, InMemoryGuildReviewCache())
 
@@ -243,7 +255,7 @@ def _build_rocketride(
     api_key = values.get("ROCKETRIDE_APIKEY", "").strip()
     try:
         artifact = ReviewedPipelineArtifact.from_env(values)
-    except ContractError:
+    except ReviewedPipelineError:
         artifact = None
     transport: StepTransport
     if not uri or not api_key or artifact is None:
@@ -257,7 +269,9 @@ def _build_rocketride(
                 api_key=api_key,
                 pipeline_path=artifact.pipeline_path,
                 pipeline_sha256=artifact.pipeline_sha256,
-            )
+                callback_environment=artifact.sdk_environment,
+            ),
+            approval_ledger,
         )
     executor = FixedPipelineExecutor(transport, approval_ledger)
     return ResilientPipelineExecutor(executor, InMemoryPipelineRunCache())
@@ -277,6 +291,7 @@ def build_provider_bundle(
     config: BackendConfig,
     *,
     approval_ledger: ApprovalLedger | None = None,
+    coordinator: CoordinatorStore | None = None,
 ) -> ProviderBundle:
     values = config.environ
     laser_config = LaserDataConfig.from_env(values)
@@ -291,7 +306,10 @@ def build_provider_bundle(
             cache_path=Path.cwd() / graph_settings.cache_path,
         )
     graph_memory = build_graph_memory(graph_settings)
-    guild = _build_guild(values)
+    guild = _build_guild(
+        values,
+        None if coordinator is None else CoordinatorGuildEvidenceSource(coordinator),
+    )
     rocketride = _build_rocketride(values, approval_ledger or InMemoryApprovalLedger())
     assets = AssetGenerationPipeline(
         cache=ContentAddressedAssetCache(config.asset_cache_path),

@@ -1,6 +1,9 @@
 {
   "conclusions": [
-    "A pipe file is portable JSON with typed data-lane connections.",
+    "PipelineConfig is flat, while SDK file loading also accepts a document that wraps it under pipeline.",
+    "The portable official example uses the all-zero project UUID and infers its source from one mode Source component.",
+    "The Python SDK unwraps an outer pipeline object for file execution, so wrapped pipe documents remain executable.",
+    "RocketRide Cloud 3.3.0 validation currently requires that outer object because rrext_validate passes its value to an engine validator that expects a pipeline member.",
     "The HTTP request and MCP client nodes are agent tools and are excluded.",
     "The tool_n8n data lane uses a configured host and path and supports bearer authentication.",
     "No agent or control connection is needed for the fixed callback pipeline.",
@@ -15,6 +18,10 @@
   "official_source_commit": "685508d455939f148e37db6bf9de028a5f5a90b3",
   "official_source_paths": [
     "packages/client-typescript/src/client/types/pipeline.ts",
+    "packages/client-python/src/rocketride/mixins/execution.py",
+    "packages/client-python/src/rocketride/mixins/services.py",
+    "packages/ai/src/ai/modules/task/commands/cmd_misc.py",
+    "packages/server/engine-lib/engLib/store/pipeline/pipeline_config.cpp",
     "nodes/src/nodes/tool_http_request/services.json",
     "nodes/src/nodes/tool_n8n/services.json",
     "nodes/src/nodes/tool_n8n/IInstance.py",

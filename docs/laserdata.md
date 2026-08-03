@@ -7,7 +7,8 @@ key between provider events and the separately transported video stream.
 
 ## Runtime dependency
 
-The production image must install the official pre-release currently exercised by the adapter:
+The production image must install the exact official release validated against the pinned
+self-hosted Apache Iggy protocol:
 
 ```text
 laser-sdk==0.0.1rc16
@@ -23,7 +24,7 @@ connection string contains credentials and is deliberately excluded from object 
 details, and verification output.
 
 ```text
-LASERDATA_CONNECTION_STRING=iggy://username:password@deployment-host:8090
+LASERDATA_CONNECTION_STRING=username:password@deployment-host:8090
 LASERDATA_STREAM=muscle-memory
 LASERDATA_TOPIC=episode-events-v2
 LASERDATA_PARTITIONS=4
@@ -31,8 +32,10 @@ LASERDATA_TIMEOUT_SECONDS=5
 MUSCLE_MEMORY_TELEMETRY_SPOOL=artifacts/telemetry/laserdata-spool.sqlite3
 ```
 
-LaserData Cloud connection strings can use managed TLS. Local or self-hosted Apache Iggy uses
-the same client surface, but it is development evidence rather than LaserData Cloud proof.
+LaserData Cloud accepts the bare `username:password@host:port` connection string and negotiates
+TLS automatically. `LASER_TLS_CERT` can override the trusted certificate when a deployment
+requires it. Local or self-hosted Apache Iggy uses the same client surface, but it is development
+evidence rather than LaserData Cloud proof.
 
 ## Delivery contract
 

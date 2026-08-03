@@ -8,7 +8,12 @@ from enum import StrEnum
 from threading import RLock
 from typing import Protocol
 
-from muscle_memory.orchestration.contracts import ApprovalRequirement, ContractViolationError
+from muscle_memory.orchestration.contracts import (
+    ApprovalRequirement,
+    ContractViolationError,
+    canonical_json,
+    sha256_text,
+)
 
 
 class HumanVerdict(StrEnum):
@@ -24,6 +29,21 @@ class HumanDecision:
     verdict: HumanVerdict
     decided_at: datetime
     note: str = ""
+
+    @property
+    def decision_id(self) -> str:
+        return sha256_text(
+            canonical_json(
+                {
+                    "requirement_id": self.requirement_id,
+                    "plan_digest": self.plan_digest,
+                    "human_subject": self.human_subject,
+                    "verdict": self.verdict.value,
+                    "decided_at": self.decided_at.isoformat(),
+                    "note": self.note,
+                }
+            )
+        )
 
     @classmethod
     def create(

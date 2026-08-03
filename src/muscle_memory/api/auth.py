@@ -63,6 +63,9 @@ class Sha256BearerAuthenticator:
         subjects = tuple(credential.subject for credential in credentials)
         if len(subjects) != len(set(subjects)):
             raise ValueError("credential subjects must be unique")
+        token_digests = tuple(credential.token_sha256 for credential in credentials)
+        if len(token_digests) != len(set(token_digests)):
+            raise ValueError("credential token digests must be unique")
         self._credentials = credentials
 
     @property
@@ -107,9 +110,7 @@ class Sha256BearerAuthenticator:
                 "token_sha256",
                 "scopes",
             }:
-                raise ValueError(
-                    f"{_ENV_NAME} entries require subject, token_sha256, and scopes"
-                )
+                raise ValueError(f"{_ENV_NAME} entries require subject, token_sha256, and scopes")
             subject = item["subject"]
             digest = item["token_sha256"]
             scopes = item["scopes"]

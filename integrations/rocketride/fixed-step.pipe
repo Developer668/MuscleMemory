@@ -1,5 +1,6 @@
 {
-  "components": [
+  "pipeline": {
+    "components": [
     {
       "config": {
         "hideForm": true,
@@ -7,10 +8,20 @@
         "parameters": {},
         "type": "webhook"
       },
-      "description": "Receives one canonical fixed-step envelope from the SDK.",
       "id": "fixed_step_source",
-      "name": "Fixed Step Input",
-      "provider": "webhook"
+      "provider": "webhook",
+      "ui": {
+        "formDataValid": true,
+        "measured": {
+          "height": 66,
+          "width": 150
+        },
+        "nodeType": "default",
+        "position": {
+          "x": 20,
+          "y": 200
+        }
+      }
     },
     {
       "config": {
@@ -28,7 +39,6 @@
         "webhookToken": "${ROCKETRIDE_MM_COORDINATOR_TOKEN}",
         "workflow": "muscle-memory-fixed-step"
       },
-      "description": "Deterministic authenticated callback; no agent can invoke this lane.",
       "id": "coordinator_callback",
       "input": [
         {
@@ -36,14 +46,24 @@
           "lane": "text"
         }
       ],
-      "name": "Coordinator Callback",
-      "provider": "tool_n8n"
+      "provider": "tool_n8n",
+      "ui": {
+        "formDataValid": true,
+        "measured": {
+          "height": 66,
+          "width": 150
+        },
+        "nodeType": "default",
+        "position": {
+          "x": 240,
+          "y": 200
+        }
+      }
     },
     {
       "config": {
-        "laneName": "result"
+        "laneName": "text"
       },
-      "description": "Returns the typed, checksummed callback result.",
       "id": "typed_result",
       "input": [
         {
@@ -51,13 +71,28 @@
           "lane": "text"
         }
       ],
-      "name": "Typed Result",
-      "provider": "response_text"
+      "provider": "response_text",
+      "ui": {
+        "formDataValid": true,
+        "measured": {
+          "height": 66,
+          "width": 150
+        },
+        "nodeType": "default",
+        "position": {
+          "x": 460,
+          "y": 200
+        }
+      }
     }
-  ],
-  "description": "Executes one approved Muscle Memory fixed-pipeline command without reasoning.",
-  "isLocked": true,
-  "name": "Muscle Memory Fixed Step",
-  "source": "fixed_step_source",
-  "version": 1
+    ],
+    "project_id": "00000000-0000-0000-0000-000000000000",
+    "source": "fixed_step_source",
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 1
+    },
+    "version": 1
+  }
 }

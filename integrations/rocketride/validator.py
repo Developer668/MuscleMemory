@@ -44,12 +44,21 @@ def sha256_file(path: Path) -> str:
 
 
 def validate_pipeline(path: Path = PIPELINE_PATH) -> dict[str, object]:
-    pipe = _read_json(path)
-    required_top = {"components", "description", "isLocked", "name", "source", "version"}
+    document = _read_json(path)
+    if set(document) != {"pipeline"} or not isinstance(document["pipeline"], dict):
+        raise ContractError("pipeline document must contain one RocketRide pipeline wrapper")
+    pipe = cast(dict[str, Any], document["pipeline"])
+    required_top = {"components", "project_id", "source", "viewport", "version"}
     if set(pipe) != required_top:
-        raise ContractError("pipeline top-level fields do not match the reviewed artifact")
-    if pipe["version"] != 1 or pipe["isLocked"] is not True:
-        raise ContractError("pipeline must be version 1 and canvas-locked")
+        raise ContractError("pipeline top-level fields do not match RocketRide's reviewed shape")
+    if pipe["version"] != 1:
+        raise ContractError("pipeline must use RocketRide document version 1")
+    if pipe["project_id"] != "00000000-0000-0000-0000-000000000000":
+        raise ContractError("pipeline must retain the portable reviewed project id")
+    if pipe["source"] != "fixed_step_source":
+        raise ContractError("pipeline source changed from the reviewed artifact")
+    if pipe["viewport"] != {"x": 0, "y": 0, "zoom": 1}:
+        raise ContractError("pipeline viewport changed from the reviewed artifact")
     components = pipe["components"]
     if not isinstance(components, list) or len(components) != 3:
         raise ContractError("pipeline must contain exactly three deterministic components")
@@ -62,12 +71,34 @@ def validate_pipeline(path: Path = PIPELINE_PATH) -> dict[str, object]:
         raise ContractError("pipeline component ids or order changed")
     if providers != ("webhook", "tool_n8n", "response_text"):
         raise ContractError("pipeline may use only the reviewed deterministic providers")
-    if len(set(ids)) != len(ids) or pipe["source"] != "fixed_step_source":
-        raise ContractError("pipeline source or component identity is invalid")
+    if len(set(ids)) != len(ids):
+        raise ContractError("pipeline component identity is invalid")
     if any("control" in component for component in typed_components):
         raise ContractError("agent/control connections are forbidden in the execution pipe")
 
     source, callback, result = typed_components
+    expected_ui = (
+        {
+            "formDataValid": True,
+            "measured": {"height": 66, "width": 150},
+            "nodeType": "default",
+            "position": {"x": 20, "y": 200},
+        },
+        {
+            "formDataValid": True,
+            "measured": {"height": 66, "width": 150},
+            "nodeType": "default",
+            "position": {"x": 240, "y": 200},
+        },
+        {
+            "formDataValid": True,
+            "measured": {"height": 66, "width": 150},
+            "nodeType": "default",
+            "position": {"x": 460, "y": 200},
+        },
+    )
+    if tuple(component.get("ui") for component in typed_components) != expected_ui:
+        raise ContractError("pipeline UI metadata changed from RocketRide's reviewed shape")
     if "input" in source:
         raise ContractError("source component cannot consume a lane")
     if callback.get("input") != [{"from": "fixed_step_source", "lane": "text"}]:
@@ -92,7 +123,7 @@ def validate_pipeline(path: Path = PIPELINE_PATH) -> dict[str, object]:
     }
     if callback.get("config") != expected_callback_config:
         raise ContractError("callback security or delivery configuration changed")
-    if result.get("config") != {"laneName": "result"}:
+    if result.get("config") != {"laneName": "text"}:
         raise ContractError("typed-result response configuration changed")
     source_config = source.get("config")
     if source_config != {

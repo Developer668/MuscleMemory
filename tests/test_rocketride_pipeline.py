@@ -30,6 +30,7 @@ from integrations.rocketride.protocol import (
     ApprovalRejectedError,
     ContractError,
     FixedStepDispatcher,
+    HandlerExecutionError,
     SequenceError,
     SequenceLedger,
     StepEnvelope,
@@ -132,12 +133,19 @@ def test_reviewed_bundle_hashes_and_pipeline_shape_are_valid() -> None:
     evidence = validate_bundle()
 
     assert evidence["valid"] is True
-    pipeline = json.loads((BUNDLE_ROOT / "fixed-step.pipe").read_text(encoding="utf-8"))
+    document = json.loads((BUNDLE_ROOT / "fixed-step.pipe").read_text(encoding="utf-8"))
+    assert set(document) == {"pipeline"}
+    pipeline = document["pipeline"]
+    assert set(pipeline) == {"components", "project_id", "source", "viewport", "version"}
+    assert pipeline["project_id"] == "00000000-0000-0000-0000-000000000000"
+    assert pipeline["source"] == "fixed_step_source"
+    assert pipeline["viewport"] == {"x": 0, "y": 0, "zoom": 1}
     assert tuple(component["provider"] for component in pipeline["components"]) == (
         "webhook",
         "tool_n8n",
         "response_text",
     )
+    assert pipeline["components"][-1]["config"] == {"laneName": "text"}
     assert all("control" not in component for component in pipeline["components"])
 
 
@@ -181,6 +189,25 @@ def test_dispatcher_executes_only_the_fixed_order_and_exact_retries_are_idempote
 
     assert dispatcher.dispatch(final_encoded) == results[-1]
     assert calls == list(FIXED_STEPS)
+
+
+def test_dispatcher_does_not_expose_handler_exception_text() -> None:
+    secret = "domain-secret-should-not-cross-callback"
+
+    def fail(_payload: Mapping[str, object]) -> Mapping[str, object]:
+        raise RuntimeError(secret)
+
+    dispatcher = FixedStepDispatcher(
+        {step: fail for step in FIXED_STEPS},
+        approval_verifier=lambda _evidence: False,
+    )
+    encoded = _encoded("validate_world", _payloads()["validate_world"])
+
+    with pytest.raises(HandlerExecutionError) as error:
+        dispatcher.dispatch(encoded)
+
+    assert str(error.value) == "validate_world handler failed (RuntimeError)"
+    assert secret not in str(error.value)
 
 
 def test_dispatcher_rejects_reordering_unknown_tools_and_runtime_teacher_input() -> None:
@@ -276,8 +303,13 @@ class _FakeRocketRideClient:
         self._events.append("exit")
 
     async def validate(self, pipeline: Mapping[str, object]) -> Mapping[str, object]:
-        self._events.append(("validate", pipeline["name"]))
-        return {"errors": [], "valid": True}
+        self._events.append(("validate", dict(pipeline)))
+        assert set(pipeline) == {"pipeline"}
+        inner = pipeline["pipeline"]
+        assert isinstance(inner, Mapping)
+        assert set(inner) == {"components", "project_id", "source", "viewport", "version"}
+        assert inner["project_id"] == "00000000-0000-0000-0000-000000000000"
+        return {"pipeline": {"components": inner["components"]}}
 
     async def use(self, *, filepath: str) -> Mapping[str, object]:
         self._events.append(("use", filepath))

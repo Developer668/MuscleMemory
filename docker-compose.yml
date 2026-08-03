@@ -32,7 +32,7 @@ services:
       MUSCLE_MEMORY_FALKORDB_CACHE_PATH: /var/lib/muscle-memory/graph/falkordb-events.jsonl
       MM_ASSET_CACHE_DIR: /var/lib/muscle-memory/assets/cache
       MM_ASSET_APPROVAL_LEDGER_DIR: /var/lib/muscle-memory/assets/approvals
-      LASERDATA_CONNECTION_STRING: ${LASERDATA_CONNECTION_STRING:-iggy://${IGGY_ROOT_USERNAME:-iggy}:${IGGY_ROOT_PASSWORD:?Generate the local backend environment first}@iggy:8090}
+      LASERDATA_CONNECTION_STRING: ${LASERDATA_CONNECTION_STRING:-${IGGY_ROOT_USERNAME:-iggy}:${IGGY_ROOT_PASSWORD:?Generate the local backend environment first}@laserdata:8090}
       LASERDATA_STREAM: ${LASERDATA_STREAM:-muscle-memory}
       LASERDATA_TOPIC: ${LASERDATA_TOPIC:-episode-events-v2}
       LASERDATA_PARTITIONS: ${LASERDATA_PARTITIONS:-4}
@@ -70,7 +70,7 @@ services:
     depends_on:
       falkordb:
         condition: service_healthy
-      iggy:
+      laserdata:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-m", "ops.deployment.healthcheck"]
@@ -107,8 +107,9 @@ services:
     labels:
       com.muscle-memory.evidence-boundary: self-hosted-development-not-cloud
 
-  iggy:
-    image: apache/iggy:0.8.0@sha256:99b42016a898381d4bab3c2d4613456eb04ad06a7a0688314823d798a685636b
+  laserdata:
+    image: docker.io/laserdatainc/iggy-server:latest@sha256:70f71ede54f391cd511d7109de96bd7f4044f236d4a65c2b30b1cf15a5e9b6ea
+    init: true
     restart: unless-stopped
     cap_add:
       - SYS_NICE
@@ -121,7 +122,7 @@ services:
     environment:
       IGGY_ROOT_USERNAME: ${IGGY_ROOT_USERNAME:-iggy}
       IGGY_ROOT_PASSWORD: ${IGGY_ROOT_PASSWORD:?Generate the local backend environment first}
-      IGGY_SYSTEM_PATH: /iggy/local_data
+      IGGY_SYSTEM_PATH: /var/lib/iggy
       IGGY_TCP_ENABLED: "true"
       IGGY_TCP_ADDRESS: 0.0.0.0:8090
       IGGY_QUIC_ENABLED: "false"
@@ -130,18 +131,20 @@ services:
       IGGY_HEARTBEAT_ENABLED: "true"
       IGGY_HEARTBEAT_INTERVAL: 5s
     volumes:
-      - iggy-data:/iggy/local_data
+      - iggy-data:/var/lib/iggy
     ports:
       - "${MM_PROVIDER_BIND_ADDRESS:-127.0.0.1}:${IGGY_TCP_PORT:-8090}:8090"
     healthcheck:
-      test: ["CMD-SHELL", "iggy --quiet --tcp-server-address 127.0.0.1:8090 --username \"$$IGGY_ROOT_USERNAME\" --password \"$$IGGY_ROOT_PASSWORD\" ping"]
+      test: ["CMD", "/usr/local/bin/iggy-healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 20s
     logging: *log-policy
     networks:
-      - backend
+      backend:
+        aliases:
+          - laserdata
     labels:
       com.muscle-memory.evidence-boundary: self-hosted-development-not-laserdata-cloud
 

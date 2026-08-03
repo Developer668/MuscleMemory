@@ -231,9 +231,7 @@ def _validate_step_payload(step: str, payload: Mapping[str, object]) -> None:
             "heldout_world_set_id",
         }
         if set(payload) != allowed:
-            raise ContractError(
-                "evaluation accepts only policy ids and the held-out world-set id"
-            )
+            raise ContractError("evaluation accepts only policy ids and the held-out world-set id")
         for key in allowed:
             _require_identifier(payload[key], key)
     elif step == "validate_world":
@@ -366,7 +364,9 @@ class FixedStepDispatcher:
             raise
         except Exception as exc:
             self._sequence.abort(envelope, request_sha256)
-            raise HandlerExecutionError(f"{envelope.step} handler failed: {exc}") from exc
+            raise HandlerExecutionError(
+                f"{envelope.step} handler failed ({type(exc).__name__})"
+            ) from exc
 
 
 def validate_result(encoded_result: str, envelope: StepEnvelope) -> dict[str, Any]:

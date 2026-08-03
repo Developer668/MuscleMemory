@@ -108,6 +108,25 @@ def _validation_errors(value: object) -> list[object]:
     return errors
 
 
+def _validated_component_ids(value: object) -> tuple[str, ...]:
+    if not isinstance(value, Mapping):
+        raise ContractError("RocketRide validation response is not an object")
+    normalized = value.get("pipeline")
+    if not isinstance(normalized, Mapping):
+        raise ContractError("RocketRide validation response has no normalized pipeline")
+    components = normalized.get("components")
+    if not isinstance(components, list):
+        raise ContractError("RocketRide validation response has no normalized components")
+    component_ids = tuple(
+        component.get("id") if isinstance(component, Mapping) else None
+        for component in components
+    )
+    expected = ("fixed_step_source", "coordinator_callback", "typed_result")
+    if component_ids != expected:
+        raise ContractError("RocketRide validated a different component graph")
+    return cast(tuple[str, ...], component_ids)
+
+
 def _extract_result(response: object) -> str:
     if isinstance(response, Mapping):
         required = {
@@ -205,6 +224,7 @@ async def verify_live_provider(
             errors = _validation_errors(validation)
             if errors:
                 raise ContractError(f"RocketRide rejected pipeline: {errors}")
+            _validated_component_ids(validation)
             task = await client.use(filepath=str(config.pipeline_path))
             token_value = task.get("token") if isinstance(task, Mapping) else None
             if not isinstance(token_value, str) or not token_value:
@@ -246,7 +266,7 @@ async def verify_live_provider(
             "verified": False,
             "task_token_sha256": sha256_text(token) if token else None,
             "pipeline_sha256": cast(dict[str, Any], bundle["pipeline"])["pipeline_sha256"],
-            "detail": str(exc),
+            "detail": f"live verification failed ({type(exc).__name__})",
             "pipeline_validation_received": validation is not None,
         }
 

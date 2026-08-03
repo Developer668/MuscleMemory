@@ -99,7 +99,10 @@ def test_startup_requires_real_laserdata_append_and_readback() -> None:
     smoke_position = start_script.index("ops.deployment.smoke")
     assert verify_position < smoke_position
     assert "LASERDATA_TOPIC: ${LASERDATA_TOPIC:-episode-events-v2}" in compose
-    assert "/iggy/local_data" in compose
+    assert "iggy://" not in compose
+    assert "@laserdata:8090}" in compose
+    assert "laserdatainc/iggy-server:latest@sha256:" in compose
+    assert "/var/lib/iggy" in compose
 
 
 def test_compose_resolves_hardened_persistent_local_stack() -> None:
@@ -137,12 +140,12 @@ def test_compose_resolves_hardened_persistent_local_stack() -> None:
     config = json.loads(result.stdout)
     services = config["services"]
 
-    assert set(services) == {"api", "falkordb", "iggy"}
+    assert set(services) == {"api", "falkordb", "laserdata"}
     assert services["api"]["read_only"] is True
     assert services["api"]["cap_drop"] == ["ALL"]
     assert services["api"]["ports"][0]["host_ip"] == "127.0.0.1"
     assert services["falkordb"]["ports"][0]["host_ip"] == "127.0.0.1"
-    assert services["iggy"]["ports"][0]["host_ip"] == "127.0.0.1"
+    assert services["laserdata"]["ports"][0]["host_ip"] == "127.0.0.1"
     assert services["api"]["environment"]["MM_API_BACKEND_FACTORY"] == DEFAULT_BACKEND_FACTORY
     assert (
         services["api"]["environment"]["LASERDATA_CONNECTION_STRING"]
@@ -153,9 +156,9 @@ def test_compose_resolves_hardened_persistent_local_stack() -> None:
         == "rediss://cloud-user:cloud-pass@managed.example:6379"
     )
     assert "@sha256:" in services["falkordb"]["image"]
-    assert "@sha256:" in services["iggy"]["image"]
+    assert "@sha256:" in services["laserdata"]["image"]
     assert services["falkordb"]["healthcheck"]["test"]
-    assert services["iggy"]["healthcheck"]["test"]
+    assert services["laserdata"]["healthcheck"]["test"]
     assert set(config["volumes"]) == {
         "asset-cache",
         "coordinator-data",

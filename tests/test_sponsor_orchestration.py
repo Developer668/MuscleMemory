@@ -7,6 +7,7 @@ import base64
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -46,7 +47,7 @@ from muscle_memory.orchestration import (
     UnconfiguredGuildCoordinator,
     UnconfiguredRocketRideTransport,
 )
-from muscle_memory.orchestration.contracts import sha256_text
+from muscle_memory.orchestration.contracts import canonical_json, sha256_text
 
 
 def _plan(
@@ -161,6 +162,10 @@ def test_sponsor_credentials_are_excluded_from_configuration_reprs(
         api_key=rocketride_secret,
         pipeline_path=pipeline,
         pipeline_sha256=sha256_text("reviewed pipeline"),
+        callback_environment={
+            "ROCKETRIDE_MM_COORDINATOR_URL": "https://callback.example.test",
+            "ROCKETRIDE_MM_COORDINATOR_TOKEN": "x" * 32,
+        },
     )
 
     assert guild_secret not in repr(endpoint)
@@ -280,6 +285,21 @@ def test_failed_world_validation_halts_and_cannot_be_resumed() -> None:
         asyncio.run(executor.execute(plan, failed))
 
 
+def test_step_failure_does_not_expose_handler_exception_text() -> None:
+    plan = _plan()
+    secret = "provider-secret-should-never-be-public"
+
+    async def fail(_command: PipelineCommand) -> Mapping[str, object]:
+        raise RuntimeError(secret)
+
+    transport = SimulatedStepTransport({step: fail for step in FIXED_PIPELINE})
+    run = asyncio.run(FixedPipelineExecutor(transport, InMemoryApprovalLedger()).execute(plan))
+
+    assert run.state is RunState.FAILED
+    assert run.failure == "validate_world failed (RuntimeError)"
+    assert secret not in run.failure
+
+
 class _RecordingExecutor:
     def __init__(self) -> None:
         self.calls = 0
@@ -384,10 +404,39 @@ class _FakeGuildHttpTransport:
             "result": {
                 "plan_digest": agent_input["plan_digest"],
                 "recommendation": "proceed",
+                "requested_approvals": [],
                 "role": agent_input["role"],
                 "summary": "provider reviewed fixed plan",
             },
         }
+
+
+class _FixtureGuildEvidenceSource:
+    _FIELDS: ClassVar[dict[GuildRole, tuple[str, str]]] = {
+        GuildRole.WORLD_AND_PHYSICS: ("world-and-physics", "world_evidence"),
+        GuildRole.FAILURE_AND_CURRICULUM: (
+            "failure-and-curriculum",
+            "failure_curriculum_evidence",
+        ),
+        GuildRole.SAFETY_AND_EVALUATION: (
+            "safety-and-evaluation",
+            "evaluation_evidence",
+        ),
+    }
+
+    def evidence_for(
+        self,
+        plan: ExecutionPlan,
+        role: GuildRole,
+    ) -> Mapping[str, object]:
+        del plan
+        directory, field = self._FIELDS[role]
+        fixture = json.loads(
+            Path(f"integrations/guild/{directory}/fixtures/valid-input.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        return {field: fixture[field]}
 
 
 def test_guild_api_adapter_calls_each_exact_role_with_basic_auth() -> None:
@@ -404,6 +453,7 @@ def test_guild_api_adapter_calls_each_exact_role_with_basic_auth() -> None:
             poll_interval_seconds=0.001,
         ),
         transport,
+        _FixtureGuildEvidenceSource(),
     )
 
     reviews = asyncio.run(coordinator.review_plan(_plan()))
@@ -421,6 +471,16 @@ def test_guild_api_adapter_calls_each_exact_role_with_basic_auth() -> None:
         agent_input = json.loads(body)["agent_input"]
         assert agent_input["role"] == endpoint.role.value
         assert tuple(agent_input["pipeline_steps"]) == tuple(step.value for step in FIXED_PIPELINE)
+        _, field = _FixtureGuildEvidenceSource._FIELDS[endpoint.role]
+        assert field in agent_input
+        assert not (
+            {
+                "world_evidence",
+                "failure_curriculum_evidence",
+                "evaluation_evidence",
+            }
+            - {field}
+        ).intersection(agent_input)
 
 
 class _FakeRocketRideClient:
@@ -452,8 +512,19 @@ class _FakeRocketRideClient:
         mimetype: str,
     ) -> Mapping[str, object]:
         assert self.active
-        self.events.append(("send", token, json.loads(payload), objinfo, mimetype))
-        return {"accepted": True, "world_valid": True}
+        envelope = json.loads(payload)
+        self.events.append(("send", token, envelope, objinfo, mimetype))
+        output = {"accepted": True, "world_valid": True}
+        return {
+            "contract_version": 1,
+            "output": output,
+            "output_sha256": sha256_text(canonical_json(output)),
+            "plan_digest": envelope["plan_digest"],
+            "request_sha256": sha256_text(payload),
+            "run_id": envelope["run_id"],
+            "status": "completed",
+            "step": envelope["step"],
+        }
 
     async def terminate(self, token: str) -> None:
         assert self.active
@@ -474,7 +545,12 @@ def test_rocketride_sdk_adapter_uses_official_async_contract(tmp_path: Path) -> 
             api_key="secret",
             pipeline_path=pipeline,
             pipeline_sha256=sha256_text(pipeline.read_text(encoding="utf-8")),
+            callback_environment={
+                "ROCKETRIDE_MM_COORDINATOR_URL": "https://callback.example.test",
+                "ROCKETRIDE_MM_COORDINATOR_TOKEN": "x" * 32,
+            },
         ),
+        InMemoryApprovalLedger(),
         client_factory=factory,
     )
     plan = _plan()
@@ -491,6 +567,10 @@ def test_rocketride_sdk_adapter_uses_official_async_contract(tmp_path: Path) -> 
             "request_timeout": 120_000.0,
             "persist": False,
             "module": "muscle-memory",
+            "env": {
+                "ROCKETRIDE_MM_COORDINATOR_URL": "https://callback.example.test",
+                "ROCKETRIDE_MM_COORDINATOR_TOKEN": "x" * 32,
+            },
         },
     )
     assert events[-2:] == [("terminate", "task-token"), "exit"]
@@ -514,4 +594,8 @@ def test_live_provider_configs_reject_insecure_urls(tmp_path: Path) -> None:
             api_key="secret",
             pipeline_path=pipeline,
             pipeline_sha256=sha256_text(pipeline.read_text(encoding="utf-8")),
+            callback_environment={
+                "ROCKETRIDE_MM_COORDINATOR_URL": "https://callback.example.test",
+                "ROCKETRIDE_MM_COORDINATOR_TOKEN": "x" * 32,
+            },
         )

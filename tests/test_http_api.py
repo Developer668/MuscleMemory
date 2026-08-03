@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from muscle_memory.api import (
@@ -342,6 +343,20 @@ def test_unconfigured_authentication_rejects_every_mutation() -> None:
     assert response.json()["error"]["code"] == "authentication_unconfigured"
 
 
+def test_authenticator_rejects_one_token_assigned_to_multiple_subjects() -> None:
+    first = HashedBearerCredential.from_plaintext(
+        subject="operator-1",
+        token="shared-secret",
+    )
+    second = HashedBearerCredential.from_plaintext(
+        subject="operator-2",
+        token="shared-secret",
+    )
+
+    with pytest.raises(ValueError, match="token digests must be unique"):
+        Sha256BearerAuthenticator((first, second))
+
+
 def test_not_found_and_validation_errors_share_the_error_contract() -> None:
     backend = FakeBackend()
     with _client(backend) as client:
@@ -449,10 +464,12 @@ def test_websocket_delivers_live_telemetry_with_the_frame_join_contract() -> Non
 def test_provider_detail_projection_redacts_common_secret_shapes() -> None:
     detail = (
         "redis://operator:private-value@provider.example/0 "
+        "cloud-user:cloud-private@starter.laserdata.cloud:8090 "
         "Authorization=private-header Bearer private-token"
     )
     projected = redact_provider_detail(detail)
     assert "private-value" not in projected
     assert "private-header" not in projected
     assert "private-token" not in projected
-    assert projected.count("[redacted]") == 3
+    assert "cloud-private" not in projected
+    assert projected.count("[redacted]") == 4

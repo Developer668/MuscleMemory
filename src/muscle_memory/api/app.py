@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -64,6 +65,15 @@ from muscle_memory.api.models import (
 )
 from muscle_memory.api.redaction import redact_sensitive_mapping, redact_sensitive_text
 from muscle_memory.api.streaming import LiveTelemetryHub
+from muscle_memory.backend.rocketride_callback import (
+    CALLBACK_PATH,
+    MAX_CALLBACK_BODY_BYTES,
+    CallbackApprovalError,
+    CallbackContractError,
+    CallbackHandlerError,
+    CallbackSequenceError,
+    CallbackUnauthorizedError,
+)
 
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _bearer = HTTPBearer(
@@ -519,6 +529,64 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.api_runtime = runtime
+
+    @app.post(CALLBACK_PATH, include_in_schema=False)
+    async def rocketride_callback(request: Request) -> JSONResponse:
+        if request.headers.get("content-type", "").split(";", 1)[0] != "application/json":
+            return JSONResponse(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                content={"error": "content_type_must_be_application_json"},
+            )
+        body = await request.body()
+        if not body or len(body) > MAX_CALLBACK_BODY_BYTES:
+            return JSONResponse(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                content={"error": "body_too_large"},
+            )
+        try:
+            wrapper = json.loads(body)
+            if not isinstance(wrapper, dict) or set(wrapper) != {"data"}:
+                raise CallbackContractError("callback body must contain only the data field")
+            encoded = wrapper["data"]
+            if not isinstance(encoded, str):
+                raise CallbackContractError("callback data must be a string")
+            dispatch = getattr(backend, "dispatch_rocketride_callback", None)
+            if not callable(dispatch):
+                raise ApiBackendError(
+                    503,
+                    "rocketride_callback_unconfigured",
+                    "RocketRide callback configuration is unavailable",
+                )
+            result = await asyncio.to_thread(
+                dispatch,
+                encoded,
+                request.headers.get("authorization", ""),
+            )
+        except CallbackUnauthorizedError:
+            return JSONResponse(status_code=401, content={"error": "unauthorized"})
+        except CallbackApprovalError as exc:
+            return JSONResponse(
+                status_code=403,
+                content={"error": "approval_rejected", "detail": str(exc)},
+            )
+        except CallbackSequenceError as exc:
+            return JSONResponse(
+                status_code=409,
+                content={"error": "sequence_violation", "detail": str(exc)},
+            )
+        except CallbackContractError as exc:
+            return JSONResponse(
+                status_code=422,
+                content={"error": "contract_violation", "detail": str(exc)},
+            )
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse(status_code=400, content={"error": "invalid_json"})
+        except CallbackHandlerError as exc:
+            return JSONResponse(
+                status_code=502,
+                content={"error": "handler_failed", "detail": str(exc)},
+            )
+        return JSONResponse(content=result, headers={"Cache-Control": "no-store"})
 
     @app.middleware("http")
     async def request_id_middleware(

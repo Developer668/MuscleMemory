@@ -171,7 +171,7 @@ class FixedPipelineExecutor:
                     state=RunState.FAILED,
                     completed_steps=tuple(completed),
                     provider_status=self.status,
-                    failure=f"{command.step.value} failed: {exc}",
+                    failure=f"{command.step.value} failed ({type(exc).__name__})",
                 )
             completed.append(result)
             if (
@@ -272,10 +272,11 @@ class UnconfiguredRocketRideTransport:
 
 @dataclass(frozen=True, slots=True)
 class RocketRideSdkConfig:
-    uri: str
+    uri: str = field(repr=False)
     api_key: str = field(repr=False)
     pipeline_path: Path
     pipeline_sha256: str
+    callback_environment: Mapping[str, str] = field(repr=False)
     request_timeout_ms: float = 120_000.0
 
     def __post_init__(self) -> None:
@@ -290,6 +291,11 @@ class RocketRideSdkConfig:
             raise ContractViolationError("RocketRide pipeline checksum mismatch")
         if self.request_timeout_ms <= 0:
             raise ContractViolationError("RocketRide request timeout must be positive")
+        if set(self.callback_environment) != {
+            "ROCKETRIDE_MM_COORDINATOR_URL",
+            "ROCKETRIDE_MM_COORDINATOR_TOKEN",
+        } or not all(self.callback_environment.values()):
+            raise ContractViolationError("RocketRide callback environment is incomplete")
 
 
 class RocketRideSdkTransport:
@@ -298,9 +304,11 @@ class RocketRideSdkTransport:
     def __init__(
         self,
         config: RocketRideSdkConfig,
+        approvals: ApprovalLedger,
         client_factory: Callable[..., Any] | None = None,
     ) -> None:
         self._config = config
+        self._approvals = approvals
         self._client_factory = client_factory
         self._status = ProviderStatus(
             provider=ProviderName.ROCKETRIDE,
@@ -338,21 +346,43 @@ class RocketRideSdkTransport:
                 request_timeout=self._config.request_timeout_ms,
                 persist=False,
                 module="muscle-memory",
+                env=dict(self._config.callback_environment),
             )
             async with client:
                 task = await client.use(filepath=str(self._config.pipeline_path))
                 token_value = task.get("token") if isinstance(task, Mapping) else None
                 if not isinstance(token_value, str) or not token_value:
                     raise RocketRideUnavailableError("RocketRide use() returned no task token")
-                envelope = canonical_json(
-                    {
-                        "contract_version": 1,
-                        "run_id": plan.run_id,
-                        "plan_digest": plan.digest,
-                        "step": command.step.value,
-                        "payload": command.payload,
-                    }
+                envelope_payload: dict[str, object] = {
+                    "contract_version": 1,
+                    "run_id": plan.run_id,
+                    "plan_digest": plan.digest,
+                    "step": command.step.value,
+                    "payload": command.payload,
+                }
+                requirement = next(
+                    (item for item in plan.approval_requirements if item.step is command.step),
+                    None,
                 )
+                if requirement is not None:
+                    decision = self._approvals.decision_for(requirement.requirement_id)
+                    if decision is None or decision.verdict is not HumanVerdict.APPROVE:
+                        raise RocketRideUnavailableError(
+                            "gated RocketRide step lacks approved human evidence"
+                        )
+                    envelope_payload["approval_evidence"] = [
+                        {
+                            "requirement_id": requirement.requirement_id,
+                            "decision_id": decision.decision_id,
+                            "plan_digest": decision.plan_digest,
+                            "step": requirement.step.value,
+                            "kind": requirement.kind.value,
+                            "verdict": decision.verdict.value,
+                            "human_subject": decision.human_subject,
+                            "decided_at": decision.decided_at.isoformat(),
+                        }
+                    ]
+                envelope = canonical_json(envelope_payload)
                 try:
                     response = await client.send(
                         token_value,
@@ -362,8 +392,7 @@ class RocketRideSdkTransport:
                     )
                 finally:
                     await client.terminate(token_value)
-                if not isinstance(response, Mapping):
-                    response = {"result": response}
+                output = _verified_callback_output(response, envelope, plan, command)
                 self._status = ProviderStatus(
                     provider=ProviderName.ROCKETRIDE,
                     mode=ProviderMode.LIVE,
@@ -371,7 +400,7 @@ class RocketRideSdkTransport:
                     detail=f"RocketRide completed {command.step.value}",
                     checked_at=datetime.now(UTC),
                 )
-                return dict(response)
+                return output
         except RocketRideUnavailableError:
             self._mark_unhealthy("RocketRide task contract failed")
             raise
@@ -388,6 +417,80 @@ class RocketRideSdkTransport:
             detail=detail,
             checked_at=datetime.now(UTC),
         )
+
+
+def _verified_callback_output(
+    response: object,
+    envelope: str,
+    plan: ExecutionPlan,
+    command: PipelineCommand,
+) -> dict[str, object]:
+    response = _extract_callback_result(response)
+    expected_fields = {
+        "contract_version",
+        "output",
+        "output_sha256",
+        "plan_digest",
+        "request_sha256",
+        "run_id",
+        "status",
+        "step",
+    }
+    if set(response) != expected_fields:
+        raise RocketRideUnavailableError(
+            "RocketRide callback result has missing or unexpected fields"
+        )
+    if response["contract_version"] != 1 or response["status"] != "completed":
+        raise RocketRideUnavailableError("RocketRide callback result state is invalid")
+    if (
+        response["run_id"] != plan.run_id
+        or response["plan_digest"] != plan.digest
+        or response["step"] != command.step.value
+        or response["request_sha256"] != sha256_text(envelope)
+    ):
+        raise RocketRideUnavailableError(
+            "RocketRide callback result does not match its request"
+        )
+    output = response["output"]
+    if not isinstance(output, Mapping):
+        raise RocketRideUnavailableError("RocketRide callback output is not a JSON object")
+    output_dict = dict(output)
+    if response["output_sha256"] != sha256_text(canonical_json(output_dict)):
+        raise RocketRideUnavailableError("RocketRide callback output checksum mismatch")
+    return output_dict
+
+
+def _extract_callback_result(response: object) -> Mapping[str, object]:
+    if not isinstance(response, Mapping):
+        raise RocketRideUnavailableError(
+            "RocketRide response does not contain a typed callback result"
+        )
+    expected_fields = {
+        "contract_version",
+        "output",
+        "output_sha256",
+        "plan_digest",
+        "request_sha256",
+        "run_id",
+        "status",
+        "step",
+    }
+    if set(response) == expected_fields:
+        return cast(Mapping[str, object], response)
+    for key in ("result", "text", "table", "json"):
+        candidate = response.get(key)
+        if isinstance(candidate, list) and len(candidate) == 1:
+            candidate = candidate[0]
+        if isinstance(candidate, str):
+            try:
+                candidate = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+        if isinstance(candidate, Mapping) and set(candidate) == expected_fields:
+            return cast(Mapping[str, object], candidate)
+    raise RocketRideUnavailableError(
+        "RocketRide response does not contain a typed callback result"
+    )
 
 
 class InMemoryPipelineRunCache:

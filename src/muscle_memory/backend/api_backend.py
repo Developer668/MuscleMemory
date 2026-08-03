@@ -9,6 +9,7 @@ from typing import cast
 from pydantic import TypeAdapter
 
 from muscle_memory.api.adapters import (
+    asset_provider_view,
     orchestration_provider_view,
     pipeline_run_view,
     reviewed_execution_view,
@@ -57,16 +58,19 @@ from muscle_memory.backend.approvals import CoordinatorApprovalLedger
 from muscle_memory.backend.episode_journal import CoordinatorEpisodeJournal
 from muscle_memory.backend.episode_runtime import OperationalEpisodeRuntime
 from muscle_memory.backend.providers import ProviderBundle
+from muscle_memory.backend.rocketride_callback import FixedStepDispatcher
 from muscle_memory.coordinator import CoordinatorStore
-from muscle_memory.coordinator.models import canonical_json
+from muscle_memory.coordinator.models import CoordinatorIntegrityError, canonical_json
 from muscle_memory.episodes import (
     AuthenticatedHuman,
+    CorrectionApproval,
     CorrectionPoint,
+    CorrectionSubmission,
     EpisodeLifecycleState,
     EpisodeNotFoundError,
 )
 from muscle_memory.evaluation.runner import PolicyEpisodeResult
-from muscle_memory.graph_memory import ProviderState
+from muscle_memory.graph_memory import GraphStorage, ProviderState
 from muscle_memory.orchestration.approvals import (
     HumanDecision,
     HumanVerdict,
@@ -107,12 +111,14 @@ class MuscleMemoryApiBackend:
         episode_runtime: OperationalEpisodeRuntime,
         providers: ProviderBundle,
         approval_ledger: CoordinatorApprovalLedger,
+        rocketride_callback: FixedStepDispatcher | None = None,
     ) -> None:
         self.coordinator = coordinator
         self.journal = journal
         self.episode_runtime = episode_runtime
         self.providers = providers
         self.approval_ledger = approval_ledger
+        self.rocketride_callback = rocketride_callback
         self.orchestrator = SponsorOrchestrator(providers.guild, providers.rocketride)
         self._reviewed: dict[str, ReviewedExecution] = {}
         self._runs: dict[str, PipelineRun] = {}
@@ -129,13 +135,26 @@ class MuscleMemoryApiBackend:
             self._reviewed[reviewed.plan.run_id] = reviewed
         for payload in self.coordinator.latest_workflow_run_snapshots():
             run = _RUN_ADAPTER.validate_json(payload)
-            reviewed = self._reviewed.get(run.run_id)
-            if reviewed is None or reviewed.plan.digest != run.plan_digest:
+            active_review = self._reviewed.get(run.run_id)
+            if active_review is None or active_review.plan.digest != run.plan_digest:
                 raise RuntimeError("durable RocketRide run is detached from its Guild review")
             self._runs[run.run_id] = run
 
     def bind_live_publisher(self, publisher: LiveEventPublisher) -> None:
         self.episode_runtime.bind_live_publisher(publisher)
+
+    def dispatch_rocketride_callback(
+        self,
+        encoded_envelope: str,
+        authorization: str,
+    ) -> dict[str, object]:
+        if self.rocketride_callback is None:
+            raise ApiBackendError(
+                503,
+                "rocketride_callback_unconfigured",
+                "RocketRide callback configuration is unavailable",
+            )
+        return self.rocketride_callback.dispatch(encoded_envelope, authorization)
 
     async def startup(self) -> None:
         if self._closed:
@@ -155,9 +174,31 @@ class MuscleMemoryApiBackend:
 
     async def health(self) -> ServiceHealth:
         provider_health = self.providers.registry.health()
-        consumers = tuple(
-            snapshot.public() for snapshot in self.episode_runtime.consumer_snapshots()
+        graph = next(
+            provider
+            for provider in provider_health.providers
+            if provider.provider == "FalkorDB"
         )
+        consumers_list = [
+            snapshot.public() for snapshot in self.episode_runtime.consumer_snapshots()
+        ]
+        for index, consumer in enumerate(consumers_list):
+            if consumer.provider != "LaserData consumer: post-episode-graph-handoff":
+                continue
+            if graph.state not in {
+                ProviderOperationalState.HEALTHY,
+                ProviderOperationalState.END_TO_END_VERIFIED,
+            }:
+                consumers_list[index] = consumer.model_copy(
+                    update={
+                        "state": ProviderOperationalState.CACHED,
+                        "detail": (
+                            "post-episode facts are retained in the append-only graph "
+                            "cache; FalkorDB delivery is not confirmed"
+                        ),
+                    }
+                )
+        consumers = tuple(consumers_list)
         state = provider_health.state
         if any(consumer.state is ProviderOperationalState.DEGRADED for consumer in consumers):
             state = ProviderOperationalState.DEGRADED
@@ -346,6 +387,14 @@ class MuscleMemoryApiBackend:
             raise ApiBackendError(409, "workflow_immutable", "workflow id is immutable")
         if existing is None:
             self.coordinator.register_workflow(plan, created_at=datetime.now(UTC))
+        try:
+            self.coordinator.record_workflow_guild_evidence(plan.run_id, request.evidence)
+        except (CoordinatorIntegrityError, ValueError) as exc:
+            raise ApiBackendError(
+                422,
+                "workflow_evidence_invalid",
+                "workflow evidence is not backed by matching coordinator artifacts",
+            ) from exc
         prior_review = self._reviewed.get(plan.run_id)
         if prior_review is not None:
             return reviewed_execution_view(prior_review)
@@ -469,7 +518,7 @@ class MuscleMemoryApiBackend:
             state=CorrectionState.PENDING,
             submitted_by=correction.submitted_by,
             created_at=correction.created_at,
-            graph_delivery=self._graph_state(),
+            graph_delivery=self._graph_configuration_state(),
         )
 
     async def decide_correction(
@@ -484,6 +533,39 @@ class MuscleMemoryApiBackend:
         )
         if correction is None:
             raise ApiBackendError(404, "correction_not_found", "correction was not found")
+        prior_approval = next(
+            (
+                item
+                for item in self.journal.approvals()
+                if item.submission.correction_id == correction_id
+            ),
+            None,
+        )
+        prior_rejection = self._correction_rejections().get(correction_id)
+        if prior_approval is not None:
+            if request.verdict is ApiHumanVerdict.REJECT:
+                raise ApiBackendError(
+                    409,
+                    "correction_decision_immutable",
+                    "an approved correction cannot be rejected",
+                )
+            return self._correction_view(
+                correction,
+                CorrectionState.APPROVED,
+                self._approval_graph_delivery(prior_approval),
+            )
+        if prior_rejection is not None:
+            if request.verdict is ApiHumanVerdict.APPROVE:
+                raise ApiBackendError(
+                    409,
+                    "correction_decision_immutable",
+                    "a rejected correction cannot be approved",
+                )
+            return self._correction_view(
+                correction,
+                CorrectionState.REJECTED,
+                self._graph_configuration_state(),
+            )
         if request.verdict is ApiHumanVerdict.REJECT:
             rejected_at = datetime.now(UTC)
             self.coordinator.record_training_correction_rejection(
@@ -499,8 +581,9 @@ class MuscleMemoryApiBackend:
                 ),
             )
             state = CorrectionState.REJECTED
+            graph_delivery = self._graph_configuration_state()
         else:
-            await self.episode_runtime.service.approve_correction(
+            approval = await self.episode_runtime.service.approve_correction(
                 correction_id,
                 approver=AuthenticatedHuman(
                     subject_id=principal.subject,
@@ -509,6 +592,15 @@ class MuscleMemoryApiBackend:
                 ),
             )
             state = CorrectionState.APPROVED
+            graph_delivery = self._approval_graph_delivery(approval)
+        return self._correction_view(correction, state, graph_delivery)
+
+    @staticmethod
+    def _correction_view(
+        correction: CorrectionSubmission,
+        state: CorrectionState,
+        graph_delivery: ProviderOperationalState,
+    ) -> CorrectionView:
         return CorrectionView(
             correction_id=correction.correction_id,
             episode_id=correction.episode_id,
@@ -517,7 +609,7 @@ class MuscleMemoryApiBackend:
             state=state,
             submitted_by=correction.submitted_by,
             created_at=correction.created_at,
-            graph_delivery=self._graph_state(),
+            graph_delivery=graph_delivery,
         )
 
     async def policy_summaries(self) -> PolicySummaryList:
@@ -572,11 +664,30 @@ class MuscleMemoryApiBackend:
         )
 
     async def asset_statuses(self) -> tuple[AssetStatus, ...]:
-        return ()
+        return (self._fallback_asset_status(),)
 
     async def asset_status(self, asset_id: str) -> AssetStatus | None:
-        del asset_id
-        return None
+        status = self._fallback_asset_status()
+        return status if status.asset_id == asset_id else None
+
+    def _fallback_asset_status(self) -> AssetStatus:
+        manifest = self.providers.assets.fallback_manifest
+        return AssetStatus(
+            asset_id=manifest.bundle_id,
+            state="unavailable",
+            generation_route="verified_fallback",
+            rendering_artifact_hash=manifest.visual_mesh.sha256,
+            collider_source=None,
+            approval_requirement_id=None,
+            providers=tuple(
+                asset_provider_view(snapshot)
+                for snapshot in self.providers.assets.provider_snapshots
+            ),
+            detail=(
+                "verified rendering-only fallback is cached; world admission remains "
+                "unavailable until deterministic physical properties are supplied"
+            ),
+        )
 
     def _identity(self, episode_id: str):  # type: ignore[no-untyped-def]
         return next(
@@ -651,7 +762,7 @@ class MuscleMemoryApiBackend:
             return ProviderOperationalState.UNCONFIGURED
         return ProviderOperationalState.DEGRADED
 
-    def _graph_state(self) -> ProviderOperationalState:
+    def _graph_configuration_state(self) -> ProviderOperationalState:
         health = self.providers.graph_memory.health()
         if health.provider_state is ProviderState.END_TO_END_VERIFIED:
             return ProviderOperationalState.END_TO_END_VERIFIED
@@ -661,6 +772,23 @@ class MuscleMemoryApiBackend:
             return ProviderOperationalState.UNCONFIGURED
         if health.provider_state is ProviderState.CONFIGURED:
             return ProviderOperationalState.CONFIGURED
+        return ProviderOperationalState.DEGRADED
+
+    @staticmethod
+    def _approval_graph_delivery(
+        approval: CorrectionApproval,
+    ) -> ProviderOperationalState:
+        if approval.graph_error_type is not None:
+            return ProviderOperationalState.DEGRADED
+        receipt = approval.graph_receipt
+        if receipt is None:
+            return ProviderOperationalState.CACHED
+        if receipt.storage is GraphStorage.LOCAL_CACHE:
+            return ProviderOperationalState.CACHED
+        if receipt.provider_state is ProviderState.END_TO_END_VERIFIED:
+            return ProviderOperationalState.END_TO_END_VERIFIED
+        if receipt.provider_state is ProviderState.HEALTHY:
+            return ProviderOperationalState.HEALTHY
         return ProviderOperationalState.DEGRADED
 
     def _correction_rejections(self) -> dict[str, dict[str, object]]:

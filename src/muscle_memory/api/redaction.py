@@ -9,6 +9,7 @@ _URL_CREDENTIALS = re.compile(
     r"(?P<scheme>[a-z][a-z0-9+.-]*://)[^/@\s]+@",
     re.IGNORECASE,
 )
+_BARE_CONNECTION_CREDENTIALS = re.compile(r"(?<![A-Za-z0-9._-])[^\s:@/]+:[^\s@/]+@")
 _NAMED_SECRET = re.compile(
     r"(?i)\b(api[_ -]?key|token|secret|password|authorization)\b\s*[:=]\s*[^,;\s]+"
 )
@@ -30,6 +31,7 @@ _SECRET_KEY_PARTS = frozenset(
 
 def redact_sensitive_text(value: str) -> str:
     redacted = _URL_CREDENTIALS.sub(r"\g<scheme>[redacted]@", value)
+    redacted = _BARE_CONNECTION_CREDENTIALS.sub("[redacted]@", redacted)
     redacted = _NAMED_SECRET.sub(
         lambda match: f"{match.group(1)}=[redacted]",
         redacted,
@@ -69,4 +71,3 @@ __all__ = [
     "redact_sensitive_object",
     "redact_sensitive_text",
 ]
-

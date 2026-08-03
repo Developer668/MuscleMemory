@@ -263,11 +263,17 @@ class FalkorGraphMemory:
         self._query_timeout_ms = query_timeout_ms
 
     def health(self) -> GraphMemoryHealth:
+        bootstrapped = False
         try:
-            result = self._graph.ro_query(_HEALTH_QUERY, timeout=self._query_timeout_ms)
-            rows = result.result_set
-            if len(rows) != 1 or len(rows[0]) != 1 or rows[0][0] != 1:
-                raise GraphMemoryIntegrityError("FalkorDB health query returned an invalid result")
+            try:
+                result = self._graph.ro_query(_HEALTH_QUERY, timeout=self._query_timeout_ms)
+            except Exception:
+                # FalkorDB has no read-only key until the first graph query initializes it.
+                bootstrap = self._graph.query(_HEALTH_QUERY, timeout=self._query_timeout_ms)
+                self._validate_health_result(bootstrap)
+                bootstrapped = True
+                result = self._graph.ro_query(_HEALTH_QUERY, timeout=self._query_timeout_ms)
+            self._validate_health_result(result)
         except Exception as exc:
             return GraphMemoryHealth(
                 provider_state=ProviderState.UNAVAILABLE,
@@ -278,9 +284,19 @@ class FalkorGraphMemory:
         return GraphMemoryHealth(
             provider_state=ProviderState.HEALTHY,
             graph_name=self._graph_name,
-            detail="provider accepted a read-only graph query",
+            detail=(
+                "provider initialized a fresh graph and accepted a read-only graph query"
+                if bootstrapped
+                else "provider accepted a read-only graph query"
+            ),
             checked_at=datetime.now(UTC),
         )
+
+    @staticmethod
+    def _validate_health_result(result: FalkorQueryResult) -> None:
+        rows = result.result_set
+        if len(rows) != 1 or len(rows[0]) != 1 or rows[0][0] != 1:
+            raise GraphMemoryIntegrityError("FalkorDB health query returned an invalid result")
 
     def record_world(self, record: WorldMemoryRecord) -> GraphWriteReceipt:
         params: dict[str, object] = {

@@ -445,6 +445,7 @@ class EpisodeService:
                 )
             else:
                 approval = replace(approval, graph_receipt=graph_receipt)
+            self._journal.record_approval_delivery(approval)
             self._approvals[correction_id] = approval
             return approval
 

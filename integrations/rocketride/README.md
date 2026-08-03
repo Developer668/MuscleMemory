@@ -38,8 +38,12 @@ the Muscle Memory callback implements the two routes that face calls:
 - `POST /webhook/muscle-memory-fixed-step`
 
 The provider name is therefore retained honestly in the `.pipe`; this is a narrow reuse of its
-documented configured-webhook lane, not a claim that n8n is part of the product. The pipeline is
-canvas-locked and the static validator pins every node, lane, security setting, and checksum.
+documented configured-webhook lane, not a claim that n8n is part of the product. The inner
+pipeline matches RocketRide's official version-1 `.pipe` fields and includes the explicit source.
+The file uses the SDK-supported outer `pipeline` wrapper. `use(filepath=...)` unwraps that form,
+while RocketRide Cloud 3.3.0 requires it for the current `rrext_validate` path because its engine
+validator expects a wrapped document. The static validator pins the wrapper, every node, lane,
+security setting, UI field, and checksum.
 
 Official sources reviewed on 2026-08-03:
 
@@ -70,10 +74,10 @@ Evaluation accepts only baseline and candidate policy identifiers plus the held-
 identifier. Extra runtime inputs are rejected before a handler is called.
 
 Every callback response is a canonical result object containing the request hash, output hash,
-run, plan, and step. RocketRide's `response_text` node places that object under the `result`
-response lane. `live_verify.py` extracts and validates that wrapper. Other consumers must do the
-same; the existing core SDK adapter was intentionally not changed as part of this isolated
-artifact.
+run, plan, and step. RocketRide's `response_text` node uses its required `text` lane and the SDK
+returns that lane in its response mapping. `live_verify.py` extracts and validates the wrapper.
+Other consumers must do the same; the existing core SDK adapter was intentionally not changed as
+part of this isolated artifact.
 
 ## Backend wiring
 
@@ -126,7 +130,9 @@ uv run pytest tests/test_rocketride_pipeline.py
 ```
 
 Static validation proves the checked-in shape, safety constraints, and checksums. Fake-server
-tests prove local HTTP/auth/protocol behavior. Neither proves a sponsor request.
+tests prove local HTTP/auth/protocol behavior. The inner shape is pinned to the official
+`examples/n8n-roundtrip.pipe`, and the wrapper compatibility is pinned to the reviewed server and
+SDK sources. Only a successful provider `validate` call proves Cloud accepts it.
 
 ## Live verification
 

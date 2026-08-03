@@ -36,6 +36,8 @@ class EpisodeJournal(Protocol):
 
     def record_approval(self, approval: CorrectionApproval) -> None: ...
 
+    def record_approval_delivery(self, approval: CorrectionApproval) -> None: ...
+
 
 class VolatileEpisodeJournal:
     """No-op journal retained for focused unit tests and explicitly ephemeral use."""
@@ -70,6 +72,9 @@ class VolatileEpisodeJournal:
         del correction
 
     def record_approval(self, approval: CorrectionApproval) -> None:
+        del approval
+
+    def record_approval_delivery(self, approval: CorrectionApproval) -> None:
         del approval
 
 

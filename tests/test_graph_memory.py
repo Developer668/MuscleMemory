@@ -78,6 +78,35 @@ class FakeFalkorGraph:
         return FakeQueryResult(self.curriculum_rows)
 
 
+class FreshFalkorGraph(FakeFalkorGraph):
+    def __init__(self) -> None:
+        super().__init__()
+        self.initialized = False
+
+    def query(
+        self,
+        query: str,
+        params: dict[str, object] | None = None,
+        timeout: int | None = None,
+    ) -> FakeQueryResult:
+        if query.strip() == "RETURN 1 AS ok":
+            self.calls.append(("write", query, params, timeout))
+            self.initialized = True
+            return FakeQueryResult([[1]])
+        return super().query(query, params, timeout)
+
+    def ro_query(
+        self,
+        query: str,
+        params: dict[str, object] | None = None,
+        timeout: int | None = None,
+    ) -> FakeQueryResult:
+        if query.strip() == "RETURN 1 AS ok" and not self.initialized:
+            self.calls.append(("read", query, params, timeout))
+            raise RuntimeError("fresh graph key is absent")
+        return super().ro_query(query, params, timeout)
+
+
 def make_world(suffix: str, split: WorldSplit = WorldSplit.TRAINING) -> WorldMemoryRecord:
     return WorldMemoryRecord(
         world_id=f"world-{suffix}",
@@ -475,6 +504,17 @@ def test_resilient_service_reports_provider_outage_and_local_only_write(
     assert "local cache" in receipt.detail
     assert settings.url is not None
     assert settings.url.get_secret_value() not in receipt.detail
+
+
+def test_fresh_falkor_graph_health_initializes_then_verifies_read_only() -> None:
+    graph = FreshFalkorGraph()
+    service = FalkorGraphMemory(graph, graph_name="muscle_memory", query_timeout_ms=500)
+
+    health = service.health()
+
+    assert health.provider_state is ProviderState.HEALTHY
+    assert "fresh graph" in health.detail
+    assert [call[0] for call in graph.calls] == ["read", "write", "read"]
 
 
 def test_settings_do_not_claim_an_unset_provider_is_configured(tmp_path: Path) -> None:

@@ -41,6 +41,11 @@ from muscle_memory.orchestration.contracts import (
     PipelineCommand,
     PipelineStep,
 )
+from muscle_memory.orchestration.evidence import (
+    EvaluationEvidence,
+    GuildEvidenceBundle,
+    validate_evidence_plan_binding,
+)
 
 _IMMUTABLE_TABLES = (
     "episodes",
@@ -50,15 +55,18 @@ _IMMUTABLE_TABLES = (
     "training_episode_closures",
     "training_correction_submissions",
     "training_correction_approvals",
+    "training_correction_graph_deliveries",
     "training_correction_rejections",
     "episode_transitions",
     "provider_evidence",
     "workflow_runs",
+    "workflow_guild_evidence",
     "workflow_reviews",
     "workflow_run_snapshots",
     "approval_requirements",
     "human_decisions",
     "workflow_step_audits",
+    "rocketride_callback_results",
     "evaluated_checkpoints",
     "numeric_policy_decisions",
     "policy_alias_events",
@@ -142,6 +150,13 @@ class CoordinatorStore:
                     content_hash TEXT NOT NULL UNIQUE
                 );
 
+                CREATE TABLE IF NOT EXISTS training_correction_graph_deliveries (
+                    correction_id TEXT PRIMARY KEY
+                        REFERENCES training_correction_approvals(correction_id),
+                    delivery_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
                 CREATE TABLE IF NOT EXISTS training_correction_rejections (
                     correction_id TEXT PRIMARY KEY
                         REFERENCES training_correction_submissions(correction_id),
@@ -177,6 +192,12 @@ class CoordinatorStore:
                     plan_digest TEXT NOT NULL UNIQUE,
                     plan_json TEXT NOT NULL,
                     created_at_utc TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS workflow_guild_evidence (
+                    run_id TEXT PRIMARY KEY REFERENCES workflow_runs(run_id),
+                    evidence_json TEXT NOT NULL,
                     content_hash TEXT NOT NULL UNIQUE
                 );
 
@@ -229,6 +250,16 @@ class CoordinatorStore:
                     evidence_id TEXT REFERENCES provider_evidence(evidence_id),
                     content_hash TEXT NOT NULL UNIQUE,
                     PRIMARY KEY (run_id, sequence)
+                );
+
+                CREATE TABLE IF NOT EXISTS rocketride_callback_results (
+                    run_id TEXT NOT NULL REFERENCES workflow_runs(run_id),
+                    step TEXT NOT NULL,
+                    request_sha256 TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL UNIQUE,
+                    PRIMARY KEY (run_id, step),
+                    UNIQUE (run_id, request_sha256)
                 );
 
                 CREATE TABLE IF NOT EXISTS evaluated_checkpoints (
@@ -648,6 +679,44 @@ class CoordinatorStore:
             ).fetchall()
         return tuple(str(row["approval_json"]) for row in rows)
 
+    def record_training_correction_graph_delivery(
+        self,
+        correction_id: str,
+        delivery_json: str,
+    ) -> None:
+        content_hash = self._canonical_payload_hash(delivery_json)
+        with self._transaction() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM training_correction_approvals
+                WHERE correction_id = ?
+                """,
+                (correction_id,),
+            ).fetchone()
+            if row is None:
+                raise CoordinatorStateError(
+                    "correction graph delivery requires a durable approval"
+                )
+            self._insert_immutable_payload(
+                connection,
+                table="training_correction_graph_deliveries",
+                identity_column="correction_id",
+                identity=correction_id,
+                payload_column="delivery_json",
+                payload_json=delivery_json,
+                content_hash=content_hash,
+            )
+
+    def training_correction_graph_deliveries(self) -> tuple[str, ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT delivery_json FROM training_correction_graph_deliveries
+                ORDER BY correction_id
+                """
+            ).fetchall()
+        return tuple(str(row["delivery_json"]) for row in rows)
+
     def record_training_correction_rejection(
         self,
         correction_id: str,
@@ -818,6 +887,14 @@ class CoordinatorStore:
             )
         return evidence
 
+    def provider_evidence(self, evidence_id: str) -> ProviderEvidenceReference | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM provider_evidence WHERE evidence_id = ?",
+                (evidence_id,),
+            ).fetchone()
+        return None if row is None else self._provider_evidence_from_row(row)
+
     def register_workflow(
         self,
         plan: ExecutionPlan,
@@ -877,6 +954,61 @@ class CoordinatorStore:
                 "SELECT plan_json FROM workflow_runs ORDER BY run_id"
             ).fetchall()
         return tuple(self._execution_plan(str(row["plan_json"])) for row in rows)
+
+    def record_workflow_guild_evidence(
+        self,
+        run_id: str,
+        bundle: GuildEvidenceBundle,
+    ) -> GuildEvidenceBundle:
+        evidence_json = canonical_json(bundle.model_dump(mode="json"))
+        content_hash = sha256_text(evidence_json)
+        with self._transaction() as connection:
+            row = self._workflow_row(connection, run_id)
+            if row is None:
+                raise KeyError(run_id)
+            plan = self._execution_plan(str(row["plan_json"]))
+            validate_evidence_plan_binding(bundle, plan)
+            for evidence_id, expected_kind, expected_hash in bundle.artifact_hashes():
+                evidence = connection.execute(
+                    "SELECT * FROM provider_evidence WHERE evidence_id = ?",
+                    (evidence_id,),
+                ).fetchone()
+                if evidence is None:
+                    raise CoordinatorIntegrityError(
+                        f"Guild evidence reference {evidence_id!r} is not registered"
+                    )
+                if (
+                    str(evidence["evidence_kind"]) != expected_kind
+                    or str(evidence["artifact_hash"]) != expected_hash
+                ):
+                    raise CoordinatorIntegrityError(
+                        f"Guild evidence reference {evidence_id!r} does not match its artifact"
+                    )
+            self._insert_immutable_payload(
+                connection,
+                table="workflow_guild_evidence",
+                identity_column="run_id",
+                identity=run_id,
+                payload_column="evidence_json",
+                payload_json=evidence_json,
+                content_hash=content_hash,
+            )
+        return bundle
+
+    def workflow_guild_evidence(self, run_id: str) -> GuildEvidenceBundle | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT evidence_json FROM workflow_guild_evidence WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        bundle = GuildEvidenceBundle.model_validate_json(str(row["evidence_json"]))
+        plan = self.workflow_plan(run_id)
+        if plan is None:
+            raise CoordinatorIntegrityError("Guild evidence is detached from its plan")
+        validate_evidence_plan_binding(bundle, plan)
+        return bundle
 
     def pending_approval_requirements(
         self,
@@ -1136,6 +1268,83 @@ class CoordinatorStore:
             ).fetchall()
         return tuple(self._workflow_audit_from_row(row) for row in rows)
 
+    def record_rocketride_callback_result(
+        self,
+        run_id: str,
+        step: PipelineStep,
+        request_sha256: str,
+        result_json: str,
+    ) -> None:
+        if len(request_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in request_sha256
+        ):
+            raise ValueError("callback request checksum must be a lowercase SHA-256 digest")
+        content_hash = self._canonical_payload_hash(result_json)
+        with self._transaction() as connection:
+            if self._workflow_row(connection, run_id) is None:
+                raise KeyError(run_id)
+            existing = connection.execute(
+                """
+                SELECT * FROM rocketride_callback_results
+                WHERE run_id = ? AND step = ?
+                """,
+                (run_id, step.value),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    str(existing["request_sha256"]) == request_sha256
+                    and str(existing["content_hash"]) == content_hash
+                ):
+                    return
+                raise CoordinatorIntegrityError(
+                    "RocketRide callback step is immutable once completed"
+                )
+            connection.execute(
+                """
+                INSERT INTO rocketride_callback_results (
+                    run_id, step, request_sha256, result_json, content_hash
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (run_id, step.value, request_sha256, result_json, content_hash),
+            )
+
+    def rocketride_callback_results(
+        self,
+        run_id: str,
+    ) -> tuple[tuple[PipelineStep, str, str], ...]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT step, request_sha256, result_json
+                FROM rocketride_callback_results
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchall()
+        by_step = {
+            PipelineStep(str(row["step"])): (
+                str(row["request_sha256"]),
+                str(row["result_json"]),
+            )
+            for row in rows
+        }
+        completed = tuple(step for step in FIXED_PIPELINE if step in by_step)
+        if completed != FIXED_PIPELINE[: len(completed)]:
+            raise CoordinatorIntegrityError(
+                "durable RocketRide callback results are not a fixed-pipeline prefix"
+            )
+        return tuple((step, *by_step[step]) for step in completed)
+
+    def numeric_policy_decision_for_run(self, run_id: str) -> NumericPolicyDecision | None:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT * FROM numeric_policy_decisions WHERE run_id = ?",
+                (run_id,),
+            ).fetchall()
+        if len(rows) > 1:
+            raise CoordinatorIntegrityError("workflow has multiple numeric policy decisions")
+        return None if not rows else self._numeric_decision_from_row(rows[0])
+
     def register_evaluated_checkpoint(
         self,
         checkpoint: EvaluatedPolicyVersion,
@@ -1218,7 +1427,7 @@ class CoordinatorStore:
         metrics_json = canonical_json(decision.metrics.as_mapping())
         with self._transaction() as connection:
             run = connection.execute(
-                "SELECT plan_digest FROM workflow_runs WHERE run_id = ?",
+                "SELECT * FROM workflow_runs WHERE run_id = ?",
                 (decision.run_id,),
             ).fetchone()
             if run is None or str(run["plan_digest"]) != decision.plan_digest:
@@ -1228,6 +1437,7 @@ class CoordinatorStore:
             self._require_policy(connection, decision.target_policy_id)
             if decision.from_policy_id is not None:
                 self._require_policy(connection, decision.from_policy_id)
+            self._validate_numeric_decision_evidence(connection, decision)
             existing = connection.execute(
                 "SELECT * FROM numeric_policy_decisions WHERE decision_id = ?",
                 (decision.decision_id,),
@@ -1283,6 +1493,7 @@ class CoordinatorStore:
             if decision_row is None:
                 raise CoordinatorStateError("numeric policy decision is not recorded")
             decision = self._numeric_decision_from_row(decision_row)
+            self._validate_numeric_decision_evidence(connection, decision)
             approval_row = connection.execute(
                 """
                 SELECT requirements.*, decisions.verdict, decisions.plan_digest AS decision_plan
@@ -1588,18 +1799,7 @@ class CoordinatorStore:
 
     @staticmethod
     def _human_decision_hash(decision: HumanDecision) -> str:
-        return sha256_text(
-            canonical_json(
-                {
-                    "requirement_id": decision.requirement_id,
-                    "plan_digest": decision.plan_digest,
-                    "human_subject": decision.human_subject,
-                    "verdict": decision.verdict.value,
-                    "decided_at": isoformat_utc(decision.decided_at),
-                    "note": decision.note,
-                }
-            )
-        )
+        return decision.decision_id
 
     @staticmethod
     def _human_decision_from_row(row: sqlite3.Row) -> HumanDecision:
@@ -1844,6 +2044,142 @@ class CoordinatorStore:
         ).fetchone()
         return None if row is None else str(row["target_policy_id"])
 
+    @classmethod
+    def _validate_numeric_decision_evidence(
+        cls,
+        connection: sqlite3.Connection,
+        decision: NumericPolicyDecision,
+    ) -> None:
+        run = connection.execute(
+            "SELECT plan_json FROM workflow_runs WHERE run_id = ?",
+            (decision.run_id,),
+        ).fetchone()
+        evidence_row = connection.execute(
+            "SELECT evidence_json FROM workflow_guild_evidence WHERE run_id = ?",
+            (decision.run_id,),
+        ).fetchone()
+        if run is None or evidence_row is None:
+            raise CoordinatorIntegrityError(
+                "numeric policy decision requires trusted workflow evaluation evidence"
+            )
+        plan = cls._execution_plan(str(run["plan_json"]))
+        bundle = GuildEvidenceBundle.model_validate_json(str(evidence_row["evidence_json"]))
+        validate_evidence_plan_binding(bundle, plan)
+        evaluation = bundle.evaluation.evaluation_evidence
+        final_command = plan.commands[FIXED_PIPELINE.index(PipelineStep.PROMOTE_OR_ROLL_BACK)]
+        if (
+            decision.plan_digest != plan.digest
+            or decision.action.value != final_command.payload.get("action")
+            or decision.from_policy_id != evaluation.baseline.policy_id
+            or decision.target_policy_id != evaluation.candidate.policy_id
+        ):
+            raise CoordinatorIntegrityError(
+                "numeric policy decision identities do not match trusted evaluation evidence"
+            )
+
+        expected_artifact_hash = next(
+            artifact_hash
+            for _evidence_id, kind, artifact_hash in bundle.artifact_hashes()
+            if kind == "guild_evaluation_evidence"
+        )
+        if decision.evaluation_evidence_hash != expected_artifact_hash:
+            raise CoordinatorIntegrityError(
+                "numeric policy decision does not reference the trusted evaluation artifact"
+            )
+
+        baseline = cls._evaluated_checkpoint_row(
+            connection,
+            evaluation.baseline.policy_id,
+        )
+        candidate = cls._evaluated_checkpoint_row(
+            connection,
+            evaluation.candidate.policy_id,
+        )
+        if (
+            baseline.evaluation_split != "held_out"
+            or candidate.evaluation_split != "held_out"
+            or baseline.checkpoint_hash != evaluation.baseline.policy_checksum
+            or candidate.checkpoint_hash != evaluation.candidate.policy_checksum
+            or baseline.evaluation_evidence_hash != evaluation.baseline.evaluation_id
+            or candidate.evaluation_evidence_hash != evaluation.candidate.evaluation_id
+        ):
+            raise CoordinatorIntegrityError(
+                "evaluated checkpoints do not match trusted evaluation evidence"
+            )
+        cls._require_checkpoint_metrics(baseline, evaluation, candidate=False)
+        cls._require_checkpoint_metrics(candidate, evaluation, candidate=True)
+        if decision.metrics != cls._policy_gate_metrics(evaluation):
+            raise CoordinatorIntegrityError(
+                "numeric policy metrics were not exactly recomputed from trusted evidence"
+            )
+
+    @staticmethod
+    def _evaluated_checkpoint_row(
+        connection: sqlite3.Connection,
+        policy_id: str,
+    ) -> EvaluatedPolicyVersion:
+        row = connection.execute(
+            "SELECT record_json FROM evaluated_checkpoints WHERE policy_id = ?",
+            (policy_id,),
+        ).fetchone()
+        if row is None:
+            raise CoordinatorIntegrityError("trusted evaluation references an unknown checkpoint")
+        return EvaluatedPolicyVersion.model_validate_json(str(row["record_json"]))
+
+    @staticmethod
+    def _require_checkpoint_metrics(
+        checkpoint: EvaluatedPolicyVersion,
+        evaluation: EvaluationEvidence,
+        *,
+        candidate: bool,
+    ) -> None:
+        decoded = json.loads(checkpoint.metrics_json)
+        if not isinstance(decoded, dict):
+            raise CoordinatorIntegrityError("checkpoint metrics are not a JSON object")
+        source = evaluation.candidate if candidate else evaluation.baseline
+        expected: dict[str, int | float] = {
+            "success_rate": source.success_rate,
+            "collision_rate": source.collision_rate,
+        }
+        if candidate:
+            expected.update(
+                {
+                    "falls": evaluation.candidate.falls,
+                    "median_clearance_m": evaluation.candidate.median_clearance_m,
+                    "path_efficiency_regression_fraction": (
+                        evaluation.candidate.path_efficiency_regression_fraction
+                    ),
+                }
+            )
+        if any(decoded.get(key) != value for key, value in expected.items()):
+            raise CoordinatorIntegrityError(
+                "checkpoint metrics do not match trusted evaluation evidence"
+            )
+
+    @staticmethod
+    def _policy_gate_metrics(evaluation: EvaluationEvidence) -> PolicyGateMetrics:
+        collision_reduction = (
+            0.0
+            if evaluation.baseline.collision_rate == 0.0
+            else (
+                evaluation.baseline.collision_rate - evaluation.candidate.collision_rate
+            )
+            / evaluation.baseline.collision_rate
+        )
+        return PolicyGateMetrics(
+            held_out_success_rate=evaluation.candidate.success_rate,
+            collision_rate=evaluation.candidate.collision_rate,
+            fall_count=evaluation.candidate.falls,
+            median_clearance_m=evaluation.candidate.median_clearance_m,
+            success_rate_delta=(
+                evaluation.candidate.success_rate - evaluation.baseline.success_rate
+            ),
+            collision_reduction_fraction=collision_reduction,
+            path_efficiency_regression_fraction=(
+                evaluation.candidate.path_efficiency_regression_fraction
+            ),
+        )
+
     @staticmethod
     def _canonical_payload_hash(payload_json: str) -> str:
         try:
@@ -1882,10 +2218,16 @@ class CoordinatorStore:
                 "approval_json",
             ),
             (
+                "training_correction_graph_deliveries",
+                "correction_id",
+                "delivery_json",
+            ),
+            (
                 "training_correction_rejections",
                 "correction_id",
                 "rejection_json",
             ),
+            ("workflow_guild_evidence", "run_id", "evidence_json"),
             ("workflow_reviews", "run_id", "review_json"),
         }
         if (table, identity_column, payload_column) not in allowed:
@@ -1965,10 +2307,11 @@ class CoordinatorStore:
         connection: sqlite3.Connection,
         run_id: str,
     ) -> sqlite3.Row | None:
-        return connection.execute(
+        row: sqlite3.Row | None = connection.execute(
             "SELECT * FROM workflow_runs WHERE run_id = ?",
             (run_id,),
         ).fetchone()
+        return row
 
     @staticmethod
     def _require_evidence(connection: sqlite3.Connection, evidence_id: str) -> None:

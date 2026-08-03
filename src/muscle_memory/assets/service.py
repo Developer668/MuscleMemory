@@ -75,6 +75,12 @@ class AssetGenerationPipeline:
     def fallback_bundle_id(self) -> str:
         return self._fallback.bundle_id
 
+    @property
+    def fallback_manifest(self) -> AssetManifest:
+        """Return verified rendering fallback metadata, never physics geometry."""
+
+        return self._cache.verify_bundle(self._fallback.bundle_id)
+
     def generate(
         self,
         request: AssetRequest,

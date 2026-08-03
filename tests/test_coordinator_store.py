@@ -30,6 +30,7 @@ from muscle_memory.orchestration import (
     PipelineCommand,
     PipelineStep,
 )
+from muscle_memory.orchestration.evidence import GuildEvidenceBundle
 
 NOW = datetime(2026, 8, 3, 12, 0, tzinfo=UTC)
 ROBOT_HASH = "a" * 64
@@ -37,6 +38,8 @@ WORLD_HASH = "b" * 64
 POLICY_V0_HASH = "c" * 64
 POLICY_V1_HASH = "d" * 64
 EVIDENCE_HASH = "e" * 64
+POLICY_V0_EVIDENCE_HASH = "f" * 64
+POLICY_V1_EVIDENCE_HASH = "1" * 64
 
 
 def training_episode(episode_id: str = "episode-training-1") -> TrainingEpisodeMetadata:
@@ -50,31 +53,66 @@ def training_episode(episode_id: str = "episode-training-1") -> TrainingEpisodeM
 
 
 def execution_plan(run_id: str, action: PolicyAction = PolicyAction.PROMOTE) -> ExecutionPlan:
+    baseline_policy_id = "policy-v0" if action is PolicyAction.PROMOTE else "policy-v1"
+    candidate_policy_id = "policy-v1" if action is PolicyAction.PROMOTE else "policy-v0"
     payloads: dict[PipelineStep, dict[str, object]] = {
-        PipelineStep.VALIDATE_WORLD: {"uncertain_physical_properties": False},
-        PipelineStep.RUN_EPISODE: {},
-        PipelineStep.SUMMARIZE_TELEMETRY: {},
-        PipelineStep.QUERY_GRAPH_MEMORY: {},
-        PipelineStep.SELECT_CURRICULUM: {"curriculum_change_requested": False},
-        PipelineStep.TRAIN_CANDIDATE_POLICY: {"reward_change_requested": False},
+        PipelineStep.VALIDATE_WORLD: {
+            "uncertain_physical_properties": False,
+            "world_id": "world-training-1",
+        },
+        PipelineStep.RUN_EPISODE: {
+            "episode_id": "episode-training-1",
+            "world_id": "world-training-1",
+        },
+        PipelineStep.SUMMARIZE_TELEMETRY: {"episode_id": "episode-training-1"},
+        PipelineStep.QUERY_GRAPH_MEMORY: {"episode_id": "episode-training-1"},
+        PipelineStep.SELECT_CURRICULUM: {
+            "curriculum_change_requested": False,
+            "episode_id": "episode-training-1",
+        },
+        PipelineStep.TRAIN_CANDIDATE_POLICY: {
+            "reward_change_requested": False,
+            "candidate_policy_id": candidate_policy_id,
+        },
         PipelineStep.EVALUATE_CANDIDATE_POLICY: {
-            "baseline_policy_id": "policy-v0",
-            "candidate_policy_id": "policy-v1",
+            "baseline_policy_id": baseline_policy_id,
+            "candidate_policy_id": candidate_policy_id,
             "heldout_world_set_id": "heldout-v1",
         },
-        PipelineStep.PROMOTE_OR_ROLL_BACK: {"action": action.value},
+        PipelineStep.PROMOTE_OR_ROLL_BACK: {
+            "action": action.value,
+            "candidate_policy_id": candidate_policy_id,
+        },
     }
     commands = tuple(PipelineCommand.create(step, payloads[step]) for step in FIXED_PIPELINE)
     return ExecutionPlan.create(run_id, commands)
 
 
 def evaluated_policy(policy_id: str, checkpoint_hash: str) -> EvaluatedPolicyVersion:
+    if policy_id == "policy-v0":
+        evidence_hash = POLICY_V0_EVIDENCE_HASH
+        metrics = {
+            "success_rate": 0.65,
+            "collision_rate": 0.125,
+            "falls": 0,
+            "median_clearance_m": 0.31,
+            "path_efficiency_regression_fraction": 0.03,
+        }
+    else:
+        evidence_hash = POLICY_V1_EVIDENCE_HASH
+        metrics = {
+            "success_rate": 0.9,
+            "collision_rate": 0.05,
+            "falls": 0,
+            "median_clearance_m": 0.31,
+            "path_efficiency_regression_fraction": 0.03,
+        }
     return EvaluatedPolicyVersion.create(
         policy_id=policy_id,
         checkpoint_hash=checkpoint_hash,
-        evaluation_evidence_hash=EVIDENCE_HASH,
+        evaluation_evidence_hash=evidence_hash,
         evaluation_split="held_out",
-        metrics={"success_rate": 0.9},
+        metrics=metrics,
         evaluated_at=NOW,
     )
 
@@ -88,6 +126,143 @@ def passing_metrics() -> PolicyGateMetrics:
         success_rate_delta=0.25,
         collision_reduction_fraction=0.6,
         path_efficiency_regression_fraction=0.03,
+    )
+
+
+def rollback_metrics() -> PolicyGateMetrics:
+    return PolicyGateMetrics(
+        held_out_success_rate=0.65,
+        collision_rate=0.125,
+        fall_count=0,
+        median_clearance_m=0.31,
+        success_rate_delta=0.65 - 0.9,
+        collision_reduction_fraction=(0.05 - 0.125) / 0.05,
+        path_efficiency_regression_fraction=0.03,
+    )
+
+
+def register_workflow_evidence(
+    store: CoordinatorStore,
+    plan: ExecutionPlan,
+    *,
+    candidate_checksum_override: str | None = None,
+) -> str:
+    evaluation_command = plan.commands[FIXED_PIPELINE.index(PipelineStep.EVALUATE_CANDIDATE_POLICY)]
+    final_command = plan.commands[FIXED_PIPELINE.index(PipelineStep.PROMOTE_OR_ROLL_BACK)]
+    baseline_id = str(evaluation_command.payload["baseline_policy_id"])
+    candidate_id = str(evaluation_command.payload["candidate_policy_id"])
+    policies = {
+        "policy-v0": {
+            "checksum": POLICY_V0_HASH,
+            "evidence_hash": POLICY_V0_EVIDENCE_HASH,
+            "success_rate": 0.65,
+            "collision_rate": 0.125,
+        },
+        "policy-v1": {
+            "checksum": POLICY_V1_HASH,
+            "evidence_hash": POLICY_V1_EVIDENCE_HASH,
+            "success_rate": 0.9,
+            "collision_rate": 0.05,
+        },
+    }
+    safe_run_id = plan.run_id.replace("-", ".")
+    bundle = GuildEvidenceBundle.model_validate(
+        {
+            "world": {
+                "evidence_id": f"guild.world.{safe_run_id}",
+                "world_evidence": {
+                    "world_id": "world-training-1",
+                    "world_digest": WORLD_HASH,
+                    "baseline_path_digest": "2" * 64,
+                    "robot_checksum_unchanged": True,
+                    "validation": {
+                        "no_overlapping_objects": True,
+                        "start_destination_connected": True,
+                        "passages_meet_minimum_clearance": True,
+                        "approved_colliders_only": True,
+                        "baseline_path_exists": True,
+                        "physical_parameters_within_safe_limits": True,
+                    },
+                    "obstacles": [
+                        {
+                            "obstacle_id": "chair-001",
+                            "proposal_digest": "3" * 64,
+                            "dimensions_m": [0.5, 0.5, 0.9],
+                            "mass_kg": 6.5,
+                            "friction": 0.7,
+                            "property_origin": "catalog_confirmed",
+                            "collision_geometry": "primitive",
+                            "render_mesh_used_for_collision": False,
+                        }
+                    ],
+                },
+            },
+            "failure_curriculum": {
+                "evidence_id": f"guild.curriculum.{safe_run_id}",
+                "failure_curriculum_evidence": {
+                    "source_split": "training",
+                    "source_policy_id": baseline_id,
+                    "graph_query_digest": "4" * 64,
+                    "failure_patterns": [
+                        {
+                            "signature": "clearance-chair",
+                            "source_episode_ids": ["episode-011", "episode-024"],
+                            "distinct_source_episode_count": 2,
+                            "obstacle_categories": ["chair"],
+                            "approved_correction_ids": ["correction-009"],
+                            "lesson_ids": ["lesson-003"],
+                        }
+                    ],
+                    "curriculum_change_requested": False,
+                },
+            },
+            "evaluation": {
+                "evidence_id": f"guild.evaluation.{safe_run_id}",
+                "evaluation_evidence": {
+                    "heldout_world_set_id": "heldout-v1",
+                    "heldout_world_set_digest": "5" * 64,
+                    "paired_world_count": 20,
+                    "baseline": {
+                        "policy_id": baseline_id,
+                        "policy_checksum": policies[baseline_id]["checksum"],
+                        "evaluation_id": policies[baseline_id]["evidence_hash"],
+                        "success_rate": policies[baseline_id]["success_rate"],
+                        "collision_rate": policies[baseline_id]["collision_rate"],
+                    },
+                    "candidate": {
+                        "policy_id": candidate_id,
+                        "policy_checksum": (
+                            candidate_checksum_override
+                            or policies[candidate_id]["checksum"]
+                        ),
+                        "evaluation_id": policies[candidate_id]["evidence_hash"],
+                        "success_rate": policies[candidate_id]["success_rate"],
+                        "collision_rate": policies[candidate_id]["collision_rate"],
+                        "falls": 0,
+                        "median_clearance_m": 0.31,
+                        "path_efficiency_regression_fraction": 0.03,
+                    },
+                    "proposed_action": final_command.payload["action"],
+                },
+            },
+        }
+    )
+    for evidence_id, kind, artifact_hash in bundle.artifact_hashes():
+        store.record_provider_evidence(
+            ProviderEvidenceReference(
+                evidence_id=evidence_id,
+                provider="coordinator-domain-validation",
+                evidence_kind=kind,
+                provider_object_id=evidence_id,
+                artifact_hash=artifact_hash,
+                observed_at=NOW,
+            )
+        )
+    store.record_workflow_guild_evidence(plan.run_id, bundle)
+    return next(
+        artifact_hash
+        for _evidence_id, kind, artifact_hash in bundle.artifact_hashes()
+        if kind == "guild_evaluation_evidence"
     )
 
 
@@ -300,6 +475,7 @@ def test_policy_actions_require_numeric_gate_and_separate_human_approval(
 
     promotion_plan = execution_plan("run-policy-promotion", PolicyAction.PROMOTE)
     store.register_workflow(promotion_plan, created_at=NOW)
+    promotion_evidence_hash = register_workflow_evidence(store, promotion_plan)
     promotion = NumericPolicyDecision(
         decision_id="decision-policy-promotion",
         run_id=promotion_plan.run_id,
@@ -308,7 +484,7 @@ def test_policy_actions_require_numeric_gate_and_separate_human_approval(
         alias="stable",
         from_policy_id=baseline.policy_id,
         target_policy_id=candidate.policy_id,
-        evaluation_evidence_hash=EVIDENCE_HASH,
+        evaluation_evidence_hash=promotion_evidence_hash,
         metrics=passing_metrics(),
         decided_at=NOW + timedelta(seconds=1),
     )
@@ -347,6 +523,7 @@ def test_policy_actions_require_numeric_gate_and_separate_human_approval(
 
     rollback_plan = execution_plan("run-policy-rollback", PolicyAction.ROLL_BACK)
     store.register_workflow(rollback_plan, created_at=NOW + timedelta(seconds=4))
+    rollback_evidence_hash = register_workflow_evidence(store, rollback_plan)
     rollback = NumericPolicyDecision(
         decision_id="decision-policy-rollback",
         run_id=rollback_plan.run_id,
@@ -355,8 +532,8 @@ def test_policy_actions_require_numeric_gate_and_separate_human_approval(
         alias="stable",
         from_policy_id=candidate.policy_id,
         target_policy_id=baseline.policy_id,
-        evaluation_evidence_hash="f" * 64,
-        metrics=replace(passing_metrics(), held_out_success_rate=0.4),
+        evaluation_evidence_hash=rollback_evidence_hash,
+        metrics=rollback_metrics(),
         decided_at=NOW + timedelta(seconds=5),
     )
     store.record_numeric_policy_decision(rollback)
@@ -395,3 +572,63 @@ def test_policy_actions_require_numeric_gate_and_separate_human_approval(
                 )
         finally:
             connection.close()
+
+
+def test_numeric_policy_decision_rejects_evidence_and_metric_tampering(
+    tmp_path: Path,
+) -> None:
+    store = CoordinatorStore(tmp_path / "coordinator.sqlite3")
+    store.register_evaluated_checkpoint(evaluated_policy("policy-v0", POLICY_V0_HASH))
+    store.register_evaluated_checkpoint(evaluated_policy("policy-v1", POLICY_V1_HASH))
+    store.initialize_policy_alias("stable", "policy-v0", occurred_at=NOW)
+    plan = execution_plan("run-policy-tamper", PolicyAction.PROMOTE)
+    store.register_workflow(plan, created_at=NOW)
+    evaluation_hash = register_workflow_evidence(store, plan)
+
+    def decision(
+        decision_id: str,
+        *,
+        evidence_hash: str = evaluation_hash,
+        metrics: PolicyGateMetrics | None = None,
+    ) -> NumericPolicyDecision:
+        return NumericPolicyDecision(
+            decision_id=decision_id,
+            run_id=plan.run_id,
+            plan_digest=plan.digest,
+            action=PolicyAction.PROMOTE,
+            alias="stable",
+            from_policy_id="policy-v0",
+            target_policy_id="policy-v1",
+            evaluation_evidence_hash=evidence_hash,
+            metrics=passing_metrics() if metrics is None else metrics,
+            decided_at=NOW,
+        )
+
+    with pytest.raises(CoordinatorIntegrityError, match="trusted evaluation artifact"):
+        store.record_numeric_policy_decision(
+            decision("decision-tampered-hash", evidence_hash="9" * 64)
+        )
+    with pytest.raises(CoordinatorIntegrityError, match="exactly recomputed"):
+        store.record_numeric_policy_decision(
+            decision(
+                "decision-tampered-metrics",
+                metrics=replace(passing_metrics(), median_clearance_m=0.32),
+            )
+        )
+
+    mismatched_plan = execution_plan("run-policy-checkpoint-tamper", PolicyAction.PROMOTE)
+    store.register_workflow(mismatched_plan, created_at=NOW + timedelta(seconds=1))
+    mismatched_hash = register_workflow_evidence(
+        store,
+        mismatched_plan,
+        candidate_checksum_override="8" * 64,
+    )
+    mismatched = replace(
+        decision("decision-tampered-checkpoint"),
+        run_id=mismatched_plan.run_id,
+        plan_digest=mismatched_plan.digest,
+        evaluation_evidence_hash=mismatched_hash,
+    )
+    with pytest.raises(CoordinatorIntegrityError, match="evaluated checkpoints"):
+        store.record_numeric_policy_decision(mismatched)
+    store.close()

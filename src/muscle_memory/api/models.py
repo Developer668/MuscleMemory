@@ -16,6 +16,7 @@ from pydantic import (
 )
 
 from muscle_memory.api.redaction import redact_sensitive_mapping, redact_sensitive_text
+from muscle_memory.orchestration.evidence import GuildEvidenceBundle
 
 API_VERSION = "v1"
 NUMERIC_TELEMETRY_HZ = 20
@@ -214,6 +215,7 @@ class WorkflowCommandRequest(ApiModel):
 class WorkflowReviewRequest(ApiModel):
     run_id: str = Field(min_length=1, max_length=128)
     commands: tuple[WorkflowCommandRequest, ...] = Field(min_length=8, max_length=8)
+    evidence: GuildEvidenceBundle
 
     @model_validator(mode="after")
     def fixed_pipeline_only(self) -> Self:

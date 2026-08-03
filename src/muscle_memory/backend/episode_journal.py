@@ -69,10 +69,23 @@ class CoordinatorEpisodeJournal:
         )
 
     def approvals(self) -> tuple[CorrectionApproval, ...]:
-        return tuple(
-            _APPROVAL_ADAPTER.validate_json(payload)
-            for payload in self._store.training_correction_approvals()
-        )
+        approvals = {
+            approval.submission.correction_id: approval
+            for approval in (
+                _APPROVAL_ADAPTER.validate_json(payload)
+                for payload in self._store.training_correction_approvals()
+            )
+        }
+        for payload in self._store.training_correction_graph_deliveries():
+            delivered = _APPROVAL_ADAPTER.validate_json(payload)
+            correction_id = delivered.submission.correction_id
+            base = approvals.get(correction_id)
+            if base is None or base.approval_id != delivered.approval_id:
+                raise CoordinatorStateError(
+                    "correction graph delivery is detached from its approval"
+                )
+            approvals[correction_id] = delivered
+        return tuple(approvals[key] for key in sorted(approvals))
 
     def record_identity(self, identity: EpisodeIdentity) -> None:
         self._require_fixed_robot(identity)
@@ -145,6 +158,12 @@ class CoordinatorEpisodeJournal:
 
     def record_approval(self, approval: CorrectionApproval) -> None:
         self._store.record_training_correction_approval(
+            approval.submission.correction_id,
+            _encode(_APPROVAL_ADAPTER, approval),
+        )
+
+    def record_approval_delivery(self, approval: CorrectionApproval) -> None:
+        self._store.record_training_correction_graph_delivery(
             approval.submission.correction_id,
             _encode(_APPROVAL_ADAPTER, approval),
         )
