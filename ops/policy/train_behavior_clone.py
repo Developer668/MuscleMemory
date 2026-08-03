@@ -23,6 +23,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--evidence", type=Path, default=POLICY_V1_TRAINING_EVIDENCE)
     parser.add_argument("--epochs", type=int, default=defaults.epochs)
     parser.add_argument("--seed", type=int, default=defaults.seed)
+    parser.add_argument("--policy-id", default=defaults.policy_id)
     return parser
 
 
@@ -43,6 +44,7 @@ def main() -> int:
             seed=args.seed,
             condition_on_previous_action=defaults.condition_on_previous_action,
             mirror_training_fraction=defaults.mirror_training_fraction,
+            policy_id=args.policy_id,
         ),
     )
     print(json.dumps(asdict(result), indent=2), flush=True)

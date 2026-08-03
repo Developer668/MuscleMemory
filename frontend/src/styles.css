@@ -30,6 +30,11 @@ body {
   background: var(--paper);
 }
 
+.app-loading {
+  min-height: 100dvh;
+  background: #101511;
+}
+
 body,
 button,
 a {

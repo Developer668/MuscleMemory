@@ -562,4 +562,5 @@ def test_compose_resolves_hardened_persistent_local_stack() -> None:
         "graph-cache",
         "iggy-data",
         "telemetry-data",
+        "training-data",
     }

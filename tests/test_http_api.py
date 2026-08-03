@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from muscle_memory.api import (
+    EPISODE_WRITE_SCOPE,
     HashedBearerCredential,
     LiveTelemetryHub,
     Sha256BearerAuthenticator,
@@ -50,6 +53,7 @@ from muscle_memory.api.models import (
     utc_now,
 )
 from muscle_memory.api.streaming import LiveSubscriberLimitError
+from muscle_memory.training.jobs import TaskPolicyTrainingManager
 
 HASH_A = "a" * 64
 HASH_B = "b" * 64
@@ -311,6 +315,7 @@ def _client(
     backend: FakeBackend,
     *,
     hub: LiveTelemetryHub | None = None,
+    training_jobs: TaskPolicyTrainingManager | None = None,
 ) -> TestClient:
     credential = HashedBearerCredential.from_plaintext(
         subject="human-operator",
@@ -320,6 +325,7 @@ def _client(
         backend=backend,
         authenticator=Sha256BearerAuthenticator((credential,)),
         live_hub=hub,
+        training_jobs=training_jobs,
     )
     return TestClient(app)
 
@@ -488,12 +494,77 @@ def test_openapi_has_versioned_routes_security_and_no_credential_schema() -> Non
         "/api/v1/episodes/{episode_id}/corrections",
         "/api/v1/policies/promotion-eligibility",
         "/api/v1/assets",
+        "/api/v1/training/jobs",
+        "/api/v1/training/jobs/{job_id}",
     }
     assert required.issubset(paths)
     assert paths["/api/v1/approvals/{requirement_id}/decision"]["post"]["security"]
     rendered = json.dumps(schema, sort_keys=True)
     assert "token_sha256" not in rendered
     assert "api_key" not in rendered.lower()
+
+
+def test_task_policy_training_requires_scope_and_reports_unpromoted_state(
+    tmp_path: Path,
+) -> None:
+    def fail_training(**_kwargs: object) -> None:
+        raise RuntimeError("private failure detail")
+
+    manager = TaskPolicyTrainingManager(
+        output_root=tmp_path,
+        training_function=fail_training,
+    )
+    backend = FakeBackend()
+    with _client(backend, training_jobs=manager) as client:
+        denied = client.post("/api/v1/training/jobs", json={"epochs": 1, "seed": 9})
+        accepted = client.post(
+            "/api/v1/training/jobs",
+            headers={"Authorization": "Bearer test-token"},
+            json={"epochs": 1, "seed": 9},
+        )
+        assert accepted.status_code == 202
+        job_id = accepted.json()["job_id"]
+        for _ in range(100):
+            status_response = client.get(f"/api/v1/training/jobs/{job_id}")
+            if status_response.json()["state"] == "failed":
+                break
+            time.sleep(0.01)
+        listed = client.get("/api/v1/training/jobs")
+
+    assert denied.status_code == 401
+    assert status_response.status_code == 200
+    assert status_response.json()["state"] == "failed"
+    assert status_response.json()["error_type"] == "RuntimeError"
+    assert "private failure detail" not in json.dumps(status_response.json())
+    assert status_response.json()["promotion_status"] == "not_evaluated"
+    assert status_response.json()["training_data_split"] == "training"
+    assert listed.json()["items"][0]["job_id"] == job_id
+
+
+def test_task_policy_training_rejects_credentials_without_training_scope(
+    tmp_path: Path,
+) -> None:
+    credential = HashedBearerCredential.from_plaintext(
+        subject="episode-only",
+        token="episode-token",
+        scopes=frozenset({EPISODE_WRITE_SCOPE}),
+    )
+    manager = TaskPolicyTrainingManager(output_root=tmp_path)
+    app = create_app(
+        backend=FakeBackend(),
+        authenticator=Sha256BearerAuthenticator((credential,)),
+        training_jobs=manager,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/training/jobs",
+            headers={"Authorization": "Bearer episode-token"},
+            json={"epochs": 1, "seed": 9},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["details"]["required_scope"] == "training:write"
 
 
 def test_live_hub_is_bounded_and_reports_dropped_stale_messages() -> None:

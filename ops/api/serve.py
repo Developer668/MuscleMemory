@@ -10,6 +10,7 @@ from typing import cast
 from fastapi import FastAPI
 
 from muscle_memory.api import ApiBackend, authenticator_from_env, create_app
+from muscle_memory.training.jobs import TaskPolicyTrainingManager
 
 BACKEND_FACTORY_ENV = "MM_API_BACKEND_FACTORY"
 
@@ -38,6 +39,7 @@ def create_application() -> FastAPI:
     return create_app(
         backend=load_backend(),
         authenticator=authenticator_from_env(),
+        training_jobs=TaskPolicyTrainingManager.from_env(),
     )
 
 

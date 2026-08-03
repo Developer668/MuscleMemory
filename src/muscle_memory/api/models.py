@@ -274,6 +274,63 @@ class LiveEpisodeStatusView(ApiModel):
     video_streams: dict[str, str]
 
 
+class TaskPolicyTrainingStartRequest(ApiModel):
+    epochs: int = Field(default=180, ge=1, le=200)
+    seed: int = Field(default=668, ge=0, le=(2**31) - 1)
+
+
+class TaskPolicyTrainingMetricsView(ApiModel):
+    training_episode_count: int = Field(gt=0)
+    validation_episode_count: int = Field(gt=0)
+    training_sample_count: int = Field(gt=0)
+    validation_sample_count: int = Field(gt=0)
+    best_epoch: int = Field(gt=0)
+    training_command_accuracy: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
+    validation_command_accuracy: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
+    validation_loss: float = Field(ge=0.0, allow_inf_nan=False)
+    validation_forward_mae_mps: float = Field(ge=0.0, allow_inf_nan=False)
+    validation_turning_mae_rad_s: float = Field(ge=0.0, allow_inf_nan=False)
+    validation_stop_mae: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
+
+
+class TaskPolicyTrainingJobView(ApiModel):
+    job_id: str = Field(pattern=r"^task-policy-[0-9a-f]{32}$")
+    policy_id: str = Field(pattern=r"^local-candidate-[0-9a-f]{32}$")
+    state: Literal["queued", "running", "completed", "failed"]
+    epochs: int = Field(ge=1, le=200)
+    seed: int = Field(ge=0, le=(2**31) - 1)
+    dataset_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    training_data_split: Literal["training"] = "training"
+    robot_component: Literal["high_level_task_policy"] = "high_level_task_policy"
+    promotion_status: Literal["not_evaluated"] = "not_evaluated"
+    created_at: AwareDatetime
+    started_at: AwareDatetime | None = None
+    completed_at: AwareDatetime | None = None
+    checkpoint_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    evidence_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    metrics: TaskPolicyTrainingMetricsView | None = None
+    error_type: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def terminal_artifacts_match_state(self) -> Self:
+        complete = self.state == "completed"
+        if complete is (
+            self.checkpoint_sha256 is None
+            or self.evidence_sha256 is None
+            or self.metrics is None
+        ):
+            raise ValueError("only completed training jobs carry verified artifacts")
+        if self.state == "failed" and self.error_type is None:
+            raise ValueError("failed training jobs require an error type")
+        if self.state != "failed" and self.error_type is not None:
+            raise ValueError("only failed training jobs carry an error type")
+        return self
+
+
+class TaskPolicyTrainingJobList(ApiModel):
+    items: tuple[TaskPolicyTrainingJobView, ...]
+
+
 class ApprovalKind(StrEnum):
     UNCERTAIN_PHYSICAL_PROPERTIES = "uncertain_physical_properties"
     REWARD_CHANGE = "reward_change"

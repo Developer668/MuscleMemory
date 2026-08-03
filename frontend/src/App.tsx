@@ -1,7 +1,11 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 
 import { LandingPage } from "./pages/LandingPage";
-import { CommandCenter } from "./pages/CommandCenter";
+
+const CommandCenter = lazy(async () => {
+  const module = await import("./pages/CommandCenter");
+  return { default: module.CommandCenter };
+});
 
 export default function App() {
   const operator = ["/console", "/app"].includes(window.location.pathname);
@@ -10,5 +14,9 @@ export default function App() {
       ? "MM-01 Operations | Muscle Memory"
       : "Muscle Memory | One robot. Many worlds.";
   }, [operator]);
-  return operator ? <CommandCenter /> : <LandingPage />;
+  return operator ? (
+    <Suspense fallback={<main className="app-loading" aria-label="Loading operations console" />}>
+      <CommandCenter />
+    </Suspense>
+  ) : <LandingPage />;
 }

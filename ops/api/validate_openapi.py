@@ -26,6 +26,8 @@ REQUIRED_PATHS = {
     "/api/v1/episodes/{episode_id}/corrections",
     "/api/v1/policies/promotion-eligibility",
     "/api/v1/assets",
+    "/api/v1/training/jobs",
+    "/api/v1/training/jobs/{job_id}",
 }
 
 

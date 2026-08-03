@@ -13,7 +13,10 @@
 .vscode
 **/__pycache__
 **/*.pyc
-artifacts
+artifacts/*
+!artifacts/policy
+artifacts/policy/*
+!artifacts/policy/expert-v1.npz
 build
 coverage.xml
 dist

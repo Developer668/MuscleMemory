@@ -260,6 +260,43 @@ export interface PolicySummaryList {
   items: PolicySummary[];
 }
 
+export interface TaskPolicyTrainingMetrics {
+  training_episode_count: number;
+  validation_episode_count: number;
+  training_sample_count: number;
+  validation_sample_count: number;
+  best_epoch: number;
+  training_command_accuracy: number;
+  validation_command_accuracy: number;
+  validation_loss: number;
+  validation_forward_mae_mps: number;
+  validation_turning_mae_rad_s: number;
+  validation_stop_mae: number;
+}
+
+export interface TaskPolicyTrainingJob {
+  job_id: string;
+  policy_id: string;
+  state: "queued" | "running" | "completed" | "failed";
+  epochs: number;
+  seed: number;
+  dataset_sha256: string;
+  training_data_split: "training";
+  robot_component: "high_level_task_policy";
+  promotion_status: "not_evaluated";
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  checkpoint_sha256: string | null;
+  evidence_sha256: string | null;
+  metrics: TaskPolicyTrainingMetrics | null;
+  error_type: string | null;
+}
+
+export interface TaskPolicyTrainingJobList {
+  items: TaskPolicyTrainingJob[];
+}
+
 export interface PromotionEligibility {
   baseline_policy_id: string;
   candidate_policy_id: string;

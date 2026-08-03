@@ -12,6 +12,8 @@ import type {
   PromotionEligibility,
   ReplayPage,
   ServiceHealth,
+  TaskPolicyTrainingJob,
+  TaskPolicyTrainingJobList,
   TelemetryPage,
 } from "./types";
 
@@ -84,6 +86,15 @@ export const operatorApi = {
     ),
   approvals: () => request<PendingApprovalList>("/approvals/pending"),
   policies: () => request<PolicySummaryList>("/policies"),
+  trainingJobs: () => request<TaskPolicyTrainingJobList>("/training/jobs"),
+  trainingJob: (jobId: string) =>
+    request<TaskPolicyTrainingJob>(`/training/jobs/${encodeURIComponent(jobId)}`),
+  startTrainingJob: (epochs: number, seed: number, token: string) =>
+    request<TaskPolicyTrainingJob>(
+      "/training/jobs",
+      { method: "POST", body: JSON.stringify({ epochs, seed }) },
+      token,
+    ),
   promotionEligibility: (baselineId: string, candidateId: string) => {
     const query = new URLSearchParams({
       baseline_policy_id: baselineId,

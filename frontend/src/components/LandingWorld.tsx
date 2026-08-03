@@ -1,22 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MotionValue } from "motion/react";
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-import { makeRobot } from "../operator/RealisticHomeScene";
-import { attachImportedFurnishings } from "./ImportedFurnishings";
-import type { DemoTask } from "./demoRoutes";
-import { TASK_FOCUS, TASK_WORLDS } from "./demoRoutes";
-import { buildTwoStoryHouse, STORY_HEIGHT } from "./TwoStoryHouse";
-
-export type DemoScenario = "clear" | "laundry" | "low_friction";
-export type { DemoTask };
+import { buildApartment, makeRobot } from "../operator/RealisticHomeScene";
 
 type LandingWorldProps = {
   progress: MotionValue<number>;
-  scenario: DemoScenario;
-  task: DemoTask;
+  reducedMotion?: boolean;
 };
+
+type LoadState = "loading" | "ready" | "fallback";
 
 const clamp = (value: number, minimum = 0, maximum = 1) =>
   Math.min(maximum, Math.max(minimum, value));
@@ -38,392 +32,507 @@ function simpleMesh(
   return item;
 }
 
-function makeDropObject(kind: "box" | "basket" | "lamp"): THREE.Group {
+function makeBasket(): THREE.Group {
   const object = new THREE.Group();
-  if (kind === "box") {
-    const cardboard = new THREE.MeshStandardMaterial({ color: "#b67a45", roughness: 0.88 });
-    object.add(simpleMesh(new THREE.BoxGeometry(0.64, 0.52, 0.58), cardboard, [0, 0.26, 0]));
-    object.add(simpleMesh(new THREE.BoxGeometry(0.66, 0.035, 0.08), new THREE.MeshStandardMaterial({ color: "#d9b073", roughness: 0.8 }), [0, 0.53, 0]));
-  } else if (kind === "basket") {
-    const weave = new THREE.MeshStandardMaterial({ color: "#bba078", roughness: 0.94, side: THREE.DoubleSide });
-    object.add(simpleMesh(new THREE.CylinderGeometry(0.35, 0.28, 0.58, 28, 1, true), weave, [0, 0.29, 0]));
-    object.add(simpleMesh(new THREE.TorusGeometry(0.34, 0.035, 8, 30), weave, [0, 0.58, 0]));
-    object.children[1].rotation.x = Math.PI / 2;
-    const cloth = new THREE.MeshStandardMaterial({ color: "#5c87a7", roughness: 0.95 });
-    object.add(simpleMesh(new THREE.SphereGeometry(0.24, 20, 14), cloth, [0.03, 0.55, 0]));
-    object.children[2].scale.set(1, 0.48, 1);
-  } else {
-    const dark = new THREE.MeshStandardMaterial({ color: "#343536", roughness: 0.42, metalness: 0.58 });
-    object.add(simpleMesh(new THREE.CylinderGeometry(0.025, 0.025, 1.6, 12), dark, [0, 0.8, 0]));
-    object.add(simpleMesh(new THREE.CylinderGeometry(0.18, 0.32, 0.28, 32, 1, true), dark, [0, 1.52, 0]));
-  }
+  const weave = new THREE.MeshStandardMaterial({ color: "#a9906e", roughness: 0.94, side: THREE.DoubleSide });
+  object.add(simpleMesh(new THREE.CylinderGeometry(0.35, 0.28, 0.58, 28, 1, true), weave, [0, 0.29, 0]));
+  object.add(simpleMesh(new THREE.TorusGeometry(0.34, 0.035, 8, 30), weave, [0, 0.58, 0]));
+  object.children[1].rotation.x = Math.PI / 2;
+  const cloth = new THREE.MeshStandardMaterial({ color: "#667d7c", roughness: 0.95 });
+  object.add(simpleMesh(new THREE.SphereGeometry(0.24, 20, 14), cloth, [0.03, 0.55, 0]));
+  object.children[2].scale.set(1, 0.48, 1);
   return object;
 }
 
-function curveFor(task: DemoTask): THREE.CatmullRomCurve3 {
-  return new THREE.CatmullRomCurve3(
-    TASK_WORLDS[task].route.map(([x, z]) => new THREE.Vector3(x, 0, z)),
-  );
+function makeResident(): THREE.Group {
+  const resident = new THREE.Group();
+  const surface = new THREE.MeshStandardMaterial({ color: "#d8c4aa", roughness: 0.86 });
+  resident.add(simpleMesh(new THREE.SphereGeometry(0.13, 24, 18), surface, [0, 1.28, 0]));
+  resident.add(simpleMesh(new THREE.CapsuleGeometry(0.16, 0.56, 8, 18), surface, [0, 0.77, 0]));
+  resident.add(simpleMesh(new THREE.BoxGeometry(0.72, 0.34, 0.7), new THREE.MeshStandardMaterial({ color: "#5a554e", roughness: 0.9 }), [0, 0.18, 0]));
+  resident.name = "resident-destination";
+  return resident;
 }
 
-function makeRoute(curve: THREE.CatmullRomCurve3, color: string): THREE.Line {
+function makePayload(): THREE.Group {
+  const payload = new THREE.Group();
+  payload.name = "delivery-payload";
+  const tray = new THREE.MeshStandardMaterial({ color: "#c6c8c0", roughness: 0.3, metalness: 0.45 });
+  const pouch = new THREE.MeshStandardMaterial({ color: "#c8f46d", roughness: 0.78 });
+  payload.add(simpleMesh(new THREE.BoxGeometry(0.54, 0.025, 0.34), tray, [0, 1.03, 0.27]));
+  payload.add(simpleMesh(new THREE.BoxGeometry(0.27, 0.11, 0.2), pouch, [0, 1.1, 0.27]));
+  return payload;
+}
+
+function makeDishwashingEffect(): THREE.Group {
+  const effect = new THREE.Group();
+  effect.name = "dishwashing-evidence";
+  const plate = simpleMesh(
+    new THREE.CylinderGeometry(0.2, 0.2, 0.025, 32),
+    new THREE.MeshStandardMaterial({ color: "#ece9df", roughness: 0.36 }),
+    [0.34, 1.02, 0],
+  );
+  plate.rotation.z = Math.PI / 2;
+  effect.add(plate);
+  const water = new THREE.MeshBasicMaterial({ color: "#98e5e0", transparent: true, opacity: 0.72 });
+  for (let index = 0; index < 8; index += 1) {
+    effect.add(simpleMesh(new THREE.SphereGeometry(0.018, 10, 8), water, [
+      0.27 + (index % 3) * 0.08,
+      1.18 + Math.floor(index / 3) * 0.09,
+      (index % 2 ? 1 : -1) * 0.08,
+    ]));
+  }
+  effect.visible = false;
+  return effect;
+}
+
+function makeSensorFan(): THREE.Group {
+  const fan = new THREE.Group();
+  fan.name = "stereo-depth-fan";
+  for (let index = -4; index <= 4; index += 1) {
+    const angle = index * 0.12;
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 1.5, 0.08),
+      new THREE.Vector3(Math.sin(angle) * 2.6, 1.34, Math.cos(angle) * 2.6),
+    ]);
+    fan.add(new THREE.Line(
+      geometry,
+      new THREE.LineBasicMaterial({ color: "#c8f46d", transparent: true, opacity: 0.36 }),
+    ));
+  }
+  fan.visible = false;
+  return fan;
+}
+
+function makeMemoryRings(): THREE.Group {
+  const rings = new THREE.Group();
+  for (let index = 0; index < 3; index += 1) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.34 + index * 0.24, 0.36 + index * 0.24, 48),
+      new THREE.MeshBasicMaterial({ color: "#c8f46d", transparent: true, opacity: 0.34 - index * 0.08, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.04 + index * 0.015;
+    rings.add(ring);
+  }
+  rings.visible = false;
+  return rings;
+}
+
+function deliveryProgress(progress: number): number {
+  if (progress < 0.145) return 0;
+  if (progress < 0.29) return smooth((progress - 0.145) / 0.145) * 0.5;
+  if (progress < 0.32) return 0.5;
+  if (progress < 0.41) return THREE.MathUtils.lerp(0.5, 1, smooth((progress - 0.32) / 0.09));
+  return 1;
+}
+
+function makeRoute(): THREE.Line {
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(4.15, 0.055, 3.1),
+    new THREE.Vector3(3.15, 0.055, 3.28),
+    new THREE.Vector3(1.85, 0.055, 3.3),
+    new THREE.Vector3(0.35, 0.055, 2.95),
+    new THREE.Vector3(-0.72, 0.055, 1.72),
+    new THREE.Vector3(-0.95, 0.055, 0.18),
+    new THREE.Vector3(-1.45, 0.055, -0.9),
+    new THREE.Vector3(-1.9, 0.055, -1.35),
+  ]);
   const geometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(90));
   const material = new THREE.LineDashedMaterial({
-    color,
-    dashSize: 0.18,
-    gapSize: 0.12,
+    color: "#c7ff73",
+    dashSize: 0.16,
+    gapSize: 0.11,
     transparent: true,
-    opacity: 0.82,
+    opacity: 0.9,
   });
   const line = new THREE.Line(geometry, material);
   line.computeLineDistances();
   return line;
 }
 
-export function LandingWorld({ progress, scenario, task }: LandingWorldProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ progress: progress.get(), scenario, task });
+function normalizeAsset(
+  asset: THREE.Object3D,
+  targetSize: number,
+  sizing: "height" | "footprint",
+): THREE.Object3D {
+  asset.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(asset);
+  const size = bounds.getSize(new THREE.Vector3());
+  const sourceSize = sizing === "height" ? size.y : Math.max(size.x, size.z);
+  const scale = targetSize / Math.max(sourceSize, 0.001);
+  asset.scale.setScalar(scale);
+  asset.updateMatrixWorld(true);
 
-  useEffect(() => {
-    liveRef.current.scenario = scenario;
-  }, [scenario]);
+  const scaledBounds = new THREE.Box3().setFromObject(asset);
+  const center = scaledBounds.getCenter(new THREE.Vector3());
+  asset.position.x -= center.x;
+  asset.position.z -= center.z;
+  asset.position.y -= scaledBounds.min.y;
+  asset.updateMatrixWorld(true);
+  return asset;
+}
 
-  useEffect(() => {
-    liveRef.current.task = task;
-  }, [task]);
-
-  useEffect(() => {
-    const unsubscribe = progress.on("change", (value) => {
-      liveRef.current.progress = value;
+function prepareVisualAsset(asset: THREE.Object3D, castShadow: boolean): void {
+  asset.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.castShadow = castShadow;
+    object.receiveShadow = true;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((surface) => {
+      if ("envMapIntensity" in surface) {
+        (surface as THREE.MeshStandardMaterial).envMapIntensity = 0.7;
+      }
     });
-    return unsubscribe;
-  }, [progress]);
+  });
+}
+
+export function LandingWorld({ progress, reducedMotion = false }: LandingWorldProps) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [loadProgress, setLoadProgress] = useState(0);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
+    let disposed = false;
+    let frame = 0;
+    let framePending = false;
+    let pageVisible = document.visibilityState === "visible";
+    let worldVisible = true;
+    let requestFrame = () => {};
+    const compactViewport = window.matchMedia("(max-width: 700px)").matches;
+    const frameInterval = 1_000 / (compactViewport ? 40 : 60);
+    let previousFrameTime = -frameInterval;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#aebfc2");
-    scene.fog = new THREE.FogExp2("#d5dfde", 0.012);
+    scene.background = new THREE.Color("#343c38");
+    scene.fog = new THREE.FogExp2("#414a45", 0.035);
 
-    const camera = new THREE.PerspectiveCamera(39, 1, 0.04, 120);
-    camera.position.set(15.2, 9.5, 15.7);
+    const camera = new THREE.PerspectiveCamera(41, 1, 0.04, 80);
+    camera.position.set(7.4, 4.6, 7.7);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, compactViewport ? 1.25 : 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.02;
+    renderer.toneMappingExposure = 1.05;
     renderer.domElement.setAttribute("aria-hidden", "true");
     host.appendChild(renderer.domElement);
 
-    const environmentGenerator = new THREE.PMREMGenerator(renderer);
-    const environment = environmentGenerator.fromScene(new RoomEnvironment(), 0.035).texture;
-    scene.environment = environment;
+    const worldRoot = new THREE.Group();
+    worldRoot.name = "appearance-only-world";
+    scene.add(worldRoot);
 
-    const house = buildTwoStoryHouse();
-    scene.add(house.root);
-    const cancelFurnitureLoading = attachImportedFurnishings(house);
-
-    const robot = makeRobot();
-    const initialCurve = curveFor(liveRef.current.task);
-    robot.position.copy(initialCurve.getPoint(0));
-    scene.add(robot);
-
-    const route = makeRoute(initialCurve, TASK_WORLDS[liveRef.current.task].color);
-    const routeMaterial = route.material as THREE.LineDashedMaterial;
+    const route = makeRoute();
     scene.add(route);
 
     const destination = new THREE.Mesh(
-      new THREE.RingGeometry(0.28, 0.43, 48),
-      new THREE.MeshBasicMaterial({ color: "#ff6e57", transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+      new THREE.RingGeometry(0.25, 0.39, 48),
+      new THREE.MeshBasicMaterial({ color: "#ff795e", transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
     );
     destination.rotation.x = -Math.PI / 2;
-    destination.position.copy(initialCurve.getPoint(1));
-    destination.position.y = 0.024;
+    destination.position.set(-1.9, 0.07, -1.35);
     scene.add(destination);
 
-    const completionHalo = new THREE.Mesh(
-      new THREE.RingGeometry(0.44, 0.49, 64),
-      new THREE.MeshBasicMaterial({ color: TASK_WORLDS[liveRef.current.task].color, transparent: true, opacity: 0, side: THREE.DoubleSide }),
-    );
-    completionHalo.rotation.x = -Math.PI / 2;
-    completionHalo.position.copy(destination.position);
-    scene.add(completionHalo);
-
-    const scanRings = new THREE.Group();
-    for (let index = 0; index < 3; index += 1) {
-      const scan = new THREE.Mesh(
-        new THREE.RingGeometry(0.32, 0.35, 56),
-        new THREE.MeshBasicMaterial({ color: "#77e7ff", transparent: true, opacity: 0, side: THREE.DoubleSide }),
-      );
-      scan.rotation.x = -Math.PI / 2;
-      scan.userData.phase = index / 3;
-      scanRings.add(scan);
-    }
-    scene.add(scanRings);
-
-    const breakfastPayload = new THREE.Group();
-    breakfastPayload.name = "breakfast-payload";
-    breakfastPayload.add(simpleMesh(new THREE.CylinderGeometry(0.13, 0.15, 0.095, 28), new THREE.MeshStandardMaterial({ color: "#ede5d4", roughness: 0.46 }), [-0.1, 1.12, 0.44]));
-    breakfastPayload.add(simpleMesh(new THREE.CylinderGeometry(0.075, 0.066, 0.14, 24), new THREE.MeshStandardMaterial({ color: "#d6a542", roughness: 0.52 }), [0.15, 1.14, 0.44]));
-    robot.add(breakfastPayload);
-
-    const steam = new THREE.Group();
-    for (let index = 0; index < 4; index += 1) {
-      const puff = new THREE.Mesh(
-        new THREE.SphereGeometry(0.018 + index * 0.004, 10, 8),
-        new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.42 }),
-      );
-      puff.userData.phase = index / 4;
-      steam.add(puff);
-    }
-    robot.add(steam);
-
-    const burstCount = 44;
-    const burstGeometry = new THREE.BufferGeometry();
-    const burstPositions = new Float32Array(burstCount * 3);
-    burstGeometry.setAttribute("position", new THREE.BufferAttribute(burstPositions, 3));
-    const burstMaterial = new THREE.PointsMaterial({ color: TASK_WORLDS[liveRef.current.task].color, size: 0.065, transparent: true, opacity: 0 });
-    const burst = new THREE.Points(burstGeometry, burstMaterial);
-    scene.add(burst);
-
-    const box = makeDropObject("box");
-    box.position.set(-2.9, 7.8, 2.05);
-    scene.add(box);
-    const basket = makeDropObject("basket");
-    basket.position.set(-2.55, 8.4, 1.65);
+    const basket = makeBasket();
+    basket.position.set(-0.28, 0, 0.5);
     scene.add(basket);
-    const lamp = makeDropObject("lamp");
-    lamp.position.set(6.1, 8.8, -1.15);
-    scene.add(lamp);
 
-    const frictionPatch = new THREE.Mesh(
-      new THREE.CircleGeometry(0.78, 48),
-      new THREE.MeshBasicMaterial({ color: "#77e7ff", transparent: true, opacity: 0.26, side: THREE.DoubleSide }),
-    );
-    frictionPatch.rotation.x = -Math.PI / 2;
-    frictionPatch.position.set(0.55, 0.018, -0.55);
-    scene.add(frictionPatch);
+    const resident = makeResident();
+    resident.position.set(-2.25, 0, -1.7);
+    resident.rotation.y = 0.7;
+    scene.add(resident);
+
+    const memoryRings = makeMemoryRings();
+    memoryRings.position.set(-0.28, 0, 0.5);
+    scene.add(memoryRings);
 
     const dotGeometry = new THREE.BufferGeometry();
-    const dotPositions = new Float32Array(180 * 3);
-    for (let index = 0; index < 180; index += 1) {
-      const seeded = (salt: number) => {
-        const value = Math.sin((index + 1) * (12.9898 + salt * 7.13)) * 43758.5453;
-        return value - Math.floor(value);
-      };
-      dotPositions[index * 3] = (seeded(1) - 0.5) * 15;
-      dotPositions[index * 3 + 1] = seeded(2) * 7.1;
-      dotPositions[index * 3 + 2] = (seeded(3) - 0.5) * 11;
+    const dotPositions = new Float32Array(140 * 3);
+    for (let index = 0; index < 140; index += 1) {
+      dotPositions[index * 3] = (Math.random() - 0.5) * 8.5;
+      dotPositions[index * 3 + 1] = Math.random() * 3.2;
+      dotPositions[index * 3 + 2] = (Math.random() - 0.5) * 6.5;
     }
     dotGeometry.setAttribute("position", new THREE.BufferAttribute(dotPositions, 3));
     const dots = new THREE.Points(
       dotGeometry,
-      new THREE.PointsMaterial({ color: "#b5fff0", size: 0.022, transparent: true, opacity: 0.38 }),
+      new THREE.PointsMaterial({ color: "#dfffd0", size: 0.018, transparent: true, opacity: 0.28 }),
     );
     scene.add(dots);
 
-    scene.add(new THREE.HemisphereLight("#eafcff", "#6c5140", 1.82));
-    const sun = new THREE.DirectionalLight("#fff0ce", 5.05);
-    sun.position.set(5.4, 13.5, -10.8);
+    scene.add(new THREE.HemisphereLight("#e8f1df", "#43382f", 2.1));
+    const sun = new THREE.DirectionalLight("#fff1d6", 4.2);
+    sun.position.set(2.4, 8.2, -5.8);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -12;
-    sun.shadow.camera.right = 12;
-    sun.shadow.camera.top = 12;
-    sun.shadow.camera.bottom = -12;
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.035;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.left = -7;
+    sun.shadow.camera.right = 7;
+    sun.shadow.camera.top = 7;
+    sun.shadow.camera.bottom = -7;
     scene.add(sun);
-    const warm = new THREE.PointLight("#ff9b63", 5.5, 5.5, 2);
-    warm.position.set(-4.2, 2.35, -1.6);
+    const warm = new THREE.PointLight("#ff9d75", 3.8, 5.5, 2);
+    warm.position.set(-2.4, 2.1, 1.8);
     scene.add(warm);
-    const upstairsGlow = new THREE.PointLight("#ffcf95", 3.8, 8.5, 2);
-    upstairsGlow.position.set(3.6, STORY_HEIGHT + 2.2, -2.4);
-    scene.add(upstairsGlow);
 
-    const widePosition = new THREE.Vector3(15.2, 9.5, 15.7);
-    const wideTarget = new THREE.Vector3(-0.8, 2.78, -0.15);
-    const overviewPosition = new THREE.Vector3(12.6, 5.25, 11.8);
-    const finalPosition = new THREE.Vector3(-16.2, 10.4, 17.2);
-    const finalTarget = new THREE.Vector3(0.2, 3.0, -0.25);
+    const manager = new THREE.LoadingManager();
+    manager.onProgress = (_url, loaded, total) => {
+      if (!disposed) setLoadProgress(Math.round((loaded / Math.max(total, 1)) * 100));
+    };
+    const loader = new GLTFLoader(manager);
+    let robot: THREE.Group | null = null;
+    let sensorFan: THREE.Group | null = null;
+    let payload: THREE.Group | null = null;
+    let dishwashingEffect: THREE.Group | null = null;
+    const appearanceMeshes: THREE.Mesh[] = [];
+
+    const registerCameraOccluders = (root: THREE.Object3D) => {
+      root.traverse((object) => {
+        if (object instanceof THREE.Mesh) appearanceMeshes.push(object);
+      });
+    };
+
+    const loadAssets = async () => {
+      try {
+        const [homeAsset, robotAsset] = await Promise.all([
+          loader.loadAsync("/assets/models/loft-interior.glb"),
+          loader.loadAsync("/assets/models/mm01-visual-shell.glb"),
+        ]);
+        if (disposed) return;
+        const environmentSphere = homeAsset.scene.getObjectByName("Sphere");
+        environmentSphere?.removeFromParent();
+        const home = normalizeAsset(homeAsset.scene, 8.6, "footprint");
+        const robotVisual = normalizeAsset(robotAsset.scene, 1.72, "height");
+        prepareVisualAsset(home, false);
+        prepareVisualAsset(robotVisual, true);
+        registerCameraOccluders(home);
+        robot = new THREE.Group();
+        robot.name = "mm01-visual-rig";
+        sensorFan = makeSensorFan();
+        payload = makePayload();
+        dishwashingEffect = makeDishwashingEffect();
+        robot.add(robotVisual, sensorFan, payload, dishwashingEffect);
+        robot.position.set(4.15, 0, 3.1);
+        robot.rotation.y = Math.PI;
+        worldRoot.add(home, robot);
+        setLoadState("ready");
+        requestFrame();
+      } catch (error) {
+        if (disposed) return;
+        console.warn("The supplied visual models could not load; using the cached scene.", error);
+        const home = buildApartment();
+        const robotVisual = makeRobot();
+        registerCameraOccluders(home);
+        robot = new THREE.Group();
+        sensorFan = makeSensorFan();
+        payload = makePayload();
+        dishwashingEffect = makeDishwashingEffect();
+        robot.add(robotVisual, sensorFan, payload, dishwashingEffect);
+        robot.position.set(4.15, 0, 3.1);
+        worldRoot.add(home, robot);
+        setLoadState("fallback");
+        requestFrame();
+      }
+    };
+    void loadAssets();
+
+    const routeCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(4.15, 0, 3.1),
+      new THREE.Vector3(3.15, 0, 3.28),
+      new THREE.Vector3(1.85, 0, 3.3),
+      new THREE.Vector3(0.35, 0, 2.95),
+      new THREE.Vector3(-0.72, 0, 1.72),
+      new THREE.Vector3(-0.95, 0, 0.18),
+      new THREE.Vector3(-1.45, 0, -0.9),
+      new THREE.Vector3(-1.9, 0, -1.35),
+    ]);
+    const kitchenCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-1.9, 0, -1.35),
+      new THREE.Vector3(-1.4, 0, -0.65),
+      new THREE.Vector3(-0.1, 0, 0.1),
+      new THREE.Vector3(1.25, 0, 0.05),
+      new THREE.Vector3(2.35, 0, -0.65),
+      new THREE.Vector3(2.82, 0, -1.42),
+    ]);
+    const returnCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(2.82, 0, -1.42),
+      new THREE.Vector3(2.25, 0, -0.55),
+      new THREE.Vector3(1.25, 0, 0.35),
+      new THREE.Vector3(0.05, 0, 0.42),
+    ]);
+    const widePosition = new THREE.Vector3(7.4, 4.6, 7.7);
+    const wideTarget = new THREE.Vector3(0, 0.9, -0.1);
+    const finalPosition = new THREE.Vector3(10.4, 7.4, 12.2);
+    const finalTarget = new THREE.Vector3(0.05, 0.8, 0.2);
     const cameraPosition = new THREE.Vector3();
     const cameraTarget = new THREE.Vector3();
     const forward = new THREE.Vector3();
-    const previousPosition = robot.position.clone();
-    const oldRoutePoint = new THREE.Vector3();
-    const newRoutePoint = new THREE.Vector3();
-    const morphedRoutePoint = new THREE.Vector3();
-    const previousDestination = destination.position.clone();
-    const activeDestination = destination.position.clone();
-    const previousRouteColor = new THREE.Color(TASK_WORLDS[liveRef.current.task].color);
-    const activeRouteColor = previousRouteColor.clone();
+    const side = new THREE.Vector3();
+    const safeShotPosition = widePosition.clone();
+    const raycaster = new THREE.Raycaster();
+    const rayDirection = new THREE.Vector3();
+    const shotTarget = new THREE.Vector3();
     const clock = new THREE.Clock();
-    let activeTask = liveRef.current.task;
-    let previousCurve = initialCurve;
-    let activeCurve = initialCurve;
-    let taskTransitionStarted = -10;
+    let shotFrame = 0;
     let pointerX = 0;
     let pointerY = 0;
-    let frame = 0;
 
     const onPointerMove = (event: PointerEvent) => {
       const bounds = host.getBoundingClientRect();
       pointerX = ((event.clientX - bounds.left) / bounds.width - 0.5) * 2;
       pointerY = ((event.clientY - bounds.top) / bounds.height - 0.5) * 2;
+      requestFrame();
     };
     const onPointerLeave = () => {
       pointerX = 0;
       pointerY = 0;
+      requestFrame();
     };
     host.addEventListener("pointermove", onPointerMove);
     host.addEventListener("pointerleave", onPointerLeave);
 
-    const setDrop = (object: THREE.Group, start: number, ground: number, progressValue: number) => {
-      object.visible = progressValue >= start;
-      const fall = smooth((progressValue - start) / 0.085);
-      const bounce = Math.abs(Math.sin(fall * Math.PI * 2.5)) * (1 - fall) * 0.34;
-      object.position.y = THREE.MathUtils.lerp(8.6, ground, fall) + bounce;
-      object.rotation.y = (1 - fall) * 1.8;
-      object.scale.setScalar(0.78 + fall * 0.22);
-    };
+    const render = (frameTime: number) => {
+      framePending = false;
+      if (disposed || !pageVisible || !worldVisible) return;
+      if (!reducedMotion && frameTime - previousFrameTime < frameInterval) {
+        requestFrame();
+        return;
+      }
+      previousFrameTime = frameTime;
+      const elapsed = reducedMotion ? 0 : clock.getElapsedTime();
+      const p = clamp(progress.get());
+      const delivery = deliveryProgress(p);
+      const kitchen = smooth((p - 0.48) / 0.12);
+      const returning = smooth((p - 0.72) / 0.1);
 
-    const render = () => {
-      frame = window.requestAnimationFrame(render);
-      const elapsed = clock.getElapsedTime();
-      const p = clamp(liveRef.current.progress);
-      const mission = smooth((p - 0.14) / 0.58);
-
-      if (liveRef.current.task !== activeTask) {
-        previousCurve = activeCurve;
-        previousDestination.copy(destination.position);
-        previousRouteColor.copy(routeMaterial.color);
-        activeTask = liveRef.current.task;
-        activeCurve = curveFor(activeTask);
-        activeDestination.copy(activeCurve.getPoint(1));
-        activeDestination.y = 0.024;
-        activeRouteColor.set(TASK_WORLDS[activeTask].color);
-        taskTransitionStarted = elapsed;
+      if (robot) {
+        let routePosition = routeCurve.getPoint(delivery);
+        let routeTangent = routeCurve.getTangent(Math.min(0.999, delivery + 0.002));
+        if (p >= 0.48) {
+          routePosition = kitchenCurve.getPoint(kitchen);
+          routeTangent = kitchenCurve.getTangent(Math.min(0.999, kitchen + 0.002));
+        }
+        if (p >= 0.72) {
+          routePosition = returnCurve.getPoint(returning);
+          routeTangent = returnCurve.getTangent(Math.min(0.999, returning + 0.002));
+        }
+        robot.position.copy(routePosition);
+        forward.copy(routeTangent).normalize();
+        const walking = (p >= 0.145 && p < 0.29) || (p >= 0.32 && p < 0.41)
+          || (p >= 0.48 && p < 0.6) || (p >= 0.72 && p < 0.82);
+        const scanning = p >= 0.22 && p < 0.31;
+        const washing = p >= 0.6 && p < 0.72;
+        robot.rotation.y = Math.atan2(forward.x, forward.z) + (scanning ? Math.sin(elapsed * 1.7) * 0.34 : 0);
+        if (p >= 0.4 && p < 0.48) {
+          const residentDirection = resident.position.clone().sub(robot.position);
+          robot.rotation.y = Math.atan2(residentDirection.x, residentDirection.z);
+        }
+        if (washing) robot.rotation.y = THREE.MathUtils.lerp(robot.rotation.y, Math.PI / 2, 0.12);
+        if (p >= 0.84) robot.rotation.y = THREE.MathUtils.lerp(robot.rotation.y, Math.PI, 0.08);
+        robot.position.y = walking
+          ? Math.abs(Math.sin(elapsed * 7.4)) * 0.025
+          : washing ? Math.sin(elapsed * 2.8) * 0.008 : 0;
+      } else {
+        forward.set(0, 0, -1);
       }
 
-      const taskMix = smooth((elapsed - taskTransitionStarted) / 0.82);
-      previousCurve.getPoint(mission, oldRoutePoint);
-      activeCurve.getPoint(mission, newRoutePoint);
-      const routePosition = morphedRoutePoint.lerpVectors(oldRoutePoint, newRoutePoint, taskMix);
-      previousPosition.copy(robot.position);
-      robot.position.copy(routePosition);
-      const nextMission = Math.min(0.999, mission + 0.006);
-      previousCurve.getPoint(nextMission, oldRoutePoint);
-      activeCurve.getPoint(nextMission, newRoutePoint);
-      forward.copy(morphedRoutePoint.lerpVectors(oldRoutePoint, newRoutePoint, taskMix)).sub(robot.position).normalize();
-      robot.rotation.y = Math.atan2(forward.x, forward.z);
+      const obstacleReveal = smooth((p - 0.28) / 0.045);
+      basket.visible = p > 0.275 && p < 0.5;
+      basket.scale.setScalar(Math.max(0.001, obstacleReveal));
 
-      const routePositions = route.geometry.getAttribute("position") as THREE.BufferAttribute;
-      for (let index = 0; index < routePositions.count; index += 1) {
-        const routeProgress = index / (routePositions.count - 1);
-        previousCurve.getPoint(routeProgress, oldRoutePoint);
-        activeCurve.getPoint(routeProgress, newRoutePoint);
-        morphedRoutePoint.lerpVectors(oldRoutePoint, newRoutePoint, taskMix);
-        routePositions.setXYZ(index, morphedRoutePoint.x, 0.022, morphedRoutePoint.z);
+      if (sensorFan) {
+        sensorFan.visible = p >= 0.22 && p < 0.32;
+        sensorFan.children.forEach((line, index) => {
+          (line as THREE.Line).scale.setScalar(0.86 + Math.sin(elapsed * 2.4 + index * 0.28) * 0.08);
+        });
       }
-      routePositions.needsUpdate = true;
-      route.computeLineDistances();
-      routeMaterial.color.lerpColors(previousRouteColor, activeRouteColor, taskMix);
-      destination.position.lerpVectors(previousDestination, activeDestination, taskMix);
-      (destination.material as THREE.MeshBasicMaterial).color.copy(routeMaterial.color);
-      (completionHalo.material as THREE.MeshBasicMaterial).color.copy(routeMaterial.color);
-      burstMaterial.color.copy(routeMaterial.color);
-
-      const payload = robot.getObjectByName("delivery-payload");
-      const isBreakfast = activeTask === "breakfast";
-      const hasParcel = activeTask === "parcel";
-      const hasBoxPayload = activeTask === "medicine" || hasParcel;
-      if (payload instanceof THREE.Mesh) {
-        payload.visible = hasBoxPayload;
-        payload.scale.setScalar(hasParcel ? 1.42 : 1);
-        (payload.material as THREE.MeshStandardMaterial).color.set(TASK_WORLDS[activeTask].payloadColor);
+      if (payload) {
+        payload.visible = p < 0.405;
+        const stabilizedTilt = p >= 0.145 && p < 0.41 ? -Math.sin(elapsed * 3.7) * 0.018 : 0;
+        payload.rotation.z = THREE.MathUtils.lerp(payload.rotation.z, stabilizedTilt, 0.08);
+        payload.rotation.x = THREE.MathUtils.lerp(payload.rotation.x, stabilizedTilt * 0.45, 0.08);
       }
-      breakfastPayload.visible = isBreakfast;
-      breakfastPayload.scale.setScalar(isBreakfast ? 0.86 + taskMix * 0.14 : 0.01);
-      steam.visible = isBreakfast;
-      steam.children.forEach((puff, index) => {
-        const phase = (elapsed * 0.46 + puff.userData.phase) % 1;
-        puff.position.set(-0.1 + Math.sin(phase * Math.PI * 2 + index) * 0.025, 1.2 + phase * 0.28, 0.44);
-        ((puff as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = Math.sin(phase * Math.PI) * 0.42;
-      });
+      if (dishwashingEffect) {
+        dishwashingEffect.visible = p >= 0.595 && p < 0.725;
+        dishwashingEffect.rotation.y = Math.sin(elapsed * 3.8) * 0.13;
+        dishwashingEffect.children.slice(1).forEach((drop, index) => {
+          drop.position.y = 1.17 + ((elapsed * 0.24 + index * 0.09) % 0.28);
+          drop.scale.setScalar(0.75 + Math.sin(elapsed * 4.2 + index) * 0.2);
+        });
+      }
 
-      const gaitStrength = Math.sin(elapsed * 9.2) * 0.21 * (mission > 0.01 && mission < 0.99 ? 1 : 0);
-      robot.getObjectByName("left-leg")!.rotation.x = gaitStrength;
-      robot.getObjectByName("right-leg")!.rotation.x = -gaitStrength;
-      robot.getObjectByName("left-arm")!.rotation.x = -gaitStrength * 0.35;
-      robot.getObjectByName("right-arm")!.rotation.x = gaitStrength * 0.35;
+      memoryRings.visible = p >= 0.39 && p < 0.49;
+      memoryRings.rotation.y = elapsed * 0.12;
+      memoryRings.scale.setScalar(0.92 + Math.sin(elapsed * 2) * 0.08);
 
-      setDrop(box, 0.16, 0, p);
-      setDrop(basket, 0.25, 0, p);
-      setDrop(lamp, 0.34, 0, p);
-      basket.position.x = liveRef.current.scenario === "laundry" ? -2.55 : -6.05;
-      basket.position.z = liveRef.current.scenario === "laundry" ? 1.65 : 3.95;
-      frictionPatch.visible = liveRef.current.scenario === "low_friction";
-      frictionPatch.material.opacity = 0.2 + Math.sin(elapsed * 3) * 0.07;
+      const robotPosition = robot?.position ?? routeCurve.getPoint(delivery);
+      const compactShot = host.clientWidth <= 700;
+      shotTarget.copy(robotPosition).add(new THREE.Vector3(0, compactShot ? 1.38 : 0.92, 0));
+      side.set(forward.z, 0, -forward.x).normalize();
 
-      const floorLift = smooth((p - 0.12) / 0.15) * (1 - smooth((p - 0.72) / 0.16));
-      house.upperFloor.position.y = floorLift * 1.15;
+      // Re-evaluate a small set of front and profile shots at 10 Hz. The first
+      // clear line of sight wins; otherwise use the candidate with the most
+      // open space. This keeps the camera out of the loft shell and furniture.
+      shotFrame += 1;
+      if (shotFrame % 6 === 0 || safeShotPosition.equals(widePosition)) {
+        const frontDistance = (p >= 0.595 && p < 0.725 ? 3.0 : 3.5) + (compactShot ? 0.7 : 0);
+        const height = (p >= 0.595 && p < 0.725 ? 2.05 : 2.25) + (compactShot ? 0.25 : 0);
+        const profileDistance = compactShot ? 4.1 : 3.5;
+        const candidates = [
+          shotTarget.clone().add(forward.clone().multiplyScalar(frontDistance)).add(side.clone().multiplyScalar(1.05)).setY(height),
+          shotTarget.clone().add(forward.clone().multiplyScalar(frontDistance)).add(side.clone().multiplyScalar(-1.05)).setY(height),
+          shotTarget.clone().add(side.clone().multiplyScalar(profileDistance)).setY(height + 0.2),
+          shotTarget.clone().add(side.clone().multiplyScalar(-profileDistance)).setY(height + 0.2),
+          shotTarget.clone().add(forward.clone().multiplyScalar(2.4)).add(side.clone().multiplyScalar(0.9)).setY(3.5),
+        ];
+        let bestCandidate = candidates[0];
+        let bestClearance = -1;
+        for (const candidate of candidates) {
+          rayDirection.copy(candidate).sub(shotTarget);
+          const distance = rayDirection.length();
+          raycaster.set(shotTarget, rayDirection.normalize());
+          raycaster.far = Math.max(0.1, distance - 0.22);
+          const hit = raycaster.intersectObjects(appearanceMeshes, false)[0];
+          const clearance = hit ? hit.distance : Number.POSITIVE_INFINITY;
+          if (clearance > bestClearance) {
+            bestClearance = clearance;
+            bestCandidate = candidate;
+          }
+          if (!hit) break;
+        }
+        safeShotPosition.copy(bestCandidate);
+      }
 
-      const povMix = smooth((p - 0.48) / 0.1) * (1 - smooth((p - 0.77) / 0.09));
-      const finalMix = smooth((p - 0.79) / 0.16);
-      cameraPosition.lerpVectors(widePosition, overviewPosition, smooth(p / 0.34));
-      cameraTarget.copy(wideTarget).lerp(robot.position.clone().add(new THREE.Vector3(0, 1.05, 0)), smooth((p - 0.08) / 0.28));
-
-      const headPosition = robot.position.clone()
-        .add(new THREE.Vector3(0, 1.49, 0))
-        .add(forward.clone().multiplyScalar(0.22));
-      const headTarget = headPosition.clone().add(forward.clone().multiplyScalar(3.6));
-      headTarget.lerp(TASK_FOCUS[activeTask], smooth((mission - 0.62) / 0.28));
-      cameraPosition.lerp(headPosition, povMix);
-      cameraTarget.lerp(headTarget, povMix);
-      cameraPosition.lerp(finalPosition, finalMix);
-      cameraTarget.lerp(finalTarget, finalMix);
-      cameraPosition.x += pointerX * 0.3 * (1 - povMix);
-      cameraPosition.y -= pointerY * 0.18 * (1 - povMix);
-      camera.position.lerp(cameraPosition, 0.075);
+      const followMix = smooth((p - 0.1) / 0.055);
+      const finalMix = smooth((p - 0.9) / 0.07);
+      cameraPosition.copy(widePosition).lerp(safeShotPosition, followMix).lerp(finalPosition, finalMix);
+      cameraTarget.copy(wideTarget).lerp(shotTarget, followMix).lerp(finalTarget, finalMix);
+      cameraPosition.x += pointerX * 0.1 * (1 - finalMix);
+      cameraPosition.y -= pointerY * 0.07 * (1 - finalMix);
+      if (reducedMotion) camera.position.copy(cameraPosition);
+      else camera.position.lerp(cameraPosition, 0.085);
       camera.lookAt(cameraTarget);
 
-      route.visible = p > 0.1 && p < 0.82;
+      route.visible = p > 0.145 && p < 0.43;
       destination.rotation.z += 0.006;
-      destination.scale.setScalar(1 + Math.sin(elapsed * 3.2) * 0.08);
-      completionHalo.position.copy(destination.position);
-      const arrival = clamp((mission - 0.78) / 0.22);
-      const arrivalPulse = Math.sin(arrival * Math.PI);
-      completionHalo.scale.setScalar(1 + arrival * 4.5);
-      (completionHalo.material as THREE.MeshBasicMaterial).opacity = arrivalPulse * 0.72;
-
-      scanRings.visible = activeTask === "kitchen_check" && mission > 0.58;
-      scanRings.position.copy(TASK_FOCUS.kitchen_check);
-      scanRings.position.y = 0.99;
-      scanRings.children.forEach((ring) => {
-        const phase = (elapsed * 0.5 + ring.userData.phase) % 1;
-        ring.scale.setScalar(0.65 + phase * 3.1);
-        ((ring as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = (1 - phase) * arrival * 0.7;
-      });
-
-      burst.position.copy(destination.position);
-      for (let index = 0; index < burstCount; index += 1) {
-        const angle = index * 2.399963;
-        const radius = arrival * (0.25 + (index % 9) * 0.055);
-        burstPositions[index * 3] = Math.cos(angle) * radius;
-        burstPositions[index * 3 + 1] = arrival * (0.12 + (index % 7) * 0.09);
-        burstPositions[index * 3 + 2] = Math.sin(angle) * radius;
-      }
-      (burstGeometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
-      burstMaterial.opacity = arrivalPulse * 0.9;
+      destination.scale.setScalar(1 + Math.sin(elapsed * 3.2) * 0.07);
+      destination.visible = p > 0.35 && p < 0.49;
+      resident.visible = p > 0.33 && p < 0.5;
       dots.rotation.y = elapsed * 0.008;
-      (dots.material as THREE.PointsMaterial).opacity = 0.12 + smooth((p - 0.35) / 0.2) * 0.32;
-
+      const perceptionDots = smooth((p - 0.22) / 0.03) * (1 - smooth((p - 0.32) / 0.03));
+      const memoryDots = smooth((p - 0.39) / 0.04) * (1 - smooth((p - 0.49) / 0.04));
+      (dots.material as THREE.PointsMaterial).opacity = 0.05 + Math.max(perceptionDots, memoryDots) * 0.34;
       renderer.render(scene, camera);
+      if (!reducedMotion) requestFrame();
+    };
+
+    requestFrame = () => {
+      if (disposed || framePending || !pageVisible || !worldVisible) return;
+      framePending = true;
+      frame = window.requestAnimationFrame(render);
     };
 
     const resize = () => {
@@ -432,42 +541,68 @@ export function LandingWorld({ progress, scenario, task }: LandingWorldProps) {
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      requestFrame();
     };
-    const observer = new ResizeObserver(resize);
-    observer.observe(host);
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(host);
+    const visibilityObserver = new IntersectionObserver(([entry]) => {
+      worldVisible = entry?.isIntersecting ?? true;
+      requestFrame();
+    }, { rootMargin: "160px 0px" });
+    visibilityObserver.observe(host);
+    const onVisibilityChange = () => {
+      pageVisible = document.visibilityState === "visible";
+      requestFrame();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const stopProgressListener = progress.on("change", requestFrame);
     resize();
-    render();
+    requestFrame();
 
     return () => {
-      cancelFurnitureLoading();
+      disposed = true;
       window.cancelAnimationFrame(frame);
-      observer.disconnect();
+      resizeObserver.disconnect();
+      visibilityObserver.disconnect();
+      stopProgressListener();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       host.removeEventListener("pointermove", onPointerMove);
       host.removeEventListener("pointerleave", onPointerLeave);
       scene.traverse((object) => {
-        if (object instanceof THREE.Mesh || object instanceof THREE.Points || object instanceof THREE.Line) {
-          object.geometry.dispose();
-          const surfaces = Array.isArray(object.material) ? object.material : [object.material];
-          surfaces.forEach((surface) => {
-            const mapped = surface as THREE.MeshStandardMaterial;
-            mapped.map?.dispose();
-            surface.dispose();
-          });
-        }
+        if (!(object instanceof THREE.Mesh || object instanceof THREE.Points || object instanceof THREE.Line)) return;
+        object.geometry.dispose();
+        const surfaces = Array.isArray(object.material) ? object.material : [object.material];
+        surfaces.forEach((surface) => {
+          const mapped = surface as THREE.MeshStandardMaterial;
+          mapped.map?.dispose();
+          mapped.normalMap?.dispose();
+          mapped.roughnessMap?.dispose();
+          mapped.metalnessMap?.dispose();
+          surface.dispose();
+        });
       });
       renderer.dispose();
-      environment.dispose();
-      environmentGenerator.dispose();
       renderer.domElement.remove();
     };
-  }, []);
+  }, [progress, reducedMotion]);
 
   return (
     <div
       className="mm-world"
       ref={hostRef}
       role="img"
-      aria-label="Interactive two-story 3D home with MM-01 completing a household delivery"
-    />
+      aria-label="Interactive 3D loft with MM-01 delivering medicine, working at the kitchen sink, and returning to the room center"
+    >
+      {loadState === "loading" && (
+        <div className="mm-world-loader" role="status">
+          <span>Assembling visual world</span>
+          <i><b style={{ transform: `scaleX(${loadProgress / 100})` }} /></i>
+          <strong>{loadProgress}%</strong>
+        </div>
+      )}
+      {loadState === "fallback" && (
+        <span className="mm-world-fallback">Cached visual world active</span>
+      )}
+    </div>
   );
 }

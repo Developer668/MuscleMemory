@@ -20,6 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src ./src
 COPY ops ./ops
 COPY config ./config
+COPY artifacts/policy/expert-v1.npz ./artifacts/policy/expert-v1.npz
 COPY evidence ./evidence
 COPY integrations ./integrations
 COPY models ./models
@@ -48,6 +49,7 @@ RUN groupadd --gid "${APP_GID}" muscle-memory \
        /var/lib/muscle-memory/coordinator \
        /var/lib/muscle-memory/graph \
        /var/lib/muscle-memory/telemetry \
+       /var/lib/muscle-memory/training \
     && chown -R "${APP_UID}:${APP_GID}" \
        /home/muscle-memory /var/lib/muscle-memory
 

@@ -1,5 +1,3 @@
-"""Training-only tools; this package is excluded from evaluation images."""
+"""Training-only tools; modules are imported explicitly to preserve isolation."""
 
-from muscle_memory.training.expert import ExpertNavigator, plan_expert_path
-
-__all__ = ["ExpertNavigator", "plan_expert_path"]
+__all__: list[str] = []

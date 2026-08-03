@@ -15,10 +15,8 @@ import {
   Eye,
   EyeOff,
   GitBranch,
-  GripVertical,
   KeyRound,
   Lock,
-  Maximize2,
   Network,
   Play,
   Radio,
@@ -33,7 +31,7 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { BrandMark } from "../components/BrandMark";
 import { RealisticHomeScene } from "../operator/RealisticHomeScene";
@@ -211,6 +209,42 @@ function shortId(value: string | null | undefined, length = 13): string {
   return value.length <= length ? value : `${value.slice(0, length)}…`;
 }
 
+function SmoothedMetric({
+  value,
+  decimals,
+  fallback = "Unavailable",
+}: {
+  value: number | null;
+  decimals: number;
+  fallback?: string;
+}) {
+  const [displayValue, setDisplayValue] = useState(value);
+  const currentValue = useRef(value);
+
+  useEffect(() => {
+    let frame = 0;
+    if (value === null || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      currentValue.current = value;
+      frame = window.requestAnimationFrame(() => setDisplayValue(value));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const initial = currentValue.current ?? value;
+    const startedAt = window.performance.now();
+    const update = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / 320);
+      const eased = progress * progress * (3 - 2 * progress);
+      const next = initial + (value - initial) * eased;
+      currentValue.current = next;
+      setDisplayValue(next);
+      if (progress < 1) frame = window.requestAnimationFrame(update);
+    };
+    frame = window.requestAnimationFrame(update);
+    return () => window.cancelAnimationFrame(frame);
+  }, [value]);
+
+  return displayValue === null ? fallback : displayValue.toFixed(decimals);
+}
+
 function compactSensorValue(sensor: SensorReading | undefined): string {
   if (!sensor?.available) return "Unavailable";
   const value = sensor.values;
@@ -255,8 +289,8 @@ function Panel({
   return (
     <section className={`cc-panel ${className}`}>
       <header className="cc-panel__header">
-        <div className="cc-panel__title"><GripVertical size={14} /><span>{icon}</span><strong>{title}</strong></div>
-        <div className="cc-panel__tools">{meta && <span>{meta}</span>}<Maximize2 size={13} /></div>
+        <div className="cc-panel__title"><span>{icon}</span><strong>{title}</strong></div>
+        <div className="cc-panel__tools">{meta && <span>{meta}</span>}</div>
       </header>
       <div className="cc-panel__body">{children}</div>
     </section>
@@ -398,10 +432,10 @@ function RobotVideo({ record }: { record: TelemetryRecord | null }) {
         ) : record?.payload.routine_mode === "synthetic_demo_loop" ? (
           <div className="cc-telemetry-readout">
             <small>Synthetic browser telemetry</small>
-            <strong>{action === null ? "0.00" : action.toFixed(2)} <span>m/s command</span></strong>
+            <strong><SmoothedMetric value={action} decimals={2} fallback="0.00" /> <span>m/s command</span></strong>
             <div><span>Frame</span><b>{shortId(record.frame_id, 15)}</b></div>
             <div><span>Move</span><b>{routineLabel ?? "House circuit"}</b></div>
-            <div><span>Battery</span><b>{battery === null ? "--" : `${battery.toFixed(1)}%`}</b></div>
+            <div><span>Battery</span><b><SmoothedMetric value={battery} decimals={1} fallback="--" />{battery === null ? "" : "%"}</b></div>
           </div>
         ) : (
           <EmptyState icon={<EyeOff size={21} />} title={`${VIDEO_FEEDS.find((item) => item.id === feed)?.label} unavailable`} detail="Waiting for a frame joined by frame_id." />
@@ -417,9 +451,23 @@ function DepthView({ record }: { record: TelemetryRecord | null }) {
   if (url) return <div className="cc-video"><img src={url} alt="Stereo-derived depth feed" /><span>Stereo-derived depth</span></div>;
   if (!sectors.length) return <EmptyState icon={<EyeOff size={21} />} title="Depth unavailable" detail="No stereo-derived sectors in this event." />;
   const maximum = Math.max(...sectors, 0.01);
+  const minimum = Math.min(...sectors);
+  const average = sectors.reduce((total, sector) => total + sector, 0) / sectors.length;
   return (
     <div className="cc-depth" aria-label={`${sectors.length} stereo-derived depth sectors`}>
-      {sectors.map((sector, index) => <i key={`${sector}:${index}`} style={{ height: `${Math.max(7, (sector / maximum) * 100)}%` }} />)}
+      <div className="cc-depth__bars" aria-hidden="true">
+        {sectors.map((sector, index) => (
+          <i
+            key={`depth-sector-${index}`}
+            style={{ transform: `scaleY(${Math.max(0.07, sector / maximum)})` }}
+          />
+        ))}
+      </div>
+      <div className="cc-depth__stats">
+        <span>Nearest <strong><SmoothedMetric value={minimum} decimals={2} /> m</strong></span>
+        <span>Mean <strong><SmoothedMetric value={average} decimals={2} /> m</strong></span>
+        <span>Sectors <strong>{sectors.length}</strong></span>
+      </div>
     </div>
   );
 }
@@ -537,8 +585,8 @@ function OperationsView({ data }: { data: OperatorData }) {
         </Panel>
         <Panel title="Safety & Evaluation" icon={<ShieldCheck size={14} />} meta={data.eligibility ? "Measured" : "Waiting"}>
           <div className="cc-check-list">
-            <div><span>Clearance</span><strong>{clearance === null ? "Unavailable" : `${clearance.toFixed(2)} m`}</strong></div>
-            <div><span>Tray tilt</span><strong>{tilt === null ? "Unavailable" : `${tilt.toFixed(1)}°`}</strong></div>
+            <div><span>Clearance</span><strong><SmoothedMetric value={clearance} decimals={2} />{clearance === null ? "" : " m"}</strong></div>
+            <div><span>Tray tilt</span><strong><SmoothedMetric value={tilt} decimals={1} />{tilt === null ? "" : "°"}</strong></div>
             <div><span>Promotion</span><strong>{policyGate ? "Approval required" : data.eligibility ? (data.eligibility.numerically_eligible ? "Eligible · gated" : "Blocked") : "No paired evidence"}</strong></div>
           </div>
         </Panel>
@@ -775,6 +823,23 @@ function RocketRideView({ data, goToSettings }: { data: OperatorData; goToSettin
             <div><span>Policy</span><strong>{shortId(data.detail?.episode.policy_id)}</strong></div>
             <div><span>Events</span><strong>{data.detail ? String(data.detail.telemetry_records) : "Unavailable"}</strong></div>
           </div>
+        </Panel>
+        <Panel title="Task policy training" icon={<Workflow size={14} />} meta={data.trainingJob ? readableState(data.trainingJob.state) : "Ready"}>
+          <div className="cc-training-control">
+            <div className="cc-training-fields">
+              <label><span>Epochs</span><input type="number" min="1" max="200" value={data.trainingEpochs} onChange={(event) => data.setTrainingEpochs(Number(event.target.value))} /></label>
+              <label><span>Seed</span><input type="number" min="0" max="2147483647" value={data.trainingSeed} onChange={(event) => data.setTrainingSeed(Number(event.target.value))} /></label>
+            </div>
+            <button type="button" disabled={!data.token || Boolean(data.mutationBusy) || Boolean(data.trainingJob && ["queued", "running"].includes(data.trainingJob.state))} onClick={() => void data.startTrainingJob()}><Play size={13} /> Train candidate</button>
+            {!data.token && <button type="button" className="cc-configure-link" onClick={goToSettings}><KeyRound size={13} /> Configure operator access</button>}
+          </div>
+          {data.trainingJob && <div className="cc-inspector-list">
+            <div><span>Candidate</span><strong>{shortId(data.trainingJob.policy_id)}</strong></div>
+            <div><span>Data</span><strong>Training split only</strong></div>
+            <div><span>Promotion</span><strong>Not evaluated</strong></div>
+            <div><span>Validation accuracy</span><strong>{data.trainingJob.metrics ? `${(data.trainingJob.metrics.validation_command_accuracy * 100).toFixed(1)}%` : readableState(data.trainingJob.state)}</strong></div>
+            <div><span>Checkpoint</span><strong>{shortId(data.trainingJob.checkpoint_sha256)}</strong></div>
+          </div>}
         </Panel>
         <Panel title="Human gates" icon={<Lock size={14} />} meta={`${relevantGates.length} blocking`}>
           <div className="cc-gates">

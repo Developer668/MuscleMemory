@@ -17,6 +17,7 @@ import type {
   ProviderHealth,
   ServiceHealth,
   StreamState,
+  TaskPolicyTrainingJob,
   TelemetryRecord,
 } from "./types";
 
@@ -54,6 +55,12 @@ export interface OperatorData {
   latestRecord: TelemetryRecord | null;
   approvals: PendingApproval[];
   policies: PolicySummary[];
+  trainingJobs: TaskPolicyTrainingJob[];
+  trainingJob: TaskPolicyTrainingJob | null;
+  trainingEpochs: number;
+  setTrainingEpochs: (epochs: number) => void;
+  trainingSeed: number;
+  setTrainingSeed: (seed: number) => void;
   liveOptions: LiveEpisodeOptions | null;
   liveStatus: LiveEpisodeStatus | null;
   liveSeed: number | null;
@@ -79,6 +86,7 @@ export interface OperatorData {
   refresh: () => Promise<void>;
   startDemoLoop: () => void;
   startLiveEpisode: () => Promise<void>;
+  startTrainingJob: () => Promise<void>;
   cancelLiveEpisode: () => Promise<void>;
   decideApproval: (requirementId: string, verdict: "approve" | "reject") => Promise<void>;
   submitCorrection: (
@@ -97,6 +105,10 @@ export function useOperatorData(): OperatorData {
   const [records, setRecords] = useState<TelemetryRecord[]>([]);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [policies, setPolicies] = useState<PolicySummary[]>([]);
+  const [trainingJobs, setTrainingJobs] = useState<TaskPolicyTrainingJob[]>([]);
+  const [trainingJob, setTrainingJob] = useState<TaskPolicyTrainingJob | null>(null);
+  const [trainingEpochs, setTrainingEpochs] = useState(180);
+  const [trainingSeed, setTrainingSeed] = useState(668);
   const [liveOptions, setLiveOptions] = useState<LiveEpisodeOptions | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveEpisodeStatus | null>(null);
   const [liveSeed, setLiveSeed] = useState<number | null>(null);
@@ -123,7 +135,7 @@ export function useOperatorData(): OperatorData {
       setLoading(false);
       return;
     }
-    const [healthResult, graphResult, episodeResult, approvalsResult, policiesResult, liveResult] =
+    const [healthResult, graphResult, episodeResult, approvalsResult, policiesResult, liveResult, trainingResult] =
       await Promise.allSettled([
         operatorApi.health(),
         operatorApi.memoryGraph(),
@@ -131,6 +143,7 @@ export function useOperatorData(): OperatorData {
         operatorApi.approvals(),
         operatorApi.policies(),
         operatorApi.liveOptions(),
+        operatorApi.trainingJobs(),
       ]);
 
     const failures: string[] = [];
@@ -184,6 +197,19 @@ export function useOperatorData(): OperatorData {
       );
     } else {
       failures.push(errorMessage(liveResult.reason));
+    }
+
+    if (trainingResult.status === "fulfilled") {
+      const nextJobs = trainingResult.value.items;
+      setTrainingJobs(nextJobs);
+      setTrainingJob((current) =>
+        nextJobs.find((job) => job.job_id === current?.job_id) ||
+        nextJobs.find((job) => job.state === "queued" || job.state === "running") ||
+        nextJobs[0] ||
+        null,
+      );
+    } else {
+      failures.push(errorMessage(trainingResult.reason));
     }
 
     if (healthResult.status === "rejected") {
@@ -458,6 +484,46 @@ export function useOperatorData(): OperatorData {
     }
   }, [isLocalRoutine, liveStatus, tokenValue]);
 
+  useEffect(() => {
+    if (!trainingJob || !["queued", "running"].includes(trainingJob.state)) return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const next = await operatorApi.trainingJob(trainingJob.job_id);
+        if (!active) return;
+        setTrainingJob(next);
+        setTrainingJobs((current) => [next, ...current.filter((job) => job.job_id !== next.job_id)]);
+      } catch (error) {
+        if (active) setMutationIssue(errorMessage(error));
+      }
+    };
+    const initial = window.setTimeout(() => void poll(), 150);
+    const timer = window.setInterval(() => void poll(), 500);
+    return () => {
+      active = false;
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [trainingJob]);
+
+  const startTrainingJob = useCallback(async () => {
+    setMutationBusy("training-start");
+    setMutationIssue(null);
+    try {
+      const started = await operatorApi.startTrainingJob(
+        trainingEpochs,
+        trainingSeed,
+        tokenValue,
+      );
+      setTrainingJob(started);
+      setTrainingJobs((current) => [started, ...current.filter((job) => job.job_id !== started.job_id)]);
+    } catch (error) {
+      setMutationIssue(errorMessage(error));
+    } finally {
+      setMutationBusy(null);
+    }
+  }, [tokenValue, trainingEpochs, trainingSeed]);
+
   const latestRecord = records.at(-1) || null;
   const providers = useMemo(() => health?.providers || [], [health]);
 
@@ -473,6 +539,12 @@ export function useOperatorData(): OperatorData {
     latestRecord,
     approvals,
     policies,
+    trainingJobs,
+    trainingJob,
+    trainingEpochs,
+    setTrainingEpochs,
+    trainingSeed,
+    setTrainingSeed,
     liveOptions,
     liveStatus,
     liveSeed,
@@ -502,6 +574,7 @@ export function useOperatorData(): OperatorData {
     refresh,
     startDemoLoop,
     startLiveEpisode,
+    startTrainingJob,
     cancelLiveEpisode,
     decideApproval,
     submitCorrection,

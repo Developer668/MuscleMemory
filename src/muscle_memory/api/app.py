@@ -38,6 +38,7 @@ from muscle_memory.api.auth import (
     APPROVAL_WRITE_SCOPE,
     CORRECTION_WRITE_SCOPE,
     EPISODE_WRITE_SCOPE,
+    TRAINING_WRITE_SCOPE,
     WORKFLOW_WRITE_SCOPE,
 )
 from muscle_memory.api.contracts import (
@@ -70,6 +71,9 @@ from muscle_memory.api.models import (
     PromotionEligibility,
     ReplayPage,
     ServiceHealth,
+    TaskPolicyTrainingJobList,
+    TaskPolicyTrainingJobView,
+    TaskPolicyTrainingStartRequest,
     TelemetryPage,
     WorkflowReview,
     WorkflowReviewRequest,
@@ -93,6 +97,11 @@ from muscle_memory.live.controller import (
 )
 from muscle_memory.live.models import LiveEpisodeStatus, VideoProduct
 from muscle_memory.live.video import MJPEG_BOUNDARY
+from muscle_memory.training.jobs import (
+    TaskPolicyTrainingConflictError,
+    TaskPolicyTrainingManager,
+    TaskPolicyTrainingNotFoundError,
+)
 
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 MAX_REQUEST_BODY_BYTES = MAX_CALLBACK_BODY_BYTES
@@ -220,6 +229,7 @@ class ApiRuntime:
     authenticator: Authenticator
     live_hub: LiveTelemetryHub
     live_episodes: LiveEpisodeControl | None
+    training_jobs: TaskPolicyTrainingManager | None
 
 
 def _request_id(request: Request) -> str:
@@ -319,6 +329,10 @@ RequireEpisodePrincipal = Annotated[
     AuthenticatedPrincipal,
     Depends(_principal_dependency(EPISODE_WRITE_SCOPE)),
 ]
+RequireTrainingPrincipal = Annotated[
+    AuthenticatedPrincipal,
+    Depends(_principal_dependency(TRAINING_WRITE_SCOPE)),
+]
 
 
 def _live_control(request: Request) -> LiveEpisodeControl:
@@ -330,6 +344,24 @@ def _live_control(request: Request) -> LiveEpisodeControl:
             "the live simulator has no admitted world and policy configuration",
         )
     return control
+
+
+def _training_control(request: Request) -> TaskPolicyTrainingManager:
+    control = _runtime_from_request(request).training_jobs
+    if control is None:
+        raise ApiBackendError(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "task_policy_training_unconfigured",
+            "local task-policy training is not configured",
+        )
+    return control
+
+
+def _training_job_view(value: object) -> TaskPolicyTrainingJobView:
+    as_json_value = getattr(value, "as_json_value", None)
+    if not callable(as_json_value):
+        raise RuntimeError("task-policy training returned an invalid job")
+    return TaskPolicyTrainingJobView.model_validate(as_json_value())
 
 
 def _live_status_view(value: LiveEpisodeStatus) -> LiveEpisodeStatusView:
@@ -555,6 +587,63 @@ def _build_router() -> APIRouter:
         except LiveEpisodeNotFoundError as exc:
             raise _not_found("live_episode", episode_id) from exc
         return _live_status_view(value)
+
+    @router.post(
+        "/training/jobs",
+        response_model=TaskPolicyTrainingJobView,
+        status_code=status.HTTP_202_ACCEPTED,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="Start one bounded high-level task-policy training job",
+    )
+    async def start_task_policy_training(
+        request: Request,
+        body: TaskPolicyTrainingStartRequest,
+        _principal: RequireTrainingPrincipal,
+    ) -> TaskPolicyTrainingJobView:
+        control = _training_control(request)
+        try:
+            job = control.start(epochs=body.epochs, seed=body.seed)
+        except TaskPolicyTrainingConflictError as exc:
+            raise ApiBackendError(
+                status.HTTP_409_CONFLICT,
+                "task_policy_training_conflict",
+                str(exc),
+            ) from exc
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise ApiBackendError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "task_policy_training_unavailable",
+                "the local task-policy training job could not be started",
+            ) from exc
+        return _training_job_view(job)
+
+    @router.get(
+        "/training/jobs",
+        response_model=TaskPolicyTrainingJobList,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="List local high-level task-policy training jobs",
+    )
+    async def task_policy_training_jobs(request: Request) -> TaskPolicyTrainingJobList:
+        control = _training_control(request)
+        return TaskPolicyTrainingJobList(
+            items=tuple(_training_job_view(item) for item in control.list())
+        )
+
+    @router.get(
+        "/training/jobs/{job_id}",
+        response_model=TaskPolicyTrainingJobView,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="Read one local high-level task-policy training job",
+    )
+    async def task_policy_training_job(
+        request: Request,
+        job_id: Annotated[str, Path(pattern=r"^task-policy-[0-9a-f]{32}$")],
+    ) -> TaskPolicyTrainingJobView:
+        try:
+            job = _training_control(request).get(job_id)
+        except TaskPolicyTrainingNotFoundError as exc:
+            raise _not_found("task_policy_training_job", job_id) from exc
+        return _training_job_view(job)
 
     @router.get(
         "/episodes/{episode_id}/video/{product}.mjpeg",
@@ -835,6 +924,7 @@ def create_app(
     authenticator: Authenticator,
     live_hub: LiveTelemetryHub | None = None,
     live_episodes: LiveEpisodeControl | None = None,
+    training_jobs: TaskPolicyTrainingManager | None = None,
 ) -> FastAPI:
     """Build an app around explicit domain services and authentication."""
 
@@ -848,6 +938,7 @@ def create_app(
         authenticator=authenticator,
         live_hub=hub,
         live_episodes=control,
+        training_jobs=training_jobs,
     )
 
     @asynccontextmanager
@@ -866,8 +957,12 @@ def create_app(
                 if control is not None:
                     await asyncio.to_thread(control.shutdown)
             finally:
-                await hub.close()
-                await backend.shutdown()
+                try:
+                    if training_jobs is not None:
+                        await asyncio.to_thread(training_jobs.shutdown)
+                finally:
+                    await hub.close()
+                    await backend.shutdown()
 
     app = FastAPI(
         title="Muscle Memory API",

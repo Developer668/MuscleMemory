@@ -26,12 +26,13 @@ services:
       MM_API_HOST: 0.0.0.0
       MM_API_PORT: "8000"
       MM_API_LOG_LEVEL: ${MM_API_LOG_LEVEL:-info}
-      MM_API_AUTH_CREDENTIALS_JSON: '[{"subject":"local-operator","token_sha256":"${MM_API_OPERATOR_TOKEN_SHA256:?Generate the local backend environment first}","scopes":["approvals:write","workflows:write","corrections:write"]}]'
+      MM_API_AUTH_CREDENTIALS_JSON: '[{"subject":"local-operator","token_sha256":"${MM_API_OPERATOR_TOKEN_SHA256:?Generate the local backend environment first}","scopes":["approvals:write","workflows:write","corrections:write","episodes:write","training:write"]}]'
       MUSCLE_MEMORY_COORDINATOR_DB_PATH: /var/lib/muscle-memory/coordinator/coordinator.sqlite3
       MUSCLE_MEMORY_TELEMETRY_SPOOL: /var/lib/muscle-memory/telemetry/laserdata-spool.sqlite3
       MUSCLE_MEMORY_FALKORDB_CACHE_PATH: /var/lib/muscle-memory/graph/falkordb-events.jsonl
       MM_ASSET_CACHE_DIR: /var/lib/muscle-memory/assets/cache
       MM_ASSET_APPROVAL_LEDGER_DIR: /var/lib/muscle-memory/assets/approvals
+      MM_TASK_POLICY_TRAINING_ROOT: /var/lib/muscle-memory/training
       LASERDATA_CONNECTION_STRING: ${LASERDATA_CONNECTION_STRING:-${IGGY_ROOT_USERNAME:-iggy}:${IGGY_ROOT_PASSWORD:?Generate the local backend environment first}@laserdata:8090}
       LASERDATA_STREAM: ${LASERDATA_STREAM:-muscle-memory}
       LASERDATA_TOPIC: ${LASERDATA_TOPIC:-episode-events-v2}
@@ -63,6 +64,7 @@ services:
       - telemetry-data:/var/lib/muscle-memory/telemetry
       - graph-cache:/var/lib/muscle-memory/graph
       - asset-cache:/var/lib/muscle-memory/assets
+      - training-data:/var/lib/muscle-memory/training
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     ports:
@@ -159,3 +161,4 @@ volumes:
   graph-cache:
   iggy-data:
   telemetry-data:
+  training-data:

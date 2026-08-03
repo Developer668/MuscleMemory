@@ -16,12 +16,14 @@ APPROVAL_WRITE_SCOPE = "approvals:write"
 WORKFLOW_WRITE_SCOPE = "workflows:write"
 CORRECTION_WRITE_SCOPE = "corrections:write"
 EPISODE_WRITE_SCOPE = "episodes:write"
+TRAINING_WRITE_SCOPE = "training:write"
 ALL_MUTATION_SCOPES = frozenset(
     {
         APPROVAL_WRITE_SCOPE,
         WORKFLOW_WRITE_SCOPE,
         CORRECTION_WRITE_SCOPE,
         EPISODE_WRITE_SCOPE,
+        TRAINING_WRITE_SCOPE,
     }
 )
 
@@ -148,6 +150,7 @@ __all__ = [
     "APPROVAL_WRITE_SCOPE",
     "CORRECTION_WRITE_SCOPE",
     "EPISODE_WRITE_SCOPE",
+    "TRAINING_WRITE_SCOPE",
     "WORKFLOW_WRITE_SCOPE",
     "HashedBearerCredential",
     "Sha256BearerAuthenticator",

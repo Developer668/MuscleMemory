@@ -466,8 +466,6 @@ export function RealisticHomeScene({
     let previousPathLength = -1;
     let previousCorrectionKey = "";
     const targetPosition = new THREE.Vector3(-4.9, 0.08, 3.82);
-    const desiredCamera = new THREE.Vector3();
-    const desiredCameraTarget = new THREE.Vector3();
     let targetYaw = 2.28;
     const clock = new THREE.Clock();
     let frame = 0;
@@ -538,19 +536,6 @@ export function RealisticHomeScene({
       if (payload) payload.rotation.z = handingOff ? Math.sin(elapsed * 2.2) * 0.017 : gait * 0.12;
       robot.position.y = 0.08 + (walking ? Math.abs(gait) * 0.045 : 0);
 
-      controls.enabled = !next.syntheticDemo || !next.running;
-      if (next.syntheticDemo && next.running) {
-        const followAngle = robot.rotation.y + Math.PI * 0.74 + Math.sin(elapsed * 0.34) * 0.2;
-        const followDistance = scanning ? 7.1 : 6.35;
-        desiredCamera.set(
-          robot.position.x + Math.sin(followAngle) * followDistance,
-          3.7 + Math.sin(elapsed * 0.57) * 0.24,
-          robot.position.z + Math.cos(followAngle) * followDistance,
-        );
-        desiredCameraTarget.set(robot.position.x, 1.13, robot.position.z);
-        camera.position.lerp(desiredCamera, 0.028);
-        controls.target.lerp(desiredCameraTarget, 0.06);
-      }
       destination.rotation.y += 0.003;
       beacon.intensity = 1.7 + Math.sin(elapsed * 2.3) * 0.45;
       rebuildLines();
@@ -598,7 +583,7 @@ export function RealisticHomeScene({
       <div className="ops-scene-vignette" aria-hidden="true" />
       <div className="ops-scene-caption">
         <span>{syntheticDemo ? "SYNTHETIC HOUSE LOOP" : "INTERACTIVE HOME VIEW"}</span>
-        <strong>{syntheticDemo && running ? "Auto camera following MM-01" : "Drag to orbit · Scroll to inspect"}</strong>
+        <strong>{syntheticDemo && running ? "Routine active · Drag to orbit · Right-drag to pan · Scroll to zoom" : "Drag to orbit · Right-drag to pan · Scroll to zoom"}</strong>
       </div>
     </div>
   );
