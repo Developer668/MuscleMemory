@@ -65,6 +65,7 @@ jobs:
 
   deploy:
     name: Deploy Daytona production
+    if: github.ref == 'refs/heads/main'
     needs: verify
     runs-on: ubuntu-latest
     environment:
