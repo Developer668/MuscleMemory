@@ -68,7 +68,7 @@ if payload.get("state") != "started":
 if payload.get("autoStopInterval") != 0:
     errors.append("auto-stop must be disabled")
 if payload.get("autoArchiveInterval") not in {-1, 43200}:
-    errors.append("auto-archive must be disabled or set to Daytona's 30-day maximum")
+    errors.append("auto-archive must be disabled or set to the Daytona 30-day maximum")
 if payload.get("autoDeleteInterval") != -1:
     errors.append("auto-delete must be disabled")
 if payload.get("public") is not True:
