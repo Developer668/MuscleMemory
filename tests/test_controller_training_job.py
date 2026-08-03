@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -55,6 +56,7 @@ from ops.controller.remote_job import (  # noqa: E402
 
 PATCH_PATH = REPOSITORY_ROOT / "ops" / "controller" / "mm01_g1_100hz.patch"
 MODAL_ENTRYPOINT = REPOSITORY_ROOT / "ops" / "controller" / "modal_train.py"
+LOCAL_ENTRYPOINT = REPOSITORY_ROOT / "ops" / "controller" / "local_train.py"
 REMOTE_JOB = REPOSITORY_ROOT / "ops" / "controller" / "remote_job.py"
 NATIVE_QUALIFIER = REPOSITORY_ROOT / "ops" / "controller" / "native_qualify.py"
 VENDORED_JOYSTICK = (
@@ -118,7 +120,7 @@ def test_modal_copy_path_matches_ops_import_namespace() -> None:
     remote_job = REMOTE_JOB.read_text(encoding="utf-8")
 
     assert 'REMOTE_CONTROLLER_OPS = "/opt/mm/ops/controller"' in entrypoint
-    assert 'PATCH_PATH = Path("/opt/mm/ops/controller/mm01_g1_100hz.patch")' in remote_job
+    assert '"/opt/mm/ops/controller/mm01_g1_100hz.patch"' in remote_job
     assert entrypoint.count('gpu="L4"') == 3
     assert entrypoint.count("artifacts.reload()") == 3
     assert "train.remote(selected_mode.value, seed, stable_run_id)" in entrypoint
@@ -132,6 +134,58 @@ def test_modal_copy_path_matches_ops_import_namespace() -> None:
         check=False,
     )
     assert import_audit.returncode == 0, import_audit.stderr
+
+
+def test_local_entrypoint_uses_explicit_backend_and_runtime_paths(tmp_path: Path) -> None:
+    source = LOCAL_ENTRYPOINT.read_text(encoding="utf-8")
+    assert 'execution_backend="local-macos-cpu"' in source
+    assert 'os.environ["MM_CONTROLLER_CHECKOUT"]' in source
+    remote_source = REMOTE_JOB.read_text(encoding="utf-8")
+    assert '"cgl" if execution_backend == "local-macos-cpu" else "egl"' in remote_source
+    contract = _new_contract(
+        "g1-100hz-full-seed-1-20260803T070102Z",
+        RunMode.FULL,
+        1,
+        SourceVerification(
+            playground_commit=PLAYGROUND_COMMIT,
+            playground_tag_commit=PLAYGROUND_COMMIT,
+            menagerie_commit="1b86ece576591213e2b666ebf59508454200ca97",
+            patch_sha256=PATCH_SHA256,
+            joystick_sha256=PATCHED_JOYSTICK_SHA256,
+            patched=True,
+        ),
+        "local-macos-cpu",
+    )
+    assert contract["execution_backend"] == "local-macos-cpu"
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "MM_CONTROLLER_CHECKOUT": str(tmp_path / "checkout"),
+            "MM_CONTROLLER_PATCH": str(tmp_path / "controller.patch"),
+            "MM_CONTROLLER_PYTHON": str(tmp_path / "python"),
+        }
+    )
+    audit = subprocess.run(
+        (
+            sys.executable,
+            "-S",
+            "-c",
+            "from ops.controller.remote_job import CHECKOUT_ROOT, PATCH_PATH, VENV_PYTHON; "
+            "print(CHECKOUT_ROOT, PATCH_PATH, VENV_PYTHON, sep='\\n')",
+        ),
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert audit.returncode == 0, audit.stderr
+    assert audit.stdout.splitlines() == [
+        str(tmp_path / "checkout"),
+        str(tmp_path / "controller.patch"),
+        str(tmp_path / "python"),
+    ]
 
 
 def test_patch_changes_only_rate_and_documented_phase_hold() -> None:

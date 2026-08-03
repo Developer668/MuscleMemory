@@ -87,6 +87,7 @@ def train(mode_value: str, seed: int, run_id: str) -> dict[str, object]:
         seed,
         Path("/artifacts") / run_id,
         run_id=run_id,
+        execution_backend="modal-l4",
     )
     artifacts.commit()
     return {"run_id": run_id, "manifest": manifest}

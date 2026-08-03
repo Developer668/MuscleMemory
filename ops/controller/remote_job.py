@@ -25,9 +25,13 @@ from ops.controller.contract import (
     write_artifact_manifest,
 )
 
-CHECKOUT_ROOT = Path("/opt/mujoco_playground")
-PATCH_PATH = Path("/opt/mm/ops/controller/mm01_g1_100hz.patch")
-VENV_PYTHON = CHECKOUT_ROOT / ".venv" / "bin" / "python"
+CHECKOUT_ROOT = Path(os.environ.get("MM_CONTROLLER_CHECKOUT", "/opt/mujoco_playground"))
+PATCH_PATH = Path(
+    os.environ.get("MM_CONTROLLER_PATCH", "/opt/mm/ops/controller/mm01_g1_100hz.patch")
+)
+VENV_PYTHON = Path(
+    os.environ.get("MM_CONTROLLER_PYTHON", CHECKOUT_ROOT / ".venv" / "bin" / "python")
+)
 RUN_ID_PATTERN = re.compile(
     r"g1-100hz-(?P<mode>smoke|full)-seed-(?P<seed>[0-9]+)-"
     r"(?P<timestamp>[0-9]{8}T[0-9]{6}Z)"
@@ -109,12 +113,14 @@ def _new_contract(
     mode: RunMode,
     seed: int,
     source: object,
+    execution_backend: str = "modal-l4",
 ) -> dict[str, Any]:
     return {
         "schema_version": 2,
         "run_id": run_id,
         "mode": mode.value,
         "seed": seed,
+        "execution_backend": execution_backend,
         "source": asdict(source),
         "training_plan": asdict(TRAINING_PLANS[mode]),
         "environment": {
@@ -147,10 +153,11 @@ def _load_or_create_contract(
     mode: RunMode,
     seed: int,
     source: object,
+    execution_backend: str,
 ) -> dict[str, Any]:
     contract_path = run_root / "training-contract.json"
     if not contract_path.exists():
-        contract = _new_contract(run_id, mode, seed, source)
+        contract = _new_contract(run_id, mode, seed, source, execution_backend)
         _atomic_write_json(contract_path, contract)
         return contract
 
@@ -162,6 +169,7 @@ def _load_or_create_contract(
         "run_id": run_id,
         "mode": mode.value,
         "seed": seed,
+        "execution_backend": execution_backend,
         "source": asdict(source),
         "training_plan": asdict(TRAINING_PLANS[mode]),
     }
@@ -276,6 +284,7 @@ def _execute_attempt(
     seed: int,
     run_root: Path,
     contract: dict[str, Any],
+    execution_backend: str,
 ) -> Path:
     attempts = contract["attempts"]
     assert isinstance(attempts, list)
@@ -298,6 +307,7 @@ def _execute_attempt(
         "restart_kind": "fresh_complete_plan",
         "optimizer_state_restored": False,
         "policy_warm_start_used": False,
+        "execution_backend": execution_backend,
     }
     attempts.append(attempt)
     contract["status"] = "running"
@@ -308,7 +318,7 @@ def _execute_attempt(
         {
             "JAX_DEFAULT_MATMUL_PRECISION": "highest",
             "PYTHONHASHSEED": str(seed),
-            "MUJOCO_GL": "egl",
+            "MUJOCO_GL": "cgl" if execution_backend == "local-macos-cpu" else "egl",
             "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
             "PYTHONUNBUFFERED": "1",
         }
@@ -365,6 +375,7 @@ def run_training(
     run_root: Path,
     *,
     run_id: str | None = None,
+    execution_backend: str = "modal-l4",
 ) -> dict[str, object]:
     """Run one complete pinned PPO attempt and persist an unqualified manifest."""
 
@@ -374,10 +385,23 @@ def run_training(
         raise ContractError("controller run directory and run ID differ")
     source = verify_source_checkout(CHECKOUT_ROOT, PATCH_PATH, patched=True)
     run_root.mkdir(parents=True, exist_ok=True)
-    contract = _load_or_create_contract(run_root, resolved_run_id, mode, seed, source)
+    contract = _load_or_create_contract(
+        run_root,
+        resolved_run_id,
+        mode,
+        seed,
+        source,
+        execution_backend,
+    )
     checkpoint_path = _recover_attempts(run_root, contract)
     if checkpoint_path is None:
-        checkpoint_path = _execute_attempt(mode, seed, run_root, contract)
+        checkpoint_path = _execute_attempt(
+            mode,
+            seed,
+            run_root,
+            contract,
+            execution_backend,
+        )
 
     _export_checkpoint(run_root, seed, checkpoint_path)
     contract["status"] = "exported_unqualified"
