@@ -15,6 +15,8 @@ type HomeSceneProps = {
   correction: CorrectionPoint[];
   correctionKind: "route" | "keep_out";
   running: boolean;
+  syntheticDemo?: boolean;
+  motionMode?: string | null;
 };
 
 const ROOM_WIDTH = 8;
@@ -304,7 +306,9 @@ export function makeRobot(): THREE.Group {
 
   robot.add(mesh(new THREE.CapsuleGeometry(0.22, 0.34, 8, 18), shell, [0, 1.17, 0]));
   robot.add(mesh(roundedBox(0.43, 0.56, 0.26, 0.1), shell, [0, 1.48, -0.13], [-Math.PI / 2, 0, 0]));
-  robot.add(mesh(new THREE.SphereGeometry(0.19, 28, 20), shell, [0, 1.89, 0]));
+  const head = mesh(new THREE.SphereGeometry(0.19, 28, 20), shell, [0, 1.89, 0]);
+  head.name = "robot-head";
+  robot.add(head);
   robot.add(mesh(new THREE.BoxGeometry(0.31, 0.1, 0.16), visor, [0, 1.91, 0.15], [-0.06, 0, 0]));
   for (const x of [-0.09, 0.09]) {
     robot.add(mesh(new THREE.SphereGeometry(0.025, 18, 12), material("#8fe5d0", 0.12, 0.2), [x, 1.92, 0.238]));
@@ -339,9 +343,18 @@ export function makeRobot(): THREE.Group {
   return robot;
 }
 
-function routeLine(points: CorrectionPoint[], color: string, dashed = false): THREE.Line | null {
+function routeLine(
+  points: CorrectionPoint[],
+  color: string,
+  dashed = false,
+  directCoordinates = false,
+): THREE.Line | null {
   if (points.length < 2) return null;
-  const curvePoints = points.map((point) => new THREE.Vector3(point.x_m - 4, 0.045, point.y_m - 3));
+  const curvePoints = points.map((point) => new THREE.Vector3(
+    directCoordinates ? point.x_m : point.x_m - 4,
+    0.045,
+    directCoordinates ? point.y_m : point.y_m - 3,
+  ));
   const geometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
   const surface = dashed
     ? new THREE.LineDashedMaterial({ color, linewidth: 2, dashSize: 0.17, gapSize: 0.1, transparent: true, opacity: 0.92 })
@@ -359,13 +372,15 @@ export function RealisticHomeScene({
   correction,
   correctionKind,
   running,
+  syntheticDemo = false,
+  motionMode = null,
 }: HomeSceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef({ robotPosition, robotYaw, path, correction, correctionKind, running });
+  const liveRef = useRef({ robotPosition, robotYaw, path, correction, correctionKind, running, syntheticDemo, motionMode });
 
   useEffect(() => {
-    liveRef.current = { robotPosition, robotYaw, path, correction, correctionKind, running };
-  }, [robotPosition, robotYaw, path, correction, correctionKind, running]);
+    liveRef.current = { robotPosition, robotYaw, path, correction, correctionKind, running, syntheticDemo, motionMode };
+  }, [robotPosition, robotYaw, path, correction, correctionKind, running, syntheticDemo, motionMode]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -451,6 +466,8 @@ export function RealisticHomeScene({
     let previousPathLength = -1;
     let previousCorrectionKey = "";
     const targetPosition = new THREE.Vector3(-4.9, 0.08, 3.82);
+    const desiredCamera = new THREE.Vector3();
+    const desiredCameraTarget = new THREE.Vector3();
     let targetYaw = 2.28;
     const clock = new THREE.Clock();
     let frame = 0;
@@ -463,7 +480,7 @@ export function RealisticHomeScene({
           actualLine.geometry.dispose();
           (actualLine.material as THREE.Material).dispose();
         }
-        actualLine = routeLine(next.path, "#49cab0");
+        actualLine = routeLine(next.path, "#49cab0", false, next.syntheticDemo);
         if (actualLine) scene.add(actualLine);
         previousPathLength = next.path.length;
       }
@@ -474,7 +491,7 @@ export function RealisticHomeScene({
           correctionLine.geometry.dispose();
           (correctionLine.material as THREE.Material).dispose();
         }
-        correctionLine = routeLine(next.correction, next.correctionKind === "keep_out" ? "#ef7763" : "#ffd36a", true);
+        correctionLine = routeLine(next.correction, next.correctionKind === "keep_out" ? "#ef7763" : "#ffd36a", true, next.syntheticDemo);
         if (correctionLine) scene.add(correctionLine);
         previousCorrectionKey = correctionKey;
       }
@@ -484,7 +501,11 @@ export function RealisticHomeScene({
       frame = window.requestAnimationFrame(render);
       const next = liveRef.current;
       if (next.robotPosition) {
-        targetPosition.set(next.robotPosition.x_m - 4, 0, next.robotPosition.y_m - 3);
+        targetPosition.set(
+          next.syntheticDemo ? next.robotPosition.x_m : next.robotPosition.x_m - 4,
+          0.08,
+          next.syntheticDemo ? next.robotPosition.y_m : next.robotPosition.y_m - 3,
+        );
       }
       if (next.robotYaw !== null) targetYaw = -next.robotYaw + Math.PI / 2;
       robot.position.lerp(targetPosition, 0.075);
@@ -495,16 +516,40 @@ export function RealisticHomeScene({
 
       const elapsed = clock.getElapsedTime();
       const walking = next.running && robot.position.distanceTo(targetPosition) > 0.025;
-      const gait = walking ? Math.sin(elapsed * 8.4) * 0.18 : 0;
+      const scanning = next.motionMode === "scan";
+      const yielding = next.motionMode === "yield";
+      const handingOff = next.motionMode === "handoff";
+      const gait = walking ? Math.sin(elapsed * (scanning ? 5.5 : 8.4)) * (yielding ? 0.11 : 0.18) : 0;
       const leftLeg = robot.getObjectByName("left-leg");
       const rightLeg = robot.getObjectByName("right-leg");
       const leftArm = robot.getObjectByName("left-arm");
       const rightArm = robot.getObjectByName("right-arm");
+      const head = robot.getObjectByName("robot-head");
+      const tray = robot.getObjectByName("delivery-tray");
+      const payload = robot.getObjectByName("delivery-payload");
       if (leftLeg && rightLeg && leftArm && rightArm) {
         leftLeg.rotation.x = gait;
         rightLeg.rotation.x = -gait;
-        leftArm.rotation.x = -gait * 0.42;
-        rightArm.rotation.x = gait * 0.42;
+        leftArm.rotation.x = handingOff ? -0.36 : -gait * 0.42;
+        rightArm.rotation.x = handingOff ? -0.22 : gait * 0.42;
+      }
+      if (head) head.rotation.y = scanning ? Math.sin(elapsed * 2.7) * 0.22 : 0;
+      if (tray) tray.rotation.z = handingOff ? Math.sin(elapsed * 2.2) * 0.025 : gait * 0.18;
+      if (payload) payload.rotation.z = handingOff ? Math.sin(elapsed * 2.2) * 0.017 : gait * 0.12;
+      robot.position.y = 0.08 + (walking ? Math.abs(gait) * 0.045 : 0);
+
+      controls.enabled = !next.syntheticDemo || !next.running;
+      if (next.syntheticDemo && next.running) {
+        const followAngle = robot.rotation.y + Math.PI * 0.74 + Math.sin(elapsed * 0.34) * 0.2;
+        const followDistance = scanning ? 7.1 : 6.35;
+        desiredCamera.set(
+          robot.position.x + Math.sin(followAngle) * followDistance,
+          3.7 + Math.sin(elapsed * 0.57) * 0.24,
+          robot.position.z + Math.cos(followAngle) * followDistance,
+        );
+        desiredCameraTarget.set(robot.position.x, 1.13, robot.position.z);
+        camera.position.lerp(desiredCamera, 0.028);
+        controls.target.lerp(desiredCameraTarget, 0.06);
       }
       destination.rotation.y += 0.003;
       beacon.intensity = 1.7 + Math.sin(elapsed * 2.3) * 0.45;
@@ -552,8 +597,8 @@ export function RealisticHomeScene({
     <div className="ops-home-scene" ref={hostRef}>
       <div className="ops-scene-vignette" aria-hidden="true" />
       <div className="ops-scene-caption">
-        <span>INTERACTIVE HOME VIEW</span>
-        <strong>Drag to orbit · Scroll to inspect</strong>
+        <span>{syntheticDemo ? "SYNTHETIC HOUSE LOOP" : "INTERACTIVE HOME VIEW"}</span>
+        <strong>{syntheticDemo && running ? "Auto camera following MM-01" : "Drag to orbit · Scroll to inspect"}</strong>
       </div>
     </div>
   );

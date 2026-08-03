@@ -23,6 +23,7 @@ import {
   Play,
   Radio,
   RefreshCw,
+  RotateCcw,
   Route,
   Search,
   Settings,
@@ -372,6 +373,7 @@ function RobotVideo({ record }: { record: TelemetryRecord | null }) {
   const battery = record
     ? numberValue(record.sensors.find((sensor) => sensor.category === "Battery and energy")?.values, ["battery_percent"])
     : null;
+  const routineLabel = record ? stringValue(record.payload, ["routine_label"]) : null;
   return (
     <div className="cc-pov-stack">
       <div className="cc-pov-tabs" role="tablist" aria-label="Robot POV products">
@@ -393,11 +395,12 @@ function RobotVideo({ record }: { record: TelemetryRecord | null }) {
           <div className="cc-video"><img src={url} alt={`MM-01 ${feed.replaceAll("_", " ")} feed`} /><span>Joined by frame_id</span></div>
         ) : feed === "derived_depth" ? (
           <DepthView record={record} />
-        ) : record?.payload.routine_mode === "local_synthetic" ? (
+        ) : record?.payload.routine_mode === "synthetic_demo_loop" ? (
           <div className="cc-telemetry-readout">
-            <small>Local synthetic telemetry</small>
+            <small>Synthetic browser telemetry</small>
             <strong>{action === null ? "0.00" : action.toFixed(2)} <span>m/s command</span></strong>
             <div><span>Frame</span><b>{shortId(record.frame_id, 15)}</b></div>
+            <div><span>Move</span><b>{routineLabel ?? "House circuit"}</b></div>
             <div><span>Battery</span><b>{battery === null ? "--" : `${battery.toFixed(1)}%`}</b></div>
           </div>
         ) : (
@@ -444,7 +447,7 @@ function OperationsView({ data }: { data: OperatorData }) {
   const [manualCommand, setManualCommand] = useState<ManualCommand>("hold");
   const latest = data.latestRecord;
   const path = useMemo(
-    () => data.records.map(extractPosition).filter((point): point is CorrectionPoint => point !== null),
+    () => data.records.slice(-280).map(extractPosition).filter((point): point is CorrectionPoint => point !== null),
     [data.records],
   );
   const running = Boolean(
@@ -459,6 +462,10 @@ function OperationsView({ data }: { data: OperatorData }) {
   const clearance = numberValue(latest?.payload, ["current_obstacle_clearance_m", "obstacle_clearance_m"]);
   const tilt = numberValue(latest?.payload, ["tray_tilt_degrees", "current_tray_tilt_degrees"]);
   const currentStep = currentPipelineIndex(latest);
+  const isSyntheticDemo = data.isSyntheticDemo || latest?.payload.routine_mode === "synthetic_demo_loop";
+  const routineLabel = stringValue(latest?.payload, ["routine_label"]);
+  const loopCycle = numberValue(latest?.payload, ["loop_cycle"]);
+  const routineMove = stringValue(latest?.payload, ["routine_move"]);
 
   return (
     <div className="cc-operations">
@@ -466,7 +473,12 @@ function OperationsView({ data }: { data: OperatorData }) {
         <header className="cc-world-panel__header">
           <div><Route size={15} /><strong>World</strong><span>Third-person view</span></div>
           <div className="cc-world-actions">
-            <span><i className={`cc-dot cc-dot--${running ? "live" : "unconfigured"}`} />{running ? "Routine active" : data.isLocalRoutine ? "Local simulator" : "Visual staging"}</span>
+            <span><i className={`cc-dot cc-dot--${running ? "live" : "unconfigured"}`} />{isSyntheticDemo ? (running ? `Demo loop · ${routineLabel ?? "active"}` : "Demo loop paused") : running ? "Routine active" : data.isLocalRoutine ? "Local simulator" : "Visual staging"}</span>
+            <button
+              type="button"
+              className="cc-demo-loop"
+              onClick={data.startDemoLoop}
+            ><RotateCcw size={13} /> {isSyntheticDemo && running ? "Restart demo" : "Run demo loop"}</button>
             <button
               type="button"
               className="cc-start-routine"
@@ -483,6 +495,8 @@ function OperationsView({ data }: { data: OperatorData }) {
             correction={[]}
             correctionKind="route"
             running={running}
+            syntheticDemo={isSyntheticDemo}
+            motionMode={routineMove}
           />
           {thirdPersonVideo && (
             <figure className="cc-direct-evidence">
@@ -490,13 +504,13 @@ function OperationsView({ data }: { data: OperatorData }) {
               <figcaption><Radio size={11} /> Direct frame · {shortId(latest?.frame_id, 10)}</figcaption>
             </figure>
           )}
-          <DirectionPad
+          {!isSyntheticDemo && <DirectionPad
             enabled={intervention}
             command={manualCommand}
             canEnable={canPreviewIntent}
             onCommand={setManualCommand}
             onToggle={() => { setIntervention(!intervention); setManualCommand("hold"); }}
-          />
+          />}
         </div>
       </section>
 
@@ -528,7 +542,7 @@ function OperationsView({ data }: { data: OperatorData }) {
             <div><span>Promotion</span><strong>{policyGate ? "Approval required" : data.eligibility ? (data.eligibility.numerically_eligible ? "Eligible · gated" : "Blocked") : "No paired evidence"}</strong></div>
           </div>
         </Panel>
-        <Panel title="Active workflow" icon={<Workflow size={14} />} meta={currentStep >= 0 ? "Active" : "No run"}>
+        <Panel title="Active workflow" icon={<Workflow size={14} />} meta={isSyntheticDemo ? `Synthetic · cycle ${loopCycle ?? 1}` : currentStep >= 0 ? "Active" : "No run"}>
           <div className="cc-mini-pipeline">
             {PIPELINE_STEPS.slice(0, 4).map((step, index) => (
               <div key={step.label} className={index === currentStep ? "is-active" : index < currentStep ? "is-complete" : ""}>
