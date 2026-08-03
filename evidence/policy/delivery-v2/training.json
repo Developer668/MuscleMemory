@@ -91,7 +91,7 @@
   ],
   "training_loss": 0.006772509776055813,
   "policy_id": "delivery-v2-sensor-fusion",
-  "policy_sha256": "8c76fa6dc91f0cab615cb21798132775b47f405c22923dfe80b2e5c509ff68db",
+  "policy_sha256": "19a750f91a4b910b728f02f2364d4cd99fa2a658fe4f03f05138d203491bbc78",
   "dataset_sha256": "d3c7aa08ae467f0bf17eca13c116037ab2049e0da7d1ff95b2deb489252e20ef",
   "training_episode_count": 51,
   "validation_episode_count": 13,

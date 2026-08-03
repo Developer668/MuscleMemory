@@ -694,6 +694,8 @@ def create_app(
 
         @app.get("/", include_in_schema=False)
         @app.get("/about", include_in_schema=False)
+        @app.get("/console", include_in_schema=False)
+        @app.get("/app", include_in_schema=False)
         async def frontend() -> FileResponse:
             return FileResponse(index_file, headers={"Cache-Control": "no-cache"})
 

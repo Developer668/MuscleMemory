@@ -1,7 +1,8 @@
 # Muscle Memory frontend
 
-This directory is the single browser product surface for Muscle Memory. The root route is the live
-operator workspace; the product overview remains available at `/about`. The production Vite build
+This directory is the single browser product surface for Muscle Memory. The root route is the
+product overview, and its primary action opens the live operator workspace at `/console`.
+`/about` remains a compatibility alias for the overview. The production Vite build
 is served by the FastAPI process, so the cloud deployment has one origin for HTTP, WebSocket, and UI
 traffic.
 

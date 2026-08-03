@@ -126,6 +126,8 @@ def test_daytona_deploy_enforces_cloud_runtime_shape_and_provider_gate() -> None
     assert "ops.deployment.daytona_process" in deploy
     assert "nohup" not in deploy
     assert "ops.sponsors.verify_laserdata" in deploy
+    assert "npm ci --no-audit --no-fund" in deploy
+    assert "npm run build" in deploy
     for provider in ("LaserData", "FalkorDB", "guild.ai", "rocketride.ai"):
         assert f"--require-provider {provider}" in deploy
 
@@ -137,6 +139,15 @@ def test_daytona_process_supervisor_guards_against_pid_reuse() -> None:
     assert 'payload["start_ticks"]' in supervisor
     assert "start_new_session=True" in supervisor
     assert '"MM_DAYTONA_SKIP_PREPARE": "1"' in supervisor
+
+
+def test_daytona_runner_requires_built_operator_console() -> None:
+    runner = (REPOSITORY_ROOT / "ops/deployment/daytona_run.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'frontend/dist/index.html' in runner
+    assert 'production frontend build is missing' in runner
 
 
 def test_compose_resolves_hardened_persistent_local_stack() -> None:

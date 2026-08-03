@@ -524,6 +524,29 @@ def test_policy_actions_require_numeric_gate_and_separate_human_approval(
     rollback_plan = execution_plan("run-policy-rollback", PolicyAction.ROLL_BACK)
     store.register_workflow(rollback_plan, created_at=NOW + timedelta(seconds=4))
     rollback_evidence_hash = register_workflow_evidence(store, rollback_plan)
+    rollback_evaluation = rollback_plan.commands[
+        FIXED_PIPELINE.index(PipelineStep.EVALUATE_CANDIDATE_POLICY)
+    ].payload
+    rollback_baseline_id = str(rollback_evaluation["baseline_policy_id"])
+    failed_candidate_id = str(rollback_evaluation["candidate_policy_id"])
+    with pytest.raises(
+        CoordinatorIntegrityError,
+        match="identities do not match trusted evaluation evidence",
+    ):
+        store.record_numeric_policy_decision(
+            NumericPolicyDecision(
+                decision_id="decision-policy-rollback-to-failed-candidate",
+                run_id=rollback_plan.run_id,
+                plan_digest=rollback_plan.digest,
+                action=PolicyAction.ROLL_BACK,
+                alias="stable",
+                from_policy_id=candidate.policy_id,
+                target_policy_id=failed_candidate_id,
+                evaluation_evidence_hash=rollback_evidence_hash,
+                metrics=rollback_metrics(),
+                decided_at=NOW + timedelta(seconds=5),
+            )
+        )
     rollback = NumericPolicyDecision(
         decision_id="decision-policy-rollback",
         run_id=rollback_plan.run_id,
@@ -531,7 +554,7 @@ def test_policy_actions_require_numeric_gate_and_separate_human_approval(
         action=PolicyAction.ROLL_BACK,
         alias="stable",
         from_policy_id=candidate.policy_id,
-        target_policy_id=baseline.policy_id,
+        target_policy_id=rollback_baseline_id,
         evaluation_evidence_hash=rollback_evidence_hash,
         metrics=rollback_metrics(),
         decided_at=NOW + timedelta(seconds=5),
@@ -553,7 +576,7 @@ def test_policy_actions_require_numeric_gate_and_separate_human_approval(
         rollback_requirement.requirement_id,
         occurred_at=NOW + timedelta(seconds=7),
     )
-    assert store.current_policy("stable") == baseline.policy_id
+    assert store.current_policy("stable") == rollback_baseline_id
     assert [event.action for event in store.policy_alias_history("stable")] == [
         "initialize",
         "promote",
@@ -562,7 +585,7 @@ def test_policy_actions_require_numeric_gate_and_separate_human_approval(
     store.close()
 
     with CoordinatorStore(path) as reopened:
-        assert reopened.current_policy("stable") == baseline.policy_id
+        assert reopened.current_policy("stable") == rollback_baseline_id
         connection = sqlite3.connect(path)
         try:
             with pytest.raises(sqlite3.IntegrityError, match="immutable"):

@@ -30,6 +30,10 @@ export MM_ASSET_APPROVAL_LEDGER_DIR=${MM_ASSET_APPROVAL_LEDGER_DIR:-$DATA_DIR/as
 export UV_NO_PROGRESS=1
 
 cd "$ROOT_DIR"
+if [ ! -f "$ROOT_DIR/frontend/dist/index.html" ]; then
+  printf '%s\n' "production frontend build is missing: $ROOT_DIR/frontend/dist/index.html" >&2
+  exit 1
+fi
 if [ "${MM_DAYTONA_SKIP_PREPARE:-0}" != "1" ]; then
   uv sync --frozen --no-dev
   uv run --frozen --no-sync mm-verify-robot

@@ -256,12 +256,12 @@ class BehaviorClonedPolicy:
             return TaskCommand(0.0, 0.0, 1.0)
 
         outputs = self.normalized_outputs(observation)
-        depths_m = np.asarray(observation.values[:48], dtype=np.float32) * 8.0
+        depths_m = np.asarray(observation.values[:48], dtype=np.float64) * 8.0
         sector_angles = np.linspace(
             STEREO_HORIZONTAL_HALF_FOV_RAD,
             -STEREO_HORIZONTAL_HALF_FOV_RAD,
             depths_m.size,
-            dtype=np.float32,
+            dtype=np.float64,
         )
         risk = np.clip(
             (self._avoidance_distance_m - depths_m)
@@ -270,35 +270,23 @@ class BehaviorClonedPolicy:
             1.0,
         ) ** self._avoidance_exponent
         total_risk = float(np.sum(risk))
-        repulsion = (
-            float(np.sum(risk * -sector_angles) / total_risk)
-            if total_risk > 0.05
-            else 0.0
-        )
+        repulsion = float(np.sum(risk * -sector_angles) / max(total_risk, 0.05))
         front_depth = float(np.percentile(depths_m[17:31], 20.0))
         avoidance_active = (
             distance > self._avoidance_docking_suppression_m
             and abs(repulsion) >= self._avoidance_activation
         )
-        direct_turn = max(
-            -POLICY_MAXIMUM_TURNING_RATE_RAD_S,
-            min(
-                POLICY_MAXIMUM_TURNING_RATE_RAD_S,
-                1.4 * observation.destination_bearing_rad,
-            ),
-        )
+        direct_turn = 1.4 * observation.destination_bearing_rad
         learned_turn = float(outputs[1] * POLICY_MAXIMUM_TURNING_RATE_RAD_S)
+        turning_delta = 0.0
+        if avoidance_active:
+            turning_delta = self._avoidance_gain * repulsion
+            turning_delta += self._learned_turn_blend * (learned_turn - direct_turn)
         turning = max(
             -POLICY_MAXIMUM_TURNING_RATE_RAD_S,
             min(
                 POLICY_MAXIMUM_TURNING_RATE_RAD_S,
-                direct_turn
-                + (self._avoidance_gain * repulsion if avoidance_active else 0.0)
-                + (
-                    self._learned_turn_blend * (learned_turn - direct_turn)
-                    if avoidance_active
-                    else 0.0
-                ),
+                direct_turn + turning_delta,
             ),
         )
         target_heading = turning / 1.4

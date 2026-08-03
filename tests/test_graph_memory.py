@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 from pydantic import ValidationError
@@ -105,6 +106,26 @@ class FreshFalkorGraph(FakeFalkorGraph):
             self.calls.append(("read", query, params, timeout))
             raise RuntimeError("fresh graph key is absent")
         return super().ro_query(query, params, timeout)
+
+
+class BlockingFalkorGraph(FakeFalkorGraph):
+    def __init__(self) -> None:
+        super().__init__()
+        self.write_started = Event()
+        self.release_write = Event()
+        self._blocked = False
+
+    def query(
+        self,
+        query: str,
+        params: dict[str, object] | None = None,
+        timeout: int | None = None,
+    ) -> FakeQueryResult:
+        if not self._blocked:
+            self._blocked = True
+            self.write_started.set()
+            assert self.release_write.wait(timeout=5)
+        return super().query(query, params, timeout)
 
 
 def make_world(suffix: str, split: WorldSplit = WorldSplit.TRAINING) -> WorldMemoryRecord:
@@ -579,6 +600,51 @@ def test_outage_restart_replays_cache_before_remote_curriculum_reads(
     remote_result = recovered.query_curriculum(CurriculumQuery())
     assert remote_result.storage is GraphStorage.FALKORDB
     assert remote_result.lessons[0].source_episode_ids == ("episode-11", "episode-22")
+
+
+def test_reconciliation_cursor_does_not_skip_concurrent_cache_append(
+    tmp_path: Path,
+) -> None:
+    settings = FalkorDBSettings.model_validate(
+        {
+            "url": "redis://provider.example.test:6379",
+            "cache_path": tmp_path / "concurrent-events.jsonl",
+        }
+    )
+    cache = AppendOnlyGraphCache(settings.cache_path)
+    cache.record_world(make_world("11"))
+    graph = BlockingFalkorGraph()
+    service = ResilientGraphMemory(
+        settings=settings,
+        cache=cache,
+        remote=FalkorGraphMemory(
+            graph,
+            graph_name=settings.graph_name,
+            query_timeout_ms=500,
+        ),
+    )
+    errors: list[BaseException] = []
+
+    def synchronize() -> None:
+        try:
+            service.synchronize_local_cache()
+        except BaseException as exc:  # pragma: no cover - diagnostic propagation
+            errors.append(exc)
+
+    worker = Thread(target=synchronize)
+    worker.start()
+    assert graph.write_started.wait(timeout=5)
+    cache.record_world(make_world("22"))
+    graph.release_write.set()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert errors == []
+
+    health = service.health()
+    writes = [call for call in graph.calls if call[0] == "write"]
+    assert health.provider_state is ProviderState.HEALTHY
+    assert "2 cached facts are reconciled" in health.detail
+    assert len(writes) == 3
 
 
 def test_fresh_falkor_graph_health_initializes_then_verifies_read_only() -> None:

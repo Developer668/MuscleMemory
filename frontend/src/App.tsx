@@ -4,11 +4,11 @@ import { LandingPage } from "./pages/LandingPage";
 import { OperatorConsole } from "./pages/OperatorConsole";
 
 export default function App() {
-  const about = window.location.pathname === "/about";
+  const operator = ["/console", "/app"].includes(window.location.pathname);
   useEffect(() => {
-    document.title = about
-      ? "Muscle Memory | One robot. Many worlds."
-      : "MM-01 Operations | Muscle Memory";
-  }, [about]);
-  return about ? <LandingPage /> : <OperatorConsole />;
+    document.title = operator
+      ? "MM-01 Operations | Muscle Memory"
+      : "Muscle Memory | One robot. Many worlds.";
+  }, [operator]);
+  return operator ? <OperatorConsole /> : <LandingPage />;
 }

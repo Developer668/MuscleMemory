@@ -283,7 +283,7 @@ function TopBar({ data }: { data: ReturnType<typeof useOperatorData> }) {
   const episode = data.detail?.episode;
   return (
     <header className="ops-topbar">
-      <a className="ops-brand" href="/" aria-label="Muscle Memory operator console">
+      <a className="ops-brand" href="/" aria-label="Muscle Memory product overview">
         <BrandMark />
         <span>
           <strong>Muscle Memory</strong>
@@ -327,7 +327,7 @@ function TopBar({ data }: { data: ReturnType<typeof useOperatorData> }) {
         >
           <RefreshCw size={16} />
         </button>
-        <a className="ops-text-link" href="/about">About</a>
+        <a className="ops-text-link" href="/">Overview</a>
       </div>
       <ProviderStrip providers={data.providers} />
     </header>

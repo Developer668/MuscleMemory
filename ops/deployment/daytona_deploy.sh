@@ -71,6 +71,10 @@ RESOLVED_REVISION=$(daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" rev-pars
 daytona exec "$SANDBOX" -- git -C "$REPOSITORY_DIR" checkout --detach "$RESOLVED_REVISION"
 
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 900 -- uv sync --frozen --no-dev
+daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR/frontend" --timeout 300 -- \
+  npm ci --no-audit --no-fund
+daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR/frontend" --timeout 300 -- \
+  npm run build
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 120 -- \
   uv run --frozen --no-sync mm-verify-robot
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 60 -- \

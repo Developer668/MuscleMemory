@@ -172,7 +172,7 @@ function makeChair(color: string): THREE.Group {
   return chair;
 }
 
-function buildApartment(): THREE.Group {
+export function buildApartment(): THREE.Group {
   const home = new THREE.Group();
   home.name = "visual-home";
 
@@ -283,7 +283,7 @@ function buildApartment(): THREE.Group {
   return home;
 }
 
-function makeRobot(): THREE.Group {
+export function makeRobot(): THREE.Group {
   const robot = new THREE.Group();
   robot.name = "mm-01-visual-body";
   const shell = material("#e7e9e5", 0.34, 0.28);

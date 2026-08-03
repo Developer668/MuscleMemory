@@ -39,9 +39,9 @@ a deploy-script argument. The accepted names are listed in `.env.example` and
 
 The deploy command requires an explicit full commit SHA. It refuses a stopped sandbox, a
 non-public preview, enabled auto-stop, or a missing `/data` volume. It clones or updates the
-repository, runs a frozen production sync, verifies the permanent robot bundle, restarts the
-API, obtains a one-hour signed preview URL, and exercises `/api/v1/health` through Daytona's
-public proxy.
+repository, runs a frozen Python production sync, installs the locked frontend dependencies,
+builds `frontend/dist`, verifies the permanent robot bundle, restarts the API, obtains a
+one-hour signed preview URL, and exercises `/api/v1/health` through Daytona's public proxy.
 
 ```bash
 ./ops/deployment/daytona_deploy.sh <commit-sha>

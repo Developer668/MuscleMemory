@@ -72,7 +72,7 @@ export function LandingPage() {
           <a href="#memory">Memory</a>
           <a href="#proof">Proof</a>
         </nav>
-        <a className="header-action" href="/">
+        <a className="header-action" href="/console">
           Open console
           <ChevronRight size={16} strokeWidth={1.8} />
         </a>
@@ -277,8 +277,8 @@ export function LandingPage() {
         <Reveal className="closing__content">
           <span className="closing__icon"><Sparkles size={21} strokeWidth={1.5} /></span>
           <h2 id="closing-title">A lifetime of experience, before the first delivery.</h2>
-          <a className="button button--light" href="#top">
-            Return to MM-01
+          <a className="button button--light" href="/console">
+            Open operator console
             <ArrowRight size={18} strokeWidth={1.8} />
           </a>
         </Reveal>

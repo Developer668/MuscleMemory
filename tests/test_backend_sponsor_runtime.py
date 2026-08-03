@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from muscle_memory.api import Sha256BearerAuthenticator, create_app
+from muscle_memory.backend.rocketride_callback import MAX_CALLBACK_BODY_BYTES
 from muscle_memory.coordinator.models import ProviderEvidenceReference
 from muscle_memory.orchestration.contracts import (
     FIXED_PIPELINE,
@@ -249,6 +251,29 @@ def test_callback_rejects_out_of_order_step(tmp_path: Path) -> None:
 
     assert response.status_code == 409
     assert response.json()["error"] == "sequence_violation"
+
+
+def test_callback_stops_chunked_body_before_unbounded_accumulation(tmp_path: Path) -> None:
+    backend = build_api_backend(_environment(tmp_path))
+    app = create_app(backend=backend, authenticator=Sha256BearerAuthenticator(()))
+
+    def chunks() -> Iterator[bytes]:
+        chunk = b"x" * 8192
+        for _ in range(MAX_CALLBACK_BODY_BYTES // len(chunk) + 2):
+            yield chunk
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/webhook/muscle-memory-fixed-step",
+            headers={
+                "Authorization": f"Bearer {CALLBACK_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            content=chunks(),
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {"error": "body_too_large"}
 
 
 @pytest.mark.parametrize(

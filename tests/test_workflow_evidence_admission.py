@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from muscle_memory.api import (
@@ -37,7 +39,6 @@ from muscle_memory.orchestration import (
 )
 from muscle_memory.robot.identity import verify_mm01_bundle
 from muscle_memory.runtime import build_api_backend
-from muscle_memory.simulation.world_scene import assemble_episode_scene
 from muscle_memory.telemetry import (
     EpisodeTelemetryRecord,
     SensorSnapshot,
@@ -94,15 +95,17 @@ def _heldout_result(
     robot_checksum: str,
 ) -> PolicyEpisodeResult:
     heldout = load_heldout_worlds()[index]
-    scene = assemble_episode_scene(heldout)
+    world_hash = hashlib.sha256(
+        heldout.world.model_dump_json().encode("utf-8")
+    ).hexdigest()
     success = index < success_count
     collision = int(not success and index < success_count + collision_failures)
     return PolicyEpisodeResult(
         episode_id=f"heldout-{policy_id}-{index:02d}",
-        world_id=scene.world.world_id,
-        world_seed=scene.world.seed,
+        world_id=heldout.world.world_id,
+        world_seed=heldout.world.seed,
         world_split="held_out",
-        world_hash=scene.world_hash,
+        world_hash=world_hash,
         robot_checksum=robot_checksum,
         policy_id=policy_id,
         policy_hash=policy_hash,
@@ -128,7 +131,12 @@ def _heldout_result(
     )
 
 
-def _plan(world_id: str) -> ExecutionPlan:
+def _plan(
+    world_id: str,
+    *,
+    episode_id: str = "episode-2",
+    run_id: str = "fresh-review-1",
+) -> ExecutionPlan:
     commands = (
         PipelineCommand.create(
             PipelineStep.VALIDATE_WORLD,
@@ -136,19 +144,19 @@ def _plan(world_id: str) -> ExecutionPlan:
         ),
         PipelineCommand.create(
             PipelineStep.RUN_EPISODE,
-            {"episode_id": "episode-2", "world_id": world_id},
+            {"episode_id": episode_id, "world_id": world_id},
         ),
         PipelineCommand.create(
             PipelineStep.SUMMARIZE_TELEMETRY,
-            {"episode_id": "episode-2"},
+            {"episode_id": episode_id},
         ),
         PipelineCommand.create(
             PipelineStep.QUERY_GRAPH_MEMORY,
-            {"episode_id": "episode-2"},
+            {"episode_id": episode_id},
         ),
         PipelineCommand.create(
             PipelineStep.SELECT_CURRICULUM,
-            {"curriculum_change_requested": False, "episode_id": "episode-2"},
+            {"curriculum_change_requested": False, "episode_id": episode_id},
         ),
         PipelineCommand.create(
             PipelineStep.TRAIN_CANDIDATE_POLICY,
@@ -168,7 +176,7 @@ def _plan(world_id: str) -> ExecutionPlan:
         ),
     )
     assert tuple(command.step for command in commands) == FIXED_PIPELINE
-    return ExecutionPlan.create("fresh-review-1", commands)
+    return ExecutionPlan.create(run_id, commands)
 
 
 def _identity(
@@ -177,6 +185,8 @@ def _identity(
     robot_checksum: str,
     world_id: str,
     world_hash: str,
+    policy_id: str = "baseline-1",
+    policy_hash: str = BASELINE_HASH,
 ) -> EpisodeIdentity:
     return EpisodeIdentity(
         episode_id=episode_id,
@@ -184,8 +194,8 @@ def _identity(
         world_id=world_id,
         world_hash=world_hash,
         world_split=WorldSplit.TRAINING,
-        policy_id="baseline-1",
-        policy_hash=BASELINE_HASH,
+        policy_id=policy_id,
+        policy_hash=policy_hash,
         opened_at=NOW,
     )
 
@@ -245,64 +255,131 @@ def test_fresh_http_review_registers_only_reproduced_provider_evidence(
 ) -> None:
     backend = build_api_backend(_environment(tmp_path))
     robot_checksum = verify_mm01_bundle().robot_checksum
+    baseline_results = tuple(
+        _heldout_result(
+            index=index,
+            policy_id="baseline-1",
+            policy_hash=BASELINE_HASH,
+            success_count=13,
+            collision_failures=3,
+            robot_checksum=robot_checksum,
+        )
+        for index in range(20)
+    )
+    candidate_results = tuple(
+        _heldout_result(
+            index=index,
+            policy_id="candidate-1",
+            policy_hash=CANDIDATE_HASH,
+            success_count=18,
+            collision_failures=1,
+            robot_checksum=robot_checksum,
+        )
+        for index in range(20)
+    )
+    decision = evaluate_promotion(baseline_results, candidate_results)
+    assert decision.promotable is True
+    artifact_json = canonical_json(
+        {
+            "schema_version": 1,
+            "heldout_bundle_sha256": "9" * 64,
+            "candidate_checkpoint_sha256": CANDIDATE_HASH,
+            "baseline_results": [asdict(item) for item in baseline_results],
+            "candidate_results": [asdict(item) for item in candidate_results],
+            "promotion_decision": asdict(decision),
+        }
+    )
+    artifact_hash = sha256_text(artifact_json)
+    backend.coordinator.record_held_out_evaluation_artifact(
+        HeldOutEvaluationArtifact(
+            artifact_hash=artifact_hash,
+            held_out_world_set_id="heldout-v1",
+            artifact_json=artifact_json,
+            evaluated_at=NOW,
+        )
+    )
     baseline = _checkpoint(
         "baseline-1",
         BASELINE_HASH,
-        BASELINE_EVALUATION_HASH,
+        artifact_hash,
         success_rate=0.65,
-        collision_rate=0.125,
+        collision_rate=0.15,
     )
     candidate = _checkpoint(
         "candidate-1",
         CANDIDATE_HASH,
-        CANDIDATE_EVALUATION_HASH,
+        artifact_hash,
         success_rate=0.9,
         collision_rate=0.05,
     )
     backend.coordinator.register_evaluated_checkpoint(baseline)
     backend.coordinator.register_evaluated_checkpoint(candidate)
-    for index, heldout in enumerate(load_heldout_worlds()):
-        for label, checkpoint, successes in (
-            ("baseline", baseline, 13),
-            ("candidate", candidate, 18),
-        ):
-            episode_id = f"heldout-{label}-{index:02d}"
-            backend.coordinator.register_held_out_evaluation_episode(
-                HeldOutEvaluationEpisodeMetadata(
-                    episode_id=episode_id,
-                    robot_checksum=robot_checksum,
-                    world_hash=heldout.certificate.world_sha256,
-                    policy_hash=checkpoint.checkpoint_hash,
-                    held_out_world_set_id="heldout-v1",
-                    created_at=NOW,
-                )
+    for result in (*baseline_results, *candidate_results):
+        episode_id = result.episode_id
+        backend.coordinator.register_held_out_evaluation_episode(
+            HeldOutEvaluationEpisodeMetadata(
+                episode_id=episode_id,
+                robot_checksum=robot_checksum,
+                world_hash=result.world_hash,
+                policy_hash=result.policy_hash,
+                held_out_world_set_id="heldout-v1",
+                created_at=NOW,
             )
-            backend.coordinator.transition_episode(
-                episode_id,
-                EpisodeState.RUNNING,
-                occurred_at=NOW,
+        )
+        backend.coordinator.transition_episode(
+            episode_id,
+            EpisodeState.RUNNING,
+            occurred_at=NOW,
+        )
+        backend.coordinator.transition_episode(
+            episode_id,
+            EpisodeState.SUCCEEDED if result.success else EpisodeState.FAILED,
+            occurred_at=NOW,
+        )
+        backend.coordinator.record_held_out_evaluation_result(
+            HeldOutEvaluationResult(
+                episode_id=episode_id,
+                evaluation_artifact_hash=artifact_hash,
+                result_json=canonical_json(asdict(result)),
             )
-            backend.coordinator.transition_episode(
-                episode_id,
-                EpisodeState.SUCCEEDED if index < successes else EpisodeState.FAILED,
-                occurred_at=NOW,
-            )
+        )
 
     derived = derive_training_world_artifacts(42, recorded_at=NOW)
 
     async def close_sources() -> None:
-        for episode_id in ("episode-1", "episode-2"):
+        for episode_id, policy_id, policy_hash in (
+            ("episode-1", "baseline-1", BASELINE_HASH),
+            ("episode-2", "baseline-1", BASELINE_HASH),
+            ("episode-wrong-policy", "candidate-1", CANDIDATE_HASH),
+        ):
             identity = _identity(
                 episode_id,
                 robot_checksum=robot_checksum,
                 world_id=derived.world.world_id,
                 world_hash=derived.world.world_hash,
+                policy_id=policy_id,
+                policy_hash=policy_hash,
             )
             await backend.episode_runtime.open_episode(identity)
             await backend.episode_runtime.append_telemetry(_telemetry(identity))
             await backend.episode_runtime.close_episode(_result(identity), closed_at=NOW)
 
     asyncio.run(close_sources())
+    mismatched_source_plan = _plan(
+        derived.world.world_id,
+        episode_id="episode-wrong-policy",
+        run_id="mismatched-source-review",
+    )
+    with pytest.raises(
+        ValueError,
+        match="source closure does not exactly match the evaluation baseline",
+    ):
+        backend.evidence_admitter.reproduce(
+            mismatched_source_plan,
+            world_evidence_id="world.evidence.mismatch.1",
+            failure_curriculum_evidence_id="curriculum.evidence.mismatch.1",
+            evaluation_evidence_id="evaluation.evidence.mismatch.1",
+        )
     plan = _plan(derived.world.world_id)
     bundle = backend.evidence_admitter.reproduce(
         plan,

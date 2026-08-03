@@ -28,7 +28,6 @@ from muscle_memory.paths import HELDOUT_WORLDS_BUNDLE, REPOSITORY_ROOT
 from muscle_memory.policy.baseline import DirectGoalPolicy
 from muscle_memory.policy.network import BehaviorClonedPolicy
 from muscle_memory.robot.identity import verify_mm01_bundle
-from muscle_memory.simulation.world_scene import assemble_episode_scene
 
 MAX_EVALUATION_ARTIFACT_BYTES = 16 * 1024 * 1024
 HELD_OUT_WORLD_SET_ID = "heldout-v1"
@@ -275,12 +274,14 @@ def _validate_frozen_pairs(
     for index, (world, baseline_result, candidate_result) in enumerate(
         zip(worlds, baseline, candidate, strict=True)
     ):
-        scene = assemble_episode_scene(world)
+        world_hash = hashlib.sha256(
+            world.world.model_dump_json().encode("utf-8")
+        ).hexdigest()
         expected = (
             world.world.world_id,
             world.world.seed,
-            scene.world_hash,
-            scene.robot_checksum,
+            world_hash,
+            verification.robot_checksum,
             "held_out",
         )
         baseline_identity = (
