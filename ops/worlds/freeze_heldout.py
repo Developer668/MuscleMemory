@@ -32,9 +32,13 @@ from muscle_memory.robot.identity import verify_mm01_bundle
 from muscle_memory.simulation.metrics import EpisodeMetricsTracker
 from muscle_memory.simulation.runtime import HeadlessG1Simulation
 from muscle_memory.simulation.world_scene import assemble_episode_scene
-from muscle_memory.training.expert import ExpertNavigator, ExpertPath, plan_expert_path
+from muscle_memory.training.expert import (
+    ExpertNavigator,
+    ExpertPath,
+    direct_route_requires_avoidance,
+    plan_expert_path,
+)
 from muscle_memory.worlds.generation import generate_training_world
-from muscle_memory.worlds.generation._geometry import object_aabb
 from muscle_memory.worlds.models import HeldOutWorld, TrainingWorld, Vec2
 from muscle_memory.worlds.rules import DEFAULT_RULES_PATH, load_world_rules
 
@@ -78,23 +82,6 @@ def _yaw(data: object) -> float:
     body = data.body("pelvis")  # type: ignore[attr-defined]
     rotation = np.asarray(body.xmat, dtype=np.float64).reshape(3, 3)
     return math.atan2(float(rotation[1, 0]), float(rotation[0, 0]))
-
-
-def _direct_route_requires_avoidance(world: TrainingWorld) -> bool:
-    rules = load_world_rules()
-    inflation = float(rules.robot_radius_m + rules.minimum_clearance_m)
-    blocked = tuple(object_aabb(obstacle).inflated(inflation) for obstacle in world.objects)
-    distance = math.dist((world.start.x, world.start.y), (world.destination.x, world.destination.y))
-    sample_count = max(2, math.ceil(distance / 0.025))
-    for index in range(1, sample_count):
-        amount = index / sample_count
-        point = Vec2(
-            x=world.start.x + amount * (world.destination.x - world.start.x),
-            y=world.start.y + amount * (world.destination.y - world.start.y),
-        )
-        if any(bounds.contains(point) for bounds in blocked):
-            return True
-    return False
 
 
 def _physical_qualification(
@@ -192,7 +179,7 @@ def build_heldout_bundle() -> HeldOutWorldBundle:
         if (
             expert_path is not None
             and expert_path.length_m <= MAXIMUM_EXPERT_PATH_LENGTH_M
-            and _direct_route_requires_avoidance(validated_training.world)
+            and direct_route_requires_avoidance(validated_training.world, rules)
         ):
             heldout = _heldout_world(validated_training.world)
             physical = _physical_qualification(heldout, expert_path)

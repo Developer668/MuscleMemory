@@ -90,6 +90,30 @@ def _segment_is_clear(
     return True
 
 
+def direct_route_requires_avoidance(
+    world: TrainingWorld,
+    rules: WorldRules | None = None,
+) -> bool:
+    """Return whether the minimum-clearance robot footprint blocks a direct route."""
+    active_rules = rules or load_world_rules()
+    inflation = float(active_rules.robot_radius_m + active_rules.minimum_clearance_m)
+    blocked = tuple(object_aabb(obstacle).inflated(inflation) for obstacle in world.objects)
+    distance = math.dist(
+        (world.start.x, world.start.y),
+        (world.destination.x, world.destination.y),
+    )
+    sample_count = max(2, math.ceil(distance / 0.025))
+    for index in range(1, sample_count):
+        amount = index / sample_count
+        point = Vec2(
+            x=world.start.x + amount * (world.destination.x - world.start.x),
+            y=world.start.y + amount * (world.destination.y - world.start.y),
+        )
+        if _inside_any(point, blocked):
+            return True
+    return False
+
+
 def _simplify_path(
     points: tuple[Vec2, ...],
     *,

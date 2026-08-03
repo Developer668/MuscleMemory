@@ -21,3 +21,11 @@ MM01_QUALIFICATION_EVIDENCE = (
 MM01_QUALIFICATION_TRIALS = MM01_CONTROLLER_EVIDENCE_ROOT / "qualification-trials.json"
 MM01_TRAINING_CONTRACT = MM01_CONTROLLER_EVIDENCE_ROOT / "training-contract.json"
 HELDOUT_WORLDS_BUNDLE = REPOSITORY_ROOT / "config" / "worlds" / "heldout-v1.json"
+EXPERT_DATASET_V1 = REPOSITORY_ROOT / "artifacts" / "policy" / "expert-v1.npz"
+EXPERT_DATASET_V1_METADATA = (
+    REPOSITORY_ROOT / "artifacts" / "policy" / "expert-v1.metadata.json"
+)
+POLICY_V1_CHECKPOINT = REPOSITORY_ROOT / "models" / "policy" / "delivery-v1.npz"
+POLICY_V1_TRAINING_EVIDENCE = (
+    REPOSITORY_ROOT / "evidence" / "policy" / "delivery-v1" / "training.json"
+)
