@@ -43,11 +43,15 @@ jobs:
           uv run ruff check .
           uv run mypy src
 
+      - name: Install headless OpenGL runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libgl1-mesa-dri libglx-mesa0 xvfb
+
       - name: Run Python tests
         env:
-          MUJOCO_GL: egl
-          PYOPENGL_PLATFORM: egl
-        run: uv run pytest
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: xvfb-run --auto-servernum uv run pytest
 
       - name: Install Node.js
         uses: actions/setup-node@v5
