@@ -44,6 +44,9 @@ jobs:
           uv run mypy src
 
       - name: Run Python tests
+        env:
+          MUJOCO_GL: egl
+          PYOPENGL_PLATFORM: egl
         run: uv run pytest
 
       - name: Install Node.js
