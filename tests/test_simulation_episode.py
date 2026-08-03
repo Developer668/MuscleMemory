@@ -74,7 +74,7 @@ def test_episode_import_cannot_reach_training_generator_or_teacher() -> None:
 
 
 def test_raw_world_cannot_bypass_validation_envelope(validated_world) -> None:  # type: ignore[no-untyped-def]
-    with pytest.raises(TypeError, match="validated training-world envelope"):
+    with pytest.raises(TypeError, match="validated world envelope"):
         assemble_episode_scene(validated_world.world)  # type: ignore[arg-type]
 
 

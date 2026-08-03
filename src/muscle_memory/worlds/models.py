@@ -93,14 +93,31 @@ class WorldTemplate(FrozenModel):
         return self
 
 
-class TrainingWorld(FrozenModel):
-    """A generated training candidate that has not necessarily passed its gate."""
+class WorldDefinition(FrozenModel):
+    """Shared physical world fields without granting access to either data split."""
 
-    world_id: str = Field(min_length=1, pattern=r"^train-v[0-9]+-[0-9a-f]{16}$")
-    split: Literal["training"] = "training"
+    world_id: str = Field(min_length=1)
+    split: str = Field(min_length=1)
     seed: int = Field(ge=0, le=(2**63) - 1)
     generation_version: int = Field(ge=1)
     template: WorldTemplate
     start: Vec2
     destination: Vec2
     objects: tuple[WorldObject, ...]
+
+
+class TrainingWorld(WorldDefinition):
+    """A generated training candidate that has not necessarily passed its gate."""
+
+    world_id: str = Field(min_length=1, pattern=r"^train-v[0-9]+-[0-9a-f]{16}$")
+    split: Literal["training"] = "training"
+
+
+class HeldOutWorld(WorldDefinition):
+    """A frozen evaluation world that training interfaces must reject."""
+
+    world_id: str = Field(min_length=1, pattern=r"^heldout-v[0-9]+-[0-9a-f]{16}$")
+    split: Literal["held_out"] = "held_out"
+
+
+EpisodeWorld = TrainingWorld | HeldOutWorld

@@ -14,7 +14,13 @@ import numpy.typing as npt
 
 from muscle_memory.paths import G1_SCENE_XML
 from muscle_memory.robot.identity import verify_candidate_bundle, verify_mm01_bundle
-from muscle_memory.worlds.models import ColliderKind, TrainingWorld, WorldObject
+from muscle_memory.worlds.models import (
+    ColliderKind,
+    EpisodeWorld,
+    HeldOutWorld,
+    TrainingWorld,
+    WorldObject,
+)
 
 ASSEMBLY_SCHEMA_VERSION = 1
 TRAY_BODY_NAME = "mm01_payload_tray"
@@ -39,9 +45,10 @@ _ROBOT_COLLISION_GEOMS = (
 
 
 class ValidatedWorldEnvelope(Protocol):
-    """Narrow runtime boundary supplied by the training-world validation gate."""
+    """Narrow runtime boundary supplied by a split-specific validation gate."""
 
-    world: TrainingWorld
+    @property
+    def world(self) -> EpisodeWorld: ...
 
 
 class WorldAssemblyError(RuntimeError):
@@ -53,7 +60,7 @@ class EpisodeScene:
     """A compiled episode model plus deterministic initialization metadata."""
 
     model: mujoco.MjModel
-    world: TrainingWorld
+    world: EpisodeWorld
     robot_checksum: str
     world_hash: str
     assembly_hash: str
@@ -435,8 +442,8 @@ def assemble_payload_qualification_scene() -> PayloadQualificationScene:
 def assemble_episode_scene(envelope: ValidatedWorldEnvelope) -> EpisodeScene:
     """Compile a validated training world around the frozen qualified MM-01 bytes."""
     world = getattr(envelope, "world", None)
-    if not isinstance(world, TrainingWorld):
-        raise TypeError("episode assembly requires a validated training-world envelope")
+    if not isinstance(world, TrainingWorld | HeldOutWorld):
+        raise TypeError("episode assembly requires a validated world envelope")
 
     verification_before = verify_mm01_bundle()
     spec = mujoco.MjSpec.from_file(G1_SCENE_XML.as_posix())

@@ -113,6 +113,8 @@ def validate_training_world(
     rules: WorldRules | None = None,
 ) -> ValidatedTrainingWorld:
     """Validate every mandatory invariant and return a gate-marked world."""
+    if not isinstance(world, TrainingWorld):
+        raise TypeError("training validation accepts only TrainingWorld records")
     active_rules = rules or load_world_rules()
     issues: list[ValidationIssue] = []
 

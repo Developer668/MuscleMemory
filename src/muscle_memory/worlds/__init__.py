@@ -7,6 +7,7 @@ so evaluation code can depend on these schemas without acquiring an expert plann
 from muscle_memory.worlds.models import (
     ColliderKind,
     Dimensions3D,
+    HeldOutWorld,
     ObjectCategory,
     PhysicalProperties,
     PrimitiveCollider,
@@ -19,6 +20,7 @@ from muscle_memory.worlds.models import (
 __all__ = [
     "ColliderKind",
     "Dimensions3D",
+    "HeldOutWorld",
     "ObjectCategory",
     "PhysicalProperties",
     "PrimitiveCollider",
