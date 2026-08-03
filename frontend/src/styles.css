@@ -3918,6 +3918,133 @@ img {
 .mm-proof-strip > a { align-items: flex-start; gap: 9px; background: var(--mm-coral); font-size: 12px; font-weight: 800; transition: background 180ms ease; }
 .mm-proof-strip > a:hover { background: var(--mm-mint); }
 
+.mm-problem,
+.mm-engine {
+  position: relative;
+  z-index: 4;
+  color: var(--mm-ink);
+}
+
+.mm-problem {
+  padding: clamp(92px, 12vw, 180px) clamp(24px, 6vw, 96px);
+  background: var(--mm-paper);
+}
+
+.mm-section-label {
+  margin: 0 0 56px;
+  color: #657067;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.mm-problem__lead {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.55fr);
+  align-items: end;
+  gap: clamp(48px, 10vw, 160px);
+}
+
+.mm-problem__lead h2,
+.mm-engine__intro h2 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: clamp(64px, 9vw, 148px);
+  font-weight: 500;
+  line-height: 0.82;
+}
+
+.mm-problem__lead > p,
+.mm-engine__intro > p:last-child {
+  margin: 0;
+  color: #4f5a52;
+  font-size: clamp(16px, 1.4vw, 20px);
+  line-height: 1.65;
+}
+
+.mm-contrast {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: clamp(24px, 5vw, 80px);
+  margin-top: clamp(88px, 11vw, 160px);
+  padding-top: 32px;
+  border-top: 1px solid rgba(16, 21, 17, 0.24);
+}
+
+.mm-contrast > svg { color: #7b867c; }
+.mm-contrast div { display: grid; gap: 20px; }
+
+.mm-contrast span,
+.mm-engine__steps > li > span {
+  color: #687269;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.mm-contrast strong {
+  max-width: 520px;
+  font-family: "Newsreader", serif;
+  font-size: clamp(30px, 3.2vw, 52px);
+  font-weight: 500;
+  line-height: 0.98;
+}
+
+.mm-contrast p {
+  max-width: 480px;
+  margin: 0;
+  color: #5d675f;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.mm-engine {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.8fr) minmax(480px, 1.2fr);
+  gap: clamp(72px, 11vw, 180px);
+  padding: clamp(96px, 12vw, 180px) clamp(24px, 6vw, 96px);
+  background: #d8ded4;
+}
+
+.mm-engine__intro {
+  position: sticky;
+  top: 120px;
+  align-self: start;
+}
+
+.mm-engine__intro .mm-section-label { margin-bottom: 44px; }
+.mm-engine__intro h2 { font-size: clamp(58px, 7vw, 106px); }
+.mm-engine__intro > p:last-child { max-width: 520px; margin-top: 40px; }
+.mm-engine__steps { margin: 0; padding: 0; list-style: none; }
+
+.mm-engine__steps li {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  min-height: 230px;
+  gap: 24px;
+  padding: 36px 0;
+  border-top: 1px solid rgba(16, 21, 17, 0.25);
+}
+
+.mm-engine__steps li:last-child { border-bottom: 1px solid rgba(16, 21, 17, 0.25); }
+
+.mm-engine__steps h3 {
+  margin: 0;
+  font-family: "Newsreader", serif;
+  font-size: clamp(36px, 4vw, 62px);
+  font-weight: 500;
+  line-height: 0.95;
+}
+
+.mm-engine__steps p {
+  max-width: 500px;
+  margin: 24px 0 0;
+  color: #5a655d;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
 .mm-room-poster {
   position: relative;
   display: grid;
@@ -4005,6 +4132,10 @@ img {
   .mm-story-rail { display: none; }
   .mm-proof-strip { grid-template-columns: 1.4fr repeat(3, 0.65fr); }
   .mm-proof-strip > a { grid-column: 1 / -1; min-height: 80px; flex-direction: row; align-items: center; }
+  .mm-problem__lead,
+  .mm-engine { grid-template-columns: 1fr; }
+  .mm-problem__lead > p { max-width: 640px; }
+  .mm-engine__intro { position: static; }
 }
 
 @media (max-width: 700px) {
@@ -4044,6 +4175,15 @@ img {
   .mm-proof-strip__lead { grid-column: 1 / -1; }
   .mm-proof-number:nth-of-type(3) { grid-column: 1 / -1; }
   .mm-proof-strip > * { min-height: 150px; border-bottom: 1px solid rgba(12, 17, 16, 0.25); }
+  .mm-problem,
+  .mm-engine { padding-right: 20px; padding-left: 20px; }
+  .mm-section-label { margin-bottom: 36px; }
+  .mm-problem__lead { gap: 36px; }
+  .mm-problem__lead h2 { font-size: clamp(58px, 18vw, 88px); }
+  .mm-contrast { grid-template-columns: 1fr; margin-top: 72px; }
+  .mm-contrast > svg { transform: rotate(90deg); }
+  .mm-engine { gap: 72px; }
+  .mm-engine__steps li { grid-template-columns: 40px 1fr; min-height: 190px; gap: 14px; }
   .mm-room-poster { min-height: 700px; }
   .mm-room-poster::after { background: linear-gradient(0deg, rgba(8, 13, 12, 0.88), transparent 76%); }
   .mm-room-poster__caption { align-self: end; justify-self: stretch; width: 100%; padding: 0 24px 50px; }

@@ -355,6 +355,47 @@ export function LandingPage() {
         <a href="/console"><CircleGauge size={18} /> Inspect evidence <ArrowRight size={17} /></a>
       </section>
 
+      <section className="mm-problem" aria-labelledby="physical-data-title">
+        <p className="mm-section-label">Why Muscle Memory exists</p>
+        <div className="mm-problem__lead">
+          <h2 id="physical-data-title">AI has a<br />physical-data problem.</h2>
+          <p>
+            Agents can plan in words, but embodied policies learn from forces, surfaces,
+            geometry, timing, and failure. Muscle Memory keeps that evidence connected
+            across every validated run.
+          </p>
+        </div>
+        <div className="mm-contrast" aria-label="From language descriptions to physical evidence">
+          <div>
+            <span>Agents receive</span>
+            <strong>“Take this to the living room.”</strong>
+            <p>A clear instruction, without the physical detail required to execute it safely.</p>
+          </div>
+          <ArrowRight aria-hidden="true" />
+          <div>
+            <span>Policies need</span>
+            <strong>Clearance. Contact. Friction. Recovery.</strong>
+            <p>Grounded, synchronized evidence that training and evaluation can inspect.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="mm-engine" aria-labelledby="engine-title">
+        <div className="mm-engine__intro">
+          <p className="mm-section-label">One evidence loop</p>
+          <h2 id="engine-title">From task to training data.</h2>
+          <p>
+            The robot stays fixed while worlds, experience, and evaluated task policies evolve.
+          </p>
+        </div>
+        <ol className="mm-engine__steps">
+          <li><span>01</span><div><h3>Validate the world</h3><p>Seeded environments must pass connectivity, clearance, collider, and physical-bound checks before use.</p></div></li>
+          <li><span>02</span><div><h3>Run the fixed robot</h3><p>The frozen walking controller handles locomotion while the task policy chooses speed, turn, or stop.</p></div></li>
+          <li><span>03</span><div><h3>Capture physical evidence</h3><p>Frames, telemetry, actions, contacts, outcomes, and failures join into one immutable episode.</p></div></li>
+          <li><span>04</span><div><h3>Train, evaluate, decide</h3><p>A new candidate faces frozen held-out worlds, then promotion remains behind a human gate.</p></div></li>
+        </ol>
+      </section>
+
       <section className="mm-room-poster" aria-label="MM-01 two-story home simulation">
         <img
           className="mm-room-poster__image"
