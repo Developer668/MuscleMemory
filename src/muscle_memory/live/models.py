@@ -292,6 +292,10 @@ class LiveEpisodeConfig:
             raise ValueError("live episodes must last between 0.05 and 30 seconds")
         if self.render_width < 64 or self.render_height < 48:
             raise ValueError("live render dimensions must be at least 64 by 48")
+        if self.render_width > 1280 or self.render_height > 720:
+            raise ValueError("live render dimensions must not exceed 1280 by 720")
+        if self.render_width * self.render_height > 921_600:
+            raise ValueError("live render area must not exceed 921600 pixels")
         if not 1 <= self.jpeg_quality <= 100:
             raise ValueError("jpeg_quality must be within [1, 100]")
         if not math.isfinite(self.degraded_lag_seconds) or self.degraded_lag_seconds <= 0:

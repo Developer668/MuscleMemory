@@ -16,6 +16,7 @@ from muscle_memory.episodes.models import (
     CorrectionKind,
     CorrectionPoint,
     CorrectionSubmission,
+    EpisodeAbort,
     EpisodeAppendReceipt,
     EpisodeClosure,
     EpisodeIdentity,
@@ -122,6 +123,7 @@ class _EpisodeSession:
     state: EpisodeLifecycleState
     receipts: list[EpisodeAppendReceipt]
     closure: EpisodeClosure | None = None
+    abort: EpisodeAbort | None = None
 
 
 class EpisodeService:
@@ -173,6 +175,11 @@ class EpisodeService:
                         "episode journal delivery receipts are not a contiguous prefix"
                     )
             closure = self._journal.closure_for(identity.episode_id)
+            abort = self._journal.abort_for(identity.episode_id)
+            if closure is not None and abort is not None:
+                raise EpisodeServiceError(
+                    "episode journal cannot contain both closure and abort facts"
+                )
             if closure is not None:
                 if closure.identity != identity:
                     raise EpisodeIdentityError(
@@ -183,6 +190,8 @@ class EpisodeService:
                         "a journaled episode closure requires durable telemetry"
                     )
                 state = EpisodeLifecycleState.CLOSED
+            elif abort is not None:
+                state = EpisodeLifecycleState.ABORTED
             else:
                 state = EpisodeLifecycleState.OPEN
             self._sessions[identity.episode_id] = _EpisodeSession(
@@ -190,6 +199,7 @@ class EpisodeService:
                 state=state,
                 receipts=receipts,
                 closure=closure,
+                abort=abort,
             )
             self._reconcile_unjournaled_receipts(
                 self._sessions[identity.episode_id],
@@ -244,6 +254,31 @@ class EpisodeService:
 
     def closure_for(self, episode_id: str) -> EpisodeClosure | None:
         return self._session(episode_id).closure
+
+    def abort_for(self, episode_id: str) -> EpisodeAbort | None:
+        return self._session(episode_id).abort
+
+    async def abort_episode(
+        self,
+        episode_id: str,
+        *,
+        error_type: str,
+        aborted_at: datetime | None = None,
+    ) -> EpisodeAbort:
+        """Durably terminate an open episode that has no measured closure."""
+
+        async with self._lock:
+            session = self._session(episode_id)
+            self._require_open(session)
+            abort = EpisodeAbort(
+                episode_id=episode_id,
+                error_type=error_type,
+                aborted_at=aborted_at or datetime.now(UTC),
+            )
+            self._journal.record_abort(abort)
+            session.state = EpisodeLifecycleState.ABORTED
+            session.abort = abort
+            return abort
 
     async def reconcile_provider_state(self) -> None:
         """Reconcile durable provider evidence after provider startup or recovery."""
@@ -569,6 +604,8 @@ class EpisodeService:
     def _require_open(session: _EpisodeSession) -> None:
         if session.state is EpisodeLifecycleState.CLOSED:
             raise EpisodeClosedError(f"episode {session.identity.episode_id!r} is already closed")
+        if session.state is EpisodeLifecycleState.ABORTED:
+            raise EpisodeClosedError(f"episode {session.identity.episode_id!r} was aborted")
 
     @staticmethod
     def _validate_append(

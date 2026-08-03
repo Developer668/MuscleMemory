@@ -164,6 +164,17 @@ def repository_revision(repository: Path) -> str:
     revision = result.stdout.strip().lower()
     if result.returncode != 0 or _REVISION.fullmatch(revision) is None:
         raise DaytonaStateError("repository does not resolve to a full commit SHA")
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=repository,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if status.returncode != 0:
+        raise DaytonaStateError("repository cleanliness could not be verified")
+    if status.stdout.strip():
+        raise DaytonaStateError("repository is dirty; refusing snapshot provenance")
     return revision
 
 
@@ -326,6 +337,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR)
     parser.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
     parser.add_argument("--mutable-path", action="append", default=[], type=Path)
+    parser.add_argument("--repository", type=Path, default=Path.cwd())
     parser.add_argument("--revision")
     return parser
 
@@ -349,10 +361,13 @@ def main() -> int:
         return 0
     if args.revision is None:
         raise SystemExit("export requires --revision")
+    revision = repository_revision(args.repository.expanduser().resolve())
+    if args.revision.lower() != revision:
+        raise SystemExit("export revision does not match the clean repository checkout")
     exported = export_snapshot(
         state_dir,
         snapshot_dir,
-        revision=args.revision.lower(),
+        revision=revision,
     )
     print("no mutable state to export" if exported is None else f"exported snapshot {exported}")
     return 0

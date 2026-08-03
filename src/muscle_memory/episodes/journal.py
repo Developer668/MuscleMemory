@@ -7,6 +7,7 @@ from typing import Protocol
 from muscle_memory.episodes.models import (
     CorrectionApproval,
     CorrectionSubmission,
+    EpisodeAbort,
     EpisodeAppendReceipt,
     EpisodeClosure,
     EpisodeIdentity,
@@ -23,6 +24,8 @@ class EpisodeJournal(Protocol):
 
     def closure_for(self, episode_id: str) -> EpisodeClosure | None: ...
 
+    def abort_for(self, episode_id: str) -> EpisodeAbort | None: ...
+
     def corrections(self) -> tuple[CorrectionSubmission, ...]: ...
 
     def approvals(self) -> tuple[CorrectionApproval, ...]: ...
@@ -34,6 +37,8 @@ class EpisodeJournal(Protocol):
     def record_receipt_delivery(self, receipt: EpisodeAppendReceipt) -> None: ...
 
     def record_closure(self, closure: EpisodeClosure) -> None: ...
+
+    def record_abort(self, abort: EpisodeAbort) -> None: ...
 
     def record_graph_delivery(
         self,
@@ -62,6 +67,10 @@ class VolatileEpisodeJournal:
         del episode_id
         return None
 
+    def abort_for(self, episode_id: str) -> EpisodeAbort | None:
+        del episode_id
+        return None
+
     def corrections(self) -> tuple[CorrectionSubmission, ...]:
         return ()
 
@@ -79,6 +88,9 @@ class VolatileEpisodeJournal:
 
     def record_closure(self, closure: EpisodeClosure) -> None:
         del closure
+
+    def record_abort(self, abort: EpisodeAbort) -> None:
+        del abort
 
     def record_graph_delivery(
         self,

@@ -15,6 +15,7 @@ from muscle_memory.api import (
     create_app,
 )
 from muscle_memory.api.adapters import redact_provider_detail
+from muscle_memory.api.app import MAX_REQUEST_BODY_BYTES
 from muscle_memory.api.contracts import AuthenticatedPrincipal, LiveEventPublisher
 from muscle_memory.api.models import (
     ApprovalDecisionView,
@@ -48,6 +49,7 @@ from muscle_memory.api.models import (
     WorkflowRun,
     utc_now,
 )
+from muscle_memory.api.streaming import LiveSubscriberLimitError
 
 HASH_A = "a" * 64
 HASH_B = "b" * 64
@@ -392,6 +394,25 @@ def test_mutations_fail_closed_and_authenticated_identity_is_not_body_controlled
     assert backend.last_principal.subject == "human-operator"
 
 
+def test_request_body_limit_runs_before_model_parsing_and_authentication() -> None:
+    backend = FakeBackend()
+
+    def oversized_chunks():
+        chunk = b"x" * 8192
+        for _ in range(MAX_REQUEST_BODY_BYTES // len(chunk) + 2):
+            yield chunk
+
+    with _client(backend) as client:
+        response = client.post(
+            "/api/v1/workflows/review",
+            headers={"Content-Type": "application/json"},
+            content=oversized_chunks(),
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {"error": "body_too_large"}
+
+
 def test_unconfigured_authentication_rejects_every_mutation() -> None:
     backend = FakeBackend()
     app = create_app(
@@ -494,6 +515,25 @@ def test_live_hub_is_bounded_and_reports_dropped_stale_messages() -> None:
     assert sequence == 2
     assert dropped == 1
     assert kind is LiveMessageKind.TELEMETRY
+
+
+def test_live_hub_enforces_global_and_per_episode_subscriber_limits() -> None:
+    async def exercise() -> None:
+        hub = LiveTelemetryHub(
+            maximum_subscribers=2,
+            maximum_subscribers_per_episode=1,
+        )
+        async with hub.subscribe("episode-1"):
+            with pytest.raises(LiveSubscriberLimitError, match="capacity"):
+                async with hub.subscribe("episode-1"):
+                    pass
+            async with hub.subscribe("episode-2"):
+                with pytest.raises(LiveSubscriberLimitError, match="capacity"):
+                    async with hub.subscribe("episode-3"):
+                        pass
+        await hub.close()
+
+    asyncio.run(exercise())
 
 
 def test_live_hub_bridges_worker_thread_events_to_the_api_loop() -> None:

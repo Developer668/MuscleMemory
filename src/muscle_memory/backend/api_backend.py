@@ -6,7 +6,7 @@ import json
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from muscle_memory.api.adapters import (
     asset_provider_view,
@@ -115,6 +115,50 @@ def _canonical_adapter_json[T](adapter: TypeAdapter[T], value: T) -> str:
     return canonical_json(adapter.dump_python(value, mode="json"))
 
 
+def _restore_review(payload: str) -> ReviewedExecution:
+    try:
+        return _REVIEW_ADAPTER.validate_json(payload)
+    except ValidationError:
+        raw = cast(dict[str, object], json.loads(payload))
+        guild_reviews = raw.get("guild_reviews")
+        if not isinstance(guild_reviews, dict):
+            raise
+        provider_status = guild_reviews.get("provider_status")
+        reviews = guild_reviews.get("reviews")
+        session_ids = (
+            [
+                review.get("provider_session_id")
+                for review in reviews
+                if isinstance(review, dict)
+            ]
+            if isinstance(reviews, list)
+            else []
+        )
+        invalid_session_identity = (
+            len(session_ids) != len(reviews) if isinstance(reviews, list) else True
+        ) or any(not isinstance(session_id, str) or not session_id for session_id in session_ids)
+        if not invalid_session_identity:
+            invalid_session_identity = len(set(session_ids)) != len(session_ids)
+        if (
+            not isinstance(provider_status, dict)
+            or not isinstance(reviews, list)
+            or provider_status.get("mode") != "live"
+            or provider_status.get("health")
+            not in {"healthy", "end_to_end_verified"}
+            or not invalid_session_identity
+        ):
+            raise
+        detail = str(provider_status.get("detail", "")).strip()
+        provider_status["health"] = "degraded"
+        provider_status["detail"] = (
+            f"{detail}; " if detail else ""
+        ) + (
+            "legacy durable review predates retained distinct Guild provider session ids; "
+            "execution is quarantined"
+        )
+        return _REVIEW_ADAPTER.validate_python(raw)
+
+
 class MuscleMemoryApiBackend:
     """Composition-facing API with no robot-control or path-teacher dependency."""
 
@@ -150,7 +194,7 @@ class MuscleMemoryApiBackend:
 
     def _restore_workflows(self) -> None:
         for payload in self.coordinator.workflow_reviews():
-            reviewed = _REVIEW_ADAPTER.validate_json(payload)
+            reviewed = _restore_review(payload)
             plan = self.coordinator.workflow_plan(reviewed.plan.run_id)
             if plan != reviewed.plan:
                 raise RuntimeError("durable Guild review is detached from its execution plan")
@@ -202,10 +246,12 @@ class MuscleMemoryApiBackend:
     async def shutdown(self) -> None:
         if self._closed:
             return
-        await self.providers.laserdata.close()
-        self.coordinator.close()
-        self._closed = True
-        self._started = False
+        try:
+            await self.providers.laserdata.close()
+        finally:
+            self.coordinator.close()
+            self._closed = True
+            self._started = False
 
     async def health(self) -> ServiceHealth:
         provider_health = self.providers.registry.health()
@@ -1035,7 +1081,11 @@ class MuscleMemoryApiBackend:
         if identity is None:
             raise EpisodeNotFoundError(episode_id)
         closure = self.episode_runtime.service.closure_for(episode_id)
-        if closure is None:
+        lifecycle_state = self.episode_runtime.service.episode_state(episode_id)
+        abort = self.episode_runtime.service.abort_for(episode_id)
+        if lifecycle_state is EpisodeLifecycleState.ABORTED:
+            state = EpisodeState.ABORTED
+        elif closure is None:
             state = EpisodeState.RUNNING
         else:
             state = EpisodeState.SUCCEEDED if closure.result.success else EpisodeState.FAILED
@@ -1049,7 +1099,11 @@ class MuscleMemoryApiBackend:
             policy_id=identity.policy_id,
             policy_hash=identity.policy_hash,
             opened_at=identity.opened_at,
-            closed_at=None if closure is None else closure.closed_at,
+            closed_at=(
+                closure.closed_at
+                if closure is not None
+                else None if abort is None else abort.aborted_at
+            ),
         )
 
     def _page_records(self, episode_id: str, after_sequence: int | None, limit: int):  # type: ignore[no-untyped-def]

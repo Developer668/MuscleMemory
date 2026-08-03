@@ -426,6 +426,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
                     "telemetry_digest": closure.telemetry_digest,
                     "graph_provider_complete": closure.graph.provider_complete,
                     "last_frame_id": terminal.get("last_frame_id"),
+                    "simulation_time_seconds": terminal.get("simulation_time_seconds"),
+                    "wall_elapsed_seconds": terminal.get("wall_elapsed_seconds"),
                     "video_frames": terminal.get("video_frames"),
                 }
             )

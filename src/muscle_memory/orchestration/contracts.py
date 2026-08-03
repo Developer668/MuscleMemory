@@ -342,11 +342,16 @@ class GuildReviewSet:
             self.provider_status.mode is ProviderMode.LIVE
             and self.provider_status.health
             in {HealthState.HEALTHY, HealthState.END_TO_END_VERIFIED}
-            and any(review.provider_session_id is None for review in self.reviews)
         ):
-            raise ContractViolationError(
-                "healthy live Guild reviews require retained provider session ids"
-            )
+            session_ids = tuple(review.provider_session_id for review in self.reviews)
+            if any(session_id is None for session_id in session_ids):
+                raise ContractViolationError(
+                    "healthy live Guild reviews require retained provider session ids"
+                )
+            if len(set(session_ids)) != len(session_ids):
+                raise ContractViolationError(
+                    "healthy live Guild reviews require distinct provider session ids"
+                )
 
     @property
     def blocked(self) -> bool:
@@ -354,6 +359,19 @@ class GuildReviewSet:
 
     @property
     def executable(self) -> bool:
-        return all(
-            review.recommendation is ReviewRecommendation.PROCEED for review in self.reviews
+        provider_authorized = (
+            self.provider_status.mode is ProviderMode.LIVE
+            and self.provider_status.health
+            in {HealthState.HEALTHY, HealthState.END_TO_END_VERIFIED}
+        ) or (
+            self.provider_status.mode is ProviderMode.SIMULATION
+            and self.provider_status.health is HealthState.HEALTHY
+        ) or (
+            self.provider_status.mode is ProviderMode.CACHED
+            and self.provider_status.health is HealthState.DEGRADED
+            and self.fallback is not None
+        )
+        return provider_authorized and all(
+            review.recommendation is ReviewRecommendation.PROCEED
+            for review in self.reviews
         )

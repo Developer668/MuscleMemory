@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
@@ -22,6 +23,8 @@ from muscle_memory.orchestration import (
     FixedPipelineExecutor,
     GuildApiConfig,
     GuildApiCoordinator,
+    GuildReview,
+    GuildReviewSet,
     GuildRole,
     GuildRoleEndpoint,
     GuildRoster,
@@ -36,6 +39,8 @@ from muscle_memory.orchestration import (
     PipelineRun,
     PipelineStep,
     ProviderMode,
+    ProviderName,
+    ProviderStatus,
     ResilientGuildCoordinator,
     ResilientPipelineExecutor,
     ReviewBlockedError,
@@ -152,6 +157,33 @@ def test_roster_and_execution_plan_require_exact_order() -> None:
     plan = _plan()
     with pytest.raises(ContractViolationError, match="fixed eight-step"):
         ExecutionPlan.create(plan.run_id, tuple(reversed(plan.commands)))
+
+
+def test_healthy_live_guild_reviews_require_distinct_provider_sessions() -> None:
+    plan = _plan()
+    provider = ProviderStatus(
+        provider=ProviderName.GUILD,
+        mode=ProviderMode.LIVE,
+        health=HealthState.END_TO_END_VERIFIED,
+        detail="three Guild sessions completed",
+        checked_at=datetime(2026, 8, 3, 12, 0, tzinfo=UTC),
+    )
+
+    with pytest.raises(ContractViolationError, match="distinct provider session ids"):
+        GuildReviewSet(
+            plan_digest=plan.digest,
+            reviews=tuple(
+                GuildReview(
+                    role=role,
+                    plan_digest=plan.digest,
+                    recommendation=ReviewRecommendation.PROCEED,
+                    summary="provider reviewed fixed plan",
+                    provider_session_id="shared-session",
+                )
+                for role in EXACT_GUILD_ROLES
+            ),
+            provider_status=provider,
+        )
 
 
 def test_sponsor_credentials_are_excluded_from_configuration_reprs(
@@ -607,7 +639,7 @@ class _FakeRocketRideClient:
         envelope = json.loads(payload)
         self.events.append(("send", token, envelope, objinfo, mimetype))
         output = {"accepted": True, "world_valid": True}
-        return {
+        result = {
             "contract_version": 1,
             "output": output,
             "output_sha256": sha256_text(canonical_json(output)),
@@ -617,6 +649,7 @@ class _FakeRocketRideClient:
             "status": "completed",
             "step": envelope["step"],
         }
+        return {"text": [payload + "\n\n" + canonical_json(result) + "\n\n"]}
 
     async def terminate(self, token: str) -> None:
         assert self.active
@@ -689,6 +722,7 @@ def test_rocketride_sdk_adapter_uses_official_async_contract(tmp_path: Path) -> 
             },
         },
     )
+    assert events[-3][4] == "text/plain"
     assert events[-2:] == [("terminate", "task-token"), "exit"]
 
 

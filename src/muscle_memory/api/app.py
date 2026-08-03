@@ -32,6 +32,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from muscle_memory.api.auth import (
     APPROVAL_WRITE_SCOPE,
@@ -75,7 +76,7 @@ from muscle_memory.api.models import (
     WorkflowRun,
 )
 from muscle_memory.api.redaction import redact_sensitive_mapping, redact_sensitive_text
-from muscle_memory.api.streaming import LiveTelemetryHub
+from muscle_memory.api.streaming import LiveSubscriberLimitError, LiveTelemetryHub
 from muscle_memory.backend.rocketride_callback import (
     CALLBACK_PATH,
     MAX_CALLBACK_BODY_BYTES,
@@ -94,6 +95,7 @@ from muscle_memory.live.models import LiveEpisodeStatus, VideoProduct
 from muscle_memory.live.video import MJPEG_BOUNDARY
 
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+MAX_REQUEST_BODY_BYTES = MAX_CALLBACK_BODY_BYTES
 _bearer = HTTPBearer(
     auto_error=False,
     bearerFormat="opaque",
@@ -113,6 +115,75 @@ COMMON_ERROR_RESPONSES: ErrorResponses = {
 
 class _CallbackBodyTooLargeError(RuntimeError):
     pass
+
+
+class _RequestBodyLimitMiddleware:
+    """Reject declared and chunked request bodies before route model parsing."""
+
+    def __init__(self, app: ASGIApp, *, maximum_bytes: int) -> None:
+        self._app = app
+        self._maximum_bytes = maximum_bytes
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        headers = {key.lower(): value for key, value in scope.get("headers", ())}
+        declared = headers.get(b"content-length")
+        if declared is not None:
+            try:
+                declared_bytes = int(declared)
+            except ValueError:
+                await self._error(scope, receive, send, 400, "invalid_content_length")
+                return
+            if declared_bytes < 0:
+                await self._error(scope, receive, send, 400, "invalid_content_length")
+                return
+            if declared_bytes > self._maximum_bytes:
+                await self._error(scope, receive, send, 413, "body_too_large")
+                return
+
+        received_bytes = 0
+        buffered: list[Message] = []
+        while True:
+            message = await receive()
+            buffered.append(message)
+            if message["type"] != "http.request":
+                break
+            received_bytes += len(message.get("body", b""))
+            if received_bytes > self._maximum_bytes:
+                await self._error(scope, receive, send, 413, "body_too_large")
+                return
+            if not message.get("more_body", False):
+                break
+
+        next_message = 0
+
+        async def buffered_receive() -> Message:
+            nonlocal next_message
+            if next_message < len(buffered):
+                message = buffered[next_message]
+                next_message += 1
+                return message
+            return await receive()
+
+        await self._app(scope, buffered_receive, send)
+
+    @staticmethod
+    async def _error(
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        status_code: int,
+        code: str,
+    ) -> None:
+        response = JSONResponse(status_code=status_code, content={"error": code})
+        await response(scope, receive, send)
 
 
 async def _bounded_callback_body(request: Request) -> bytes:
@@ -735,11 +806,11 @@ def _build_router() -> APIRouter:
         if existing is None:
             await websocket.close(code=4404, reason="episode not found")
             return
-        await websocket.accept()
         minimum_interval = 1.0 / NUMERIC_TELEMETRY_HZ
         last_send = 0.0
         try:
             async with runtime.live_hub.subscribe(episode_id) as subscription:
+                await websocket.accept()
                 while True:
                     message = await subscription.receive()
                     if message is None:
@@ -752,6 +823,8 @@ def _build_router() -> APIRouter:
                     last_send = asyncio.get_running_loop().time()
         except WebSocketDisconnect:
             return
+        except LiveSubscriberLimitError:
+            await websocket.close(code=4429, reason="live subscriber capacity reached")
 
     return router
 
@@ -780,7 +853,12 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         hub.bind_running_loop()
-        await backend.startup()
+        try:
+            await backend.startup()
+        except BaseException:
+            await hub.close()
+            await backend.shutdown()
+            raise
         try:
             yield
         finally:
@@ -799,6 +877,10 @@ def create_app(
             "human decisions, and measured policy evidence."
         ),
         lifespan=lifespan,
+    )
+    app.add_middleware(
+        _RequestBodyLimitMiddleware,
+        maximum_bytes=MAX_REQUEST_BODY_BYTES,
     )
     app.state.api_runtime = runtime
 

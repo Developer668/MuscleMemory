@@ -17,6 +17,7 @@ import numpy as np
 import numpy.typing as npt
 
 from muscle_memory.episodes.models import (
+    EpisodeAbort,
     EpisodeAppendReceipt,
     EpisodeClosure,
     EpisodeIdentity,
@@ -86,6 +87,14 @@ class LiveEpisodeLifecycle(Protocol):
         *,
         closed_at: datetime | None = None,
     ) -> EpisodeClosure: ...
+
+    async def abort_episode(
+        self,
+        episode_id: str,
+        *,
+        error_type: str,
+        aborted_at: datetime | None = None,
+    ) -> EpisodeAbort: ...
 
 
 @dataclass(frozen=True, slots=True)

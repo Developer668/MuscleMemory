@@ -44,6 +44,16 @@ def _is_same_process(pid: int, start_ticks: int) -> bool:
     return _process_start_ticks(pid) == start_ticks
 
 
+def _process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def stop_process(pid_path: Path, *, timeout: float = STOP_TIMEOUT_SECONDS) -> None:
     identity = _read_identity(pid_path)
     if identity is None:
@@ -55,16 +65,24 @@ def stop_process(pid_path: Path, *, timeout: float = STOP_TIMEOUT_SECONDS) -> No
         pid_path.unlink(missing_ok=True)
         return
 
-    os.kill(pid, signal.SIGTERM)
+    try:
+        process_group_id = os.getpgid(pid)
+    except ProcessLookupError:
+        pid_path.unlink(missing_ok=True)
+        return
+    if process_group_id != pid:
+        raise RuntimeError("Daytona API process is not its recorded session leader")
+
+    os.killpg(process_group_id, signal.SIGTERM)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not _is_same_process(pid, start_ticks):
+        if not _process_group_exists(process_group_id):
             pid_path.unlink(missing_ok=True)
             return
         time.sleep(0.25)
 
-    if _is_same_process(pid, start_ticks):
-        os.kill(pid, signal.SIGKILL)
+    if _process_group_exists(process_group_id):
+        os.killpg(process_group_id, signal.SIGKILL)
     pid_path.unlink(missing_ok=True)
 
 
@@ -86,8 +104,8 @@ def start_process(
     logs_dir.mkdir(parents=True, exist_ok=True)
     run_dir.mkdir(parents=True, exist_ok=True)
     pid_path = run_dir / "api.pid.json"
-    stop_process(pid_path)
     revision = repository_revision(repository)
+    stop_process(pid_path)
     recover_latest(state_dir, snapshot_dir)
     export_snapshot(state_dir, snapshot_dir, revision=revision)
 
@@ -157,12 +175,13 @@ def main() -> int:
         if state_dir == Path("/data") or state_dir.is_relative_to(Path("/data")):
             raise SystemExit("mutable Daytona state must not use /data FUSE")
         state_dir.mkdir(parents=True, exist_ok=True)
-        stop_process(state_dir / "run" / "api.pid.json")
         preflight(state_dir, snapshot_dir)
+        revision = repository_revision(repository)
+        stop_process(state_dir / "run" / "api.pid.json")
         export_snapshot(
             state_dir,
             snapshot_dir,
-            revision=repository_revision(repository),
+            revision=revision,
         )
         print("Daytona API stopped")
         return 0

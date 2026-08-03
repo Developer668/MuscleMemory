@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
 
 from muscle_memory.backend.api_backend import MuscleMemoryApiBackend
@@ -26,6 +27,7 @@ from muscle_memory.episodes import EpisodeService
 from muscle_memory.live import (
     BoundedVideoService,
     EvaluatedPolicySelection,
+    LiveEpisodeConfig,
     LiveEpisodeController,
     LiveEpisodeManager,
     LiveWorldCatalog,
@@ -39,6 +41,20 @@ def _repository_path(value: str) -> Path:
     return path if path.is_absolute() else REPOSITORY_ROOT / path
 
 
+def _live_episode_config(environ: Mapping[str, str]) -> LiveEpisodeConfig:
+    try:
+        return LiveEpisodeConfig(
+            maximum_duration_seconds=float(
+                environ.get("MM_LIVE_MAX_DURATION_SECONDS", "30")
+            ),
+            render_width=int(environ.get("MM_LIVE_RENDER_WIDTH", "320")),
+            render_height=int(environ.get("MM_LIVE_RENDER_HEIGHT", "240")),
+            jpeg_quality=int(environ.get("MM_LIVE_JPEG_QUALITY", "82")),
+        )
+    except ValueError as exc:
+        raise RuntimeError("live episode environment configuration is invalid") from exc
+
+
 def build_api_backend(
     environ: Mapping[str, str] | None = None,
 ) -> MuscleMemoryApiBackend:
@@ -50,6 +66,7 @@ def build_api_backend(
         raise RuntimeError("the qualified MM-01 bundle did not pass verification")
 
     coordinator = CoordinatorStore(config.coordinator_path)
+    providers = None
     try:
         approval_ledger = CoordinatorApprovalLedger(coordinator)
         providers = build_provider_bundle(
@@ -168,6 +185,7 @@ def build_api_backend(
                 video=video,
                 maximum_concurrent_episodes=1,
             )
+            live_config = _live_episode_config(config.environ)
             controller = LiveEpisodeController(
                 manager=manager,
                 worlds=live_world_catalog,
@@ -176,10 +194,14 @@ def build_api_backend(
                     config.environ.get("MM_STABLE_POLICY_ALIAS", "stable").strip()
                     or "stable"
                 ),
+                config=live_config,
             )
             setattr(backend, "live_episode_controller", controller)  # noqa: B010
         return backend
     except BaseException:
+        if providers is not None:
+            with suppress(Exception):
+                providers.laserdata.spool.close()
         coordinator.close()
         raise
 

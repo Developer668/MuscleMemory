@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+ROOT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 STATE_DIR=${MM_DAYTONA_STATE_DIR:-/home/daytona/mm-data}
 SNAPSHOT_DIR=${MM_DAYTONA_SNAPSHOT_DIR:-/data/muscle-memory-snapshots}
 
@@ -48,15 +48,15 @@ mkdir -p \
   "$STATE_DIR/run" \
   "$STATE_DIR/telemetry"
 
-export MM_API_BACKEND_FACTORY=${MM_API_BACKEND_FACTORY:-muscle_memory.runtime:create_api_backend}
-export MM_API_HOST=${MM_API_HOST:-0.0.0.0}
-export MM_API_PORT=${MM_API_PORT:-8000}
-export MM_API_LOG_LEVEL=${MM_API_LOG_LEVEL:-info}
-export MUSCLE_MEMORY_COORDINATOR_DB_PATH=${MUSCLE_MEMORY_COORDINATOR_DB_PATH:-$STATE_DIR/coordinator/coordinator.sqlite3}
-export MUSCLE_MEMORY_TELEMETRY_SPOOL=${MUSCLE_MEMORY_TELEMETRY_SPOOL:-$STATE_DIR/telemetry/laserdata-spool.sqlite3}
-export MUSCLE_MEMORY_FALKORDB_CACHE_PATH=${MUSCLE_MEMORY_FALKORDB_CACHE_PATH:-$STATE_DIR/graph/falkordb-events.jsonl}
-export MM_ASSET_CACHE_DIR=${MM_ASSET_CACHE_DIR:-$STATE_DIR/assets/cache}
-export MM_ASSET_APPROVAL_LEDGER_DIR=${MM_ASSET_APPROVAL_LEDGER_DIR:-$STATE_DIR/assets/approvals}
+export MM_API_BACKEND_FACTORY="${MM_API_BACKEND_FACTORY:-muscle_memory.runtime:create_api_backend}"
+export MM_API_HOST="${MM_API_HOST:-0.0.0.0}"
+export MM_API_PORT="${MM_API_PORT:-8000}"
+export MM_API_LOG_LEVEL="${MM_API_LOG_LEVEL:-info}"
+export MUSCLE_MEMORY_COORDINATOR_DB_PATH="${MUSCLE_MEMORY_COORDINATOR_DB_PATH:-$STATE_DIR/coordinator/coordinator.sqlite3}"
+export MUSCLE_MEMORY_TELEMETRY_SPOOL="${MUSCLE_MEMORY_TELEMETRY_SPOOL:-$STATE_DIR/telemetry/laserdata-spool.sqlite3}"
+export MUSCLE_MEMORY_FALKORDB_CACHE_PATH="${MUSCLE_MEMORY_FALKORDB_CACHE_PATH:-$STATE_DIR/graph/falkordb-events.jsonl}"
+export MM_ASSET_CACHE_DIR="${MM_ASSET_CACHE_DIR:-$STATE_DIR/assets/cache}"
+export MM_ASSET_APPROVAL_LEDGER_DIR="${MM_ASSET_APPROVAL_LEDGER_DIR:-$STATE_DIR/assets/approvals}"
 export UV_NO_PROGRESS=1
 
 cd "$ROOT_DIR"

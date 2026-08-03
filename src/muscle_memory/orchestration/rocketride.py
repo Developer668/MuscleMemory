@@ -412,7 +412,7 @@ class RocketRideSdkTransport:
                         token_value,
                         envelope,
                         objinfo={"name": f"{command.step.value}.json"},
-                        mimetype="application/json",
+                        mimetype="text/plain",
                     )
                 finally:
                     await client.terminate(token_value)
@@ -517,16 +517,32 @@ def _extract_callback_result(response: object) -> Mapping[str, object]:
         candidate = response.get(key)
         if isinstance(candidate, list) and len(candidate) == 1:
             candidate = candidate[0]
-        if isinstance(candidate, str):
-            try:
-                candidate = json.loads(candidate)
-            except json.JSONDecodeError:
-                continue
-        if isinstance(candidate, Mapping) and set(candidate) == expected_fields:
-            return cast(Mapping[str, object], candidate)
+        candidates = (
+            _decode_json_values(candidate) if isinstance(candidate, str) else (candidate,)
+        )
+        for decoded in candidates:
+            if isinstance(decoded, Mapping) and set(decoded) == expected_fields:
+                return cast(Mapping[str, object], decoded)
     raise RocketRideUnavailableError(
         "RocketRide response does not contain a typed callback result"
     )
+
+
+def _decode_json_values(value: str) -> tuple[object, ...]:
+    decoder = json.JSONDecoder()
+    values: list[object] = []
+    index = 0
+    while index < len(value):
+        while index < len(value) and value[index].isspace():
+            index += 1
+        if index == len(value):
+            break
+        try:
+            decoded, index = decoder.raw_decode(value, index)
+        except json.JSONDecodeError:
+            return ()
+        values.append(decoded)
+    return tuple(values)
 
 
 class InMemoryPipelineRunCache:

@@ -4,11 +4,13 @@ import asyncio
 import inspect
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from muscle_memory.api.models import ProviderOperationalState
+from muscle_memory.backend.api_backend import MuscleMemoryApiBackend
 from muscle_memory.backend.config import BackendConfig
 from muscle_memory.backend.episode_journal import CoordinatorEpisodeJournal
 from muscle_memory.backend.episode_runtime import OperationalEpisodeRuntime
@@ -23,11 +25,14 @@ from muscle_memory.coordinator import (
     CoordinatorStore,
     TrainingEpisodeMetadata,
 )
+from muscle_memory.coordinator import EpisodeState as CoordinatorEpisodeState
 from muscle_memory.coordinator.models import canonical_json
 from muscle_memory.episodes import (
     AuthenticatedHuman,
     CorrectionPoint,
+    EpisodeClosedError,
     EpisodeIdentity,
+    EpisodeLifecycleState,
     EpisodeService,
 )
 from muscle_memory.episodes.training import TrainingCorrectionFeed
@@ -241,6 +246,50 @@ def test_episode_closure_approval_and_training_feed_survive_restart(
     )
     approved = TrainingCorrectionFeed(restored).approved(episode_id="episode-1")
     assert tuple(item.correction_id for item in approved) == (correction_id,)
+    coordinator2.close()
+    spool2.close()
+
+
+def test_aborted_episode_is_terminal_and_survives_restart(tmp_path: Path) -> None:
+    coordinator, spool, _, service = _service(tmp_path)
+
+    async def first_process() -> None:
+        await service.open_episode(identity())
+        await service.append_telemetry(telemetry(0))
+        abort = await service.abort_episode(
+            "episode-1",
+            error_type="RendererFailure",
+            aborted_at=NOW,
+        )
+        assert abort.error_type == "RendererFailure"
+
+    asyncio.run(first_process())
+    assert service.episode_state("episode-1") is EpisodeLifecycleState.ABORTED
+    assert coordinator.episode_state("episode-1") is CoordinatorEpisodeState.ABORTED
+    assert [transition.state for transition in coordinator.episode_history("episode-1")] == [
+        CoordinatorEpisodeState.CREATED,
+        CoordinatorEpisodeState.RUNNING,
+        CoordinatorEpisodeState.ABORTED,
+    ]
+    coordinator.close()
+    spool.close()
+
+    coordinator2, spool2, journal2, restored = _service(tmp_path)
+    assert restored.episode_state("episode-1") is EpisodeLifecycleState.ABORTED
+    abort = restored.abort_for("episode-1")
+    assert abort is not None
+    assert abort.error_type == "RendererFailure"
+    assert abort.aborted_at == NOW
+    api_backend = object.__new__(MuscleMemoryApiBackend)
+    api_backend.journal = journal2
+    api_backend.episode_runtime = SimpleNamespace(service=restored)
+    summary = api_backend._episode_summary("episode-1")
+    assert summary.state.value == "aborted"
+    assert summary.closed_at == NOW
+    with pytest.raises(EpisodeClosedError, match="was aborted"):
+        asyncio.run(restored.append_telemetry(telemetry(1)))
+    with pytest.raises(EpisodeClosedError, match="was aborted"):
+        asyncio.run(restored.close_episode(failed_result(), closed_at=NOW))
     coordinator2.close()
     spool2.close()
 

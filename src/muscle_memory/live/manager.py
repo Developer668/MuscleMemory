@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import replace
+from datetime import UTC, datetime
 
 from muscle_memory.live.models import (
     EvaluatedPolicySelection,
@@ -235,6 +237,17 @@ class LiveEpisodeManager:
             )
         except BaseException as exc:
             error_type = type(exc).__name__
+            abort_error_type: str | None = None
+            try:
+                asyncio.run(
+                    self._lifecycle.abort_episode(
+                        episode_id,
+                        error_type=error_type,
+                        aborted_at=datetime.now(UTC),
+                    )
+                )
+            except BaseException as abort_exc:
+                abort_error_type = type(abort_exc).__name__
             with suppress(KeyError):
                 self._video.finish_episode(episode_id)
             return self._update(
@@ -244,7 +257,12 @@ class LiveEpisodeManager:
                     phase=LiveEpisodePhase.FAILED,
                     health=LiveEpisodeHealth.FAILED,
                     error_type=error_type,
-                    detail=f"real simulator worker failed ({error_type})",
+                    detail=(
+                        f"real simulator worker failed ({error_type}); "
+                        f"durable abort failed ({abort_error_type})"
+                        if abort_error_type is not None
+                        else f"real simulator worker failed ({error_type})"
+                    ),
                 ),
             )
         return self._update(

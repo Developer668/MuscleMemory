@@ -4,10 +4,13 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import sqlite3
 import stat
 import subprocess
 import sys
+import time
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -15,11 +18,13 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
+from ops.deployment.daytona_process import stop_process  # noqa: E402
 from ops.deployment.daytona_state import (  # noqa: E402
     DaytonaStateError,
     export_snapshot,
     recover_latest,
     reject_fuse_mutable_paths,
+    repository_revision,
 )
 from ops.deployment.environment import (  # noqa: E402
     DEFAULT_BACKEND_FACTORY,
@@ -158,7 +163,12 @@ def test_daytona_deploy_enforces_cloud_runtime_shape_and_provider_gate() -> None
     assert "clean -ffdx" in deploy
     assert "git status --porcelain --untracked-files=all" in deploy
     assert "git clean -ndx" in deploy
-    assert deploy.index("daytona_process --stop") < deploy.index("git -C \"$REPOSITORY_DIR\" fetch")
+    assert "restore_previous_revision" in deploy
+    assert "ROLLBACK_REQUIRED=1" in deploy
+    assert "Restored previous Daytona revision" in deploy
+    assert deploy.index('fetch --depth 1 origin "$REVISION"') < deploy.index(
+        "ROLLBACK_REQUIRED=1"
+    )
     assert deploy.index("clean -ffdx") < deploy.index("uv sync --frozen --no-dev")
     assert "nohup" not in deploy
     assert "ops.sponsors.verify_laserdata" in deploy
@@ -172,17 +182,207 @@ def test_daytona_deploy_enforces_cloud_runtime_shape_and_provider_gate() -> None
         assert f"--require-provider {cold_provider}" not in deploy
 
 
+def test_daytona_deploy_restores_previous_revision_after_prestart_failure(
+    tmp_path: Path,
+) -> None:
+    previous_revision = "a" * 40
+    target_revision = "b" * 40
+    state_path = tmp_path / "fake-daytona-state.json"
+    log_path = tmp_path / "fake-daytona.log"
+    state_path.write_text(
+        json.dumps(
+            {
+                "failed_target_install": False,
+                "revision": previous_revision,
+                "running": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    executable = tmp_path / "bin/daytona"
+    executable.parent.mkdir()
+    executable.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import pathlib
+import sys
+
+state_path = pathlib.Path(os.environ["FAKE_DAYTONA_STATE"])
+log_path = pathlib.Path(os.environ["FAKE_DAYTONA_LOG"])
+target_revision = os.environ["FAKE_DAYTONA_TARGET"]
+args = sys.argv[1:]
+
+with log_path.open("a", encoding="utf-8") as stream:
+    stream.write("CALL " + " ".join(args) + "\\n")
+
+if args[0] == "info":
+    print(json.dumps({
+        "autoArchiveInterval": 43200,
+        "autoDeleteInterval": -1,
+        "autoStopInterval": 0,
+        "id": "fake-sandbox",
+        "public": True,
+        "state": "started",
+        "volumes": [{"mountPath": "/data"}],
+    }))
+    raise SystemExit(0)
+
+if args[0] != "exec":
+    raise SystemExit(0)
+
+separator = args.index("--", 2)
+command = args[separator + 1:]
+state = json.loads(state_path.read_text(encoding="utf-8"))
+
+def save() -> None:
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+def event(value: str) -> None:
+    with log_path.open("a", encoding="utf-8") as stream:
+        stream.write("EVENT " + value + "\\n")
+
+if command[:2] == ["test", "-d"]:
+    raise SystemExit(0)
+
+if command and command[0] == "git":
+    if "rev-parse" in command:
+        print(target_revision if "FETCH_HEAD" in command else state["revision"])
+    elif "checkout" in command and "--detach" in command:
+        state["revision"] = command[command.index("--detach") + 1]
+        event("checkout:" + state["revision"])
+        save()
+    elif "reset" in command and "--hard" in command:
+        requested = command[command.index("--hard") + 1]
+        if requested != "HEAD":
+            state["revision"] = requested
+            save()
+    raise SystemExit(0)
+
+if "ops.deployment.daytona_process" in command and "--stop" in command:
+    state["running"] = False
+    event("stop:" + state["revision"])
+    save()
+    raise SystemExit(0)
+
+if "ops.deployment.daytona_process" in command and "--port" in command:
+    state["running"] = True
+    event("start:" + state["revision"])
+    save()
+    raise SystemExit(0)
+
+if command[:2] == ["npm", "ci"] and state["revision"] == target_revision:
+    if not state["failed_target_install"]:
+        state["failed_target_install"] = True
+        event("fail-install:" + state["revision"])
+        save()
+        raise SystemExit(23)
+
+raise SystemExit(0)
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "FAKE_DAYTONA_LOG": str(log_path),
+            "FAKE_DAYTONA_STATE": str(state_path),
+            "FAKE_DAYTONA_TARGET": target_revision,
+            "PATH": f"{executable.parent}{os.pathsep}{environment['PATH']}",
+        }
+    )
+
+    result = subprocess.run(
+        [str(REPOSITORY_ROOT / "ops/deployment/daytona_deploy.sh"), target_revision],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 23, result.stderr
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["revision"] == previous_revision
+    assert state["running"] is True
+    events = [
+        line.removeprefix("EVENT ")
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("EVENT ")
+    ]
+    assert events == [
+        f"stop:{previous_revision}",
+        f"checkout:{target_revision}",
+        f"fail-install:{target_revision}",
+        f"checkout:{previous_revision}",
+        f"start:{previous_revision}",
+    ]
+
+
 def test_daytona_process_supervisor_guards_against_pid_reuse() -> None:
     supervisor = (REPOSITORY_ROOT / "ops/deployment/daytona_process.py").read_text(encoding="utf-8")
+    start_process = supervisor.split("def start_process", maxsplit=1)[1].split(
+        "def _parser", maxsplit=1
+    )[0]
 
     assert 'Path(f"/proc/{pid}/stat")' in supervisor
     assert 'payload["start_ticks"]' in supervisor
     assert "start_new_session=True" in supervisor
+    assert "os.killpg(process_group_id, signal.SIGTERM)" in supervisor
+    assert "os.killpg(process_group_id, signal.SIGKILL)" in supervisor
     assert '"MM_DAYTONA_SKIP_PREPARE": "1"' in supervisor
     assert '"MM_DAYTONA_STATE_DIR": str(state_dir)' in supervisor
     assert '"MM_DAYTONA_SNAPSHOT_DIR": str(snapshot_dir)' in supervisor
     assert "recover_latest(state_dir, snapshot_dir)" in supervisor
     assert "export_snapshot(state_dir, snapshot_dir, revision=revision)" in supervisor
+    assert start_process.index("revision = repository_revision(repository)") < start_process.index(
+        "stop_process(pid_path)"
+    )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Daytona supervisor targets Linux")
+def test_daytona_process_supervisor_terminates_the_entire_session(tmp_path: Path) -> None:
+    child_pid_path = tmp_path / "child.pid"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import pathlib, subprocess, sys, time; "
+                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+                f"pathlib.Path({str(child_pid_path)!r}).write_text(str(child.pid)); "
+                "time.sleep(60)"
+            ),
+        ],
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not child_pid_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert child_pid_path.exists()
+        child_pid = int(child_pid_path.read_text())
+        start_ticks = _process_start_ticks_for_test(process.pid)
+        pid_path = tmp_path / "api.pid.json"
+        pid_path.write_text(
+            json.dumps({"pid": process.pid, "start_ticks": start_ticks}),
+            encoding="utf-8",
+        )
+
+        stop_process(pid_path, timeout=2.0)
+        process.wait(timeout=5)
+
+        with pytest.raises(ProcessLookupError):
+            os.kill(child_pid, 0)
+        assert not pid_path.exists()
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+
+
+def _process_start_ticks_for_test(pid: int) -> int:
+    fields = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()
+    return int(fields[19])
 
 
 def test_daytona_state_snapshot_is_create_once_and_recovers_wal_database(
@@ -245,6 +445,51 @@ def test_daytona_state_snapshot_is_create_once_and_recovers_wal_database(
 def test_daytona_rejects_mutable_state_on_object_fuse() -> None:
     with pytest.raises(DaytonaStateError, match="must not use /data FUSE"):
         reject_fuse_mutable_paths((Path("/data/coordinator.sqlite3"),))
+
+
+def test_daytona_snapshot_provenance_rejects_dirty_repository(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "snapshot@example.test"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Snapshot Test"],
+        cwd=repository,
+        check=True,
+    )
+    tracked = repository / "tracked.txt"
+    tracked.write_text("verified\n", encoding="utf-8")
+    (repository / ".gitignore").write_text("ignored-build/\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "commit", "--quiet", "--message", "verified"],
+        cwd=repository,
+        check=True,
+    )
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    (repository / "ignored-build").mkdir()
+    (repository / "ignored-build/output").write_text("allowed\n", encoding="utf-8")
+    assert repository_revision(repository) == revision
+
+    tracked.write_text("drifted\n", encoding="utf-8")
+    with pytest.raises(DaytonaStateError, match="dirty"):
+        repository_revision(repository)
+
+    tracked.write_text("verified\n", encoding="utf-8")
+    (repository / "untracked.txt").write_text("drifted\n", encoding="utf-8")
+    with pytest.raises(DaytonaStateError, match="dirty"):
+        repository_revision(repository)
 
 
 def test_daytona_runner_requires_built_operator_console() -> None:

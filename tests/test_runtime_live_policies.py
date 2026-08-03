@@ -21,6 +21,10 @@ def test_runtime_exposes_evidence_bound_baseline_and_candidate(tmp_path: Path) -
         "MM_HELDOUT_EVALUATION_ARTIFACT_SHA256": canonical_artifact_sha256(evidence),
         "MM_HELDOUT_CANDIDATE_CHECKPOINT": str(POLICY_V1_CHECKPOINT),
         "MM_HELDOUT_EVALUATED_AT": datetime(2026, 8, 3, tzinfo=UTC).isoformat(),
+        "MM_LIVE_MAX_DURATION_SECONDS": "10",
+        "MM_LIVE_RENDER_WIDTH": "160",
+        "MM_LIVE_RENDER_HEIGHT": "120",
+        "MM_LIVE_JPEG_QUALITY": "75",
     }
 
     backend = build_api_backend(environment)
@@ -31,6 +35,7 @@ def test_runtime_exposes_evidence_bound_baseline_and_candidate(tmp_path: Path) -
 
         assert set(policies) == {"delivery-v0-direct-goal", "delivery-v1-bc"}
         assert options.default_policy_id == "delivery-v0-direct-goal"
+        assert options.maximum_duration_seconds == 10.0
         assert policies["delivery-v0-direct-goal"].deployment_status == "stable_deployed"
         assert policies["delivery-v0-direct-goal"].is_default is True
         assert policies["delivery-v0-direct-goal"].evaluated_episode_count == 20

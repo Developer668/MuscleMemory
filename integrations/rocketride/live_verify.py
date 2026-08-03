@@ -150,13 +150,27 @@ def _extract_result(response: object) -> str:
             if isinstance(candidate, Mapping):
                 return canonical_json(dict(candidate))
             if isinstance(candidate, str):
-                try:
-                    decoded = json.loads(candidate)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(decoded, dict):
-                    return canonical_json(decoded)
+                for decoded in _decode_json_values(candidate):
+                    if isinstance(decoded, dict) and set(decoded) == required:
+                        return canonical_json(decoded)
     raise ContractError("RocketRide response does not contain one typed callback result")
+
+
+def _decode_json_values(value: str) -> tuple[object, ...]:
+    decoder = json.JSONDecoder()
+    values: list[object] = []
+    index = 0
+    while index < len(value):
+        while index < len(value) and value[index].isspace():
+            index += 1
+        if index == len(value):
+            break
+        try:
+            decoded, index = decoder.raw_decode(value, index)
+        except json.JSONDecodeError:
+            return ()
+        values.append(decoded)
+    return tuple(values)
 
 
 async def verify_live_provider(
@@ -239,7 +253,7 @@ async def verify_live_provider(
                     token,
                     encoded_envelope,
                     objinfo={"name": f"{envelope.step}.json"},
-                    mimetype="application/json",
+                    mimetype="text/plain",
                 )
             finally:
                 # RocketRide tasks are always terminated so verification cannot leave

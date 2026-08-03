@@ -39,6 +39,10 @@ any mutable runtime path under `/data` fails preflight before the API starts. Th
 survive sandbox replacement; the live `/home/daytona/mm-data` tree survives ordinary restarts
 for as long as the sandbox itself is retained.
 
+Snapshot provenance is accepted only from a clean Git checkout. Tracked or untracked source
+drift is rejected before the supervisor stops the running API, while ignored build products such
+as the locked virtual environment and compiled frontend remain allowed.
+
 Daytona environment variables hold only deployment configuration. Supply provider credentials
 through the Daytona environment at sandbox creation; never commit a real value or pass one as
 a deploy-script argument. The accepted names are listed in `.env.example` and
@@ -52,15 +56,16 @@ defaults to `stable`.
 ## Deploy one revision
 
 The deploy command requires an explicit full commit SHA. It refuses a stopped sandbox, a
-non-public preview, any enabled lifecycle timer, or a missing `/data` volume. It stops and
-snapshots the prior process, fetches the requested revision, resets the cloud checkout to that
-exact commit, removes all tracked, untracked, and ignored residue, and proves the tree is clean
-before rebuilding. It then runs a frozen Python production sync, installs the locked frontend
-dependencies, builds `frontend/dist`, verifies the permanent robot bundle, restarts the API,
-discovers the public sandbox proxy, strips its temporary discovery query, and exercises
-`/api/v1/health` through the persistent unsigned HTTPS origin. If a post-start check fails,
-the supervisor stops and snapshots the failed replacement process instead of leaving an
-unverified revision running.
+non-public preview, any enabled lifecycle timer, or a missing `/data` volume. It first validates
+the clean running revision and fetches the requested revision while production is still serving.
+It then stops and snapshots the prior process, resets the cloud checkout to the requested exact
+commit, removes all tracked, untracked, and ignored residue, and proves the tree is clean before
+rebuilding. It runs a frozen Python production sync, installs the locked frontend dependencies,
+builds `frontend/dist`, verifies the permanent robot bundle, restarts the API, discovers the
+public sandbox proxy, strips its temporary discovery query, and exercises `/api/v1/health`
+through the persistent unsigned HTTPS origin. Any failure after the prior process is stopped,
+including a dependency, build, startup, sponsor, or smoke failure, rebuilds and restarts the
+captured prior revision before the deploy command returns its original failure status.
 
 ```bash
 ./ops/deployment/daytona_deploy.sh <commit-sha>
@@ -109,6 +114,35 @@ PID identity, and startup ordering:
 daytona exec muscle-memory-backend -- \
   sh -lc 'cd /home/daytona/MuscleMemory && uv run --frozen --no-sync python -m ops.deployment.daytona_process'
 ```
+
+## Production sponsor evidence handoff
+
+The sponsor evidence runner embeds an API on the production port so it can retain the exact
+LaserData, FalkorDB, Guild, RocketRide, and authenticated human-gate records from one process.
+Never launch it beside the supervised API. Use the Daytona handoff wrapper, which verifies the
+clean exact revision and unused create-once evidence paths before downtime, stops and snapshots
+the supervised API, runs evidence on the same public port, and restarts the supervisor from an
+unconditional cleanup path. `SIGHUP`, `SIGINT`, and `SIGTERM` are forwarded to the evidence
+child, but the replacement API is allowed to finish starting before the wrapper exits.
+
+Both the final evidence and human approval request must use new paths below the persistent
+`/data/muscle-memory-sponsor-evidence` object-volume root. The evidence runner also reserves the
+output path before external work; reservations, approval requests, and completed evidence are
+never overwritten or silently reused.
+
+```bash
+REVISION=$(git rev-parse HEAD)
+RUN_ID="production-${REVISION}-$(date -u +%Y%m%dT%H%M%SZ)"
+uv run --frozen --no-sync python -m ops.sponsors.run_daytona_production_evidence \
+  --expected-revision "$REVISION" \
+  --port "${MM_API_PORT:-8000}" \
+  --output "/data/muscle-memory-sponsor-evidence/${RUN_ID}.json" \
+  --approval-request "/data/muscle-memory-sponsor-evidence/${RUN_ID}-approval.json"
+```
+
+The wrapper returns the evidence runner's status only after the supervised API restart succeeds.
+A restart failure is reported as the primary production error even when evidence had already
+failed or was interrupted.
 
 Daytona references:
 

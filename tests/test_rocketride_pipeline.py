@@ -324,9 +324,10 @@ class _FakeRocketRideClient:
         mimetype: str,
     ) -> Mapping[str, object]:
         self._events.append(("send", token, objinfo, mimetype))
+        result = self._dispatcher.dispatch(payload)
         return {
-            "result": [self._dispatcher.dispatch(payload)],
-            "result_types": {"result": "text"},
+            "text": [payload + "\n\n" + result + "\n\n"],
+            "result_types": {"text": "text"},
         }
 
     async def terminate(self, token: str) -> None:
@@ -361,6 +362,7 @@ def test_live_verifier_redacts_token_and_returns_hashes_with_fake_sdk(tmp_path: 
     assert evidence["task_token_sha256"] == sha256_text("real-looking-fake-task-token")
     assert "real-looking-fake-task-token" not in canonical_json(evidence)
     assert len(str(evidence["pipeline_sha256"])) == 64
+    assert events[-3][3] == "text/plain"
     assert events[-2:] == [("terminate", "real-looking-fake-task-token"), "exit"]
 
 

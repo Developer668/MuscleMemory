@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 import pytest
 
+from muscle_memory.episodes import EpisodeLifecycleState
 from muscle_memory.episodes.service import EpisodeService
 from muscle_memory.graph_memory import (
     GraphStorage,
@@ -31,6 +32,7 @@ from muscle_memory.live import (
     LiveEpisodeManager,
     LiveEpisodePhase,
     LiveEpisodeStatus,
+    VideoBufferStats,
     VideoFrameMetadata,
     VideoFrameSet,
     VideoProduct,
@@ -81,6 +83,12 @@ class _GraphMemory:
 
     def record_failure(self, record: Any) -> GraphWriteReceipt:
         return self._receipt("failure", record, record.failure_id)
+
+
+class _FailingVideoService(BoundedVideoService):
+    def append(self, episode_id: str, frame: VideoFrameSet) -> VideoBufferStats:
+        del episode_id, frame
+        raise RuntimeError("injected renderer delivery failure")
 
 
 def _lifecycle() -> tuple[EpisodeService, InMemoryAppendOnlyTelemetrySink]:
@@ -285,6 +293,41 @@ def test_live_manager_rejects_raw_training_world() -> None:
                 world=validated.world,  # type: ignore[arg-type]
                 selection=selection,
             )
+    finally:
+        manager.shutdown()
+
+
+def test_live_worker_failure_durably_aborts_open_episode() -> None:
+    lifecycle, _ = _lifecycle()
+    manager = LiveEpisodeManager(
+        lifecycle=lifecycle,
+        video=_FailingVideoService(),
+    )
+    selection = EvaluatedPolicySelection.load(
+        checkpoint_path=POLICY_V1_CHECKPOINT,
+        evaluation_path=POLICY_V1_HELDOUT_EVIDENCE,
+    )
+    try:
+        manager.start_episode(
+            episode_id="live-abort-01",
+            world=generate_training_world(7),
+            selection=selection,
+            config=LiveEpisodeConfig(
+                maximum_duration_seconds=0.1,
+                render_width=64,
+                render_height=48,
+                realtime=False,
+            ),
+        )
+        status = manager.wait("live-abort-01", timeout=90)
+
+        assert status.phase is LiveEpisodePhase.FAILED
+        assert status.error_type == "RuntimeError"
+        assert "durable abort failed" not in status.detail
+        assert lifecycle.episode_state("live-abort-01") is EpisodeLifecycleState.ABORTED
+        abort = lifecycle.abort_for("live-abort-01")
+        assert abort is not None
+        assert abort.error_type == "RuntimeError"
     finally:
         manager.shutdown()
 

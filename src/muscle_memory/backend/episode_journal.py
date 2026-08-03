@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 from pydantic import TypeAdapter
@@ -16,6 +17,7 @@ from muscle_memory.coordinator.models import canonical_json
 from muscle_memory.episodes import (
     CorrectionApproval,
     CorrectionSubmission,
+    EpisodeAbort,
     EpisodeAppendReceipt,
     EpisodeClosure,
     EpisodeIdentity,
@@ -73,6 +75,21 @@ class CoordinatorEpisodeJournal:
         return replace(
             closure,
             graph=_GRAPH_REPORT_ADAPTER.validate_json(deliveries[-1]),
+        )
+
+    def abort_for(self, episode_id: str) -> EpisodeAbort | None:
+        history = self._store.episode_history(episode_id)
+        if not history or history[-1].state is not EpisodeState.ABORTED:
+            return None
+        terminal = history[-1]
+        details = json.loads(terminal.details_json)
+        error_type = details.get("error_type")
+        if not isinstance(error_type, str):
+            raise CoordinatorStateError("aborted episode is missing its error type")
+        return EpisodeAbort(
+            episode_id=episode_id,
+            error_type=error_type,
+            aborted_at=terminal.occurred_at,
         )
 
     def corrections(self) -> tuple[CorrectionSubmission, ...]:
@@ -169,6 +186,19 @@ class CoordinatorEpisodeJournal:
         elif state is not terminal:
             raise CoordinatorStateError("durable closure conflicts with episode state")
 
+    def record_abort(self, abort: EpisodeAbort) -> None:
+        if self._store.training_episode_closure(abort.episode_id) is not None:
+            raise CoordinatorStateError("a closed episode cannot be aborted")
+        state = self._store.episode_state(abort.episode_id)
+        if state is not EpisodeState.RUNNING:
+            raise CoordinatorStateError("only a running episode can be aborted")
+        self._store.transition_episode(
+            abort.episode_id,
+            EpisodeState.ABORTED,
+            occurred_at=abort.aborted_at,
+            details={"error_type": abort.error_type},
+        )
+
     def record_graph_delivery(
         self,
         episode_id: str,
@@ -228,7 +258,7 @@ class CoordinatorEpisodeJournal:
                             "policy_id": identity.policy_id,
                         },
                     )
-                elif state is not EpisodeState.RUNNING:
+                elif state not in {EpisodeState.RUNNING, EpisodeState.ABORTED}:
                     raise CoordinatorStateError(
                         "terminal coordinator episode is missing its durable closure"
                     )

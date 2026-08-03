@@ -9,6 +9,7 @@ from muscle_memory.api.adapters import telemetry_view
 from muscle_memory.api.contracts import LiveEventPublisher
 from muscle_memory.api.models import ProviderHealth, ProviderOperationalState
 from muscle_memory.episodes import (
+    EpisodeAbort,
     EpisodeAppendReceipt,
     EpisodeClosure,
     EpisodeIdentity,
@@ -120,6 +121,24 @@ class OperationalEpisodeRuntime:
             },
         )
         return closure
+
+    async def abort_episode(
+        self,
+        episode_id: str,
+        *,
+        error_type: str,
+        aborted_at: datetime | None = None,
+    ) -> EpisodeAbort:
+        abort = await self.service.abort_episode(
+            episode_id,
+            error_type=error_type,
+            aborted_at=aborted_at,
+        )
+        await self._publish_status(
+            episode_id,
+            {"state": "aborted", "error_type": error_type},
+        )
+        return abort
 
     def consumer_snapshots(self) -> tuple[RuntimeConsumerSnapshot, ...]:
         live_state = (

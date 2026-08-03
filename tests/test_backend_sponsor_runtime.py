@@ -55,6 +55,7 @@ from muscle_memory.orchestration.evidence import (
     GuildEvidenceBundle,
     validate_evidence_plan_binding,
 )
+from muscle_memory.orchestration.rocketride import ReviewBlockedError
 from muscle_memory.orchestration.service import ReviewedExecution
 from muscle_memory.robot.identity import verify_mm01_bundle
 from muscle_memory.runtime import build_api_backend
@@ -574,6 +575,68 @@ def test_callback_is_authenticated_ordered_and_durable_across_restart(
         )
     assert replay.status_code == 200
     assert replay.json() == first.json()
+
+
+@pytest.mark.parametrize(
+    "session_ids",
+    [
+        (None, None, None),
+        ("shared-session", "shared-session", "shared-session"),
+    ],
+    ids=("missing", "duplicate"),
+)
+def test_legacy_live_review_with_untrusted_session_ids_is_quarantined(
+    tmp_path: Path,
+    session_ids: tuple[str | None, str | None, str | None],
+) -> None:
+    environment = _environment(tmp_path)
+    plan = _plan("legacy-guild-review")
+    seeded = build_api_backend(environment)
+    seeded.coordinator.register_workflow(
+        plan,
+        created_at=datetime(2026, 8, 3, 12, 0, tzinfo=UTC),
+    )
+    provider = ProviderStatus(
+        provider=ProviderName.GUILD,
+        mode=ProviderMode.SIMULATION,
+        health=HealthState.HEALTHY,
+        detail="legacy provider review completed",
+        checked_at=datetime(2026, 8, 3, 12, 0, tzinfo=UTC),
+    )
+    reviewed = ReviewedExecution(
+        plan=plan,
+        guild_reviews=GuildReviewSet(
+            plan_digest=plan.digest,
+            reviews=tuple(
+                GuildReview(
+                    role=role,
+                    plan_digest=plan.digest,
+                    recommendation=ReviewRecommendation.PROCEED,
+                    summary="legacy review with untrusted provider session identity",
+                    provider_session_id=session_id,
+                )
+                for role, session_id in zip(GuildRole, session_ids, strict=True)
+            ),
+            provider_status=provider,
+        ),
+    )
+    raw = TypeAdapter(ReviewedExecution).dump_python(reviewed, mode="json")
+    raw["guild_reviews"]["provider_status"]["mode"] = "live"
+    seeded.coordinator.record_workflow_review(plan.run_id, canonical_json(raw))
+    asyncio.run(seeded.shutdown())
+
+    restored = build_api_backend(environment)
+    legacy = restored._reviewed[plan.run_id]
+    assert legacy.guild_reviews.provider_status.health is HealthState.DEGRADED
+    assert not legacy.guild_reviews.executable
+    assert "execution is quarantined" in (
+        legacy.guild_reviews.provider_status.detail
+    )
+    with pytest.raises(ReviewBlockedError, match="all Guild specialists"):
+        asyncio.run(restored.orchestrator.execute(legacy))
+    assert '"health":"healthy"' in (
+        restored.coordinator.workflow_review(plan.run_id) or ""
+    )
 
 
 def test_callback_authentication_rejects_before_body_is_read(

@@ -62,6 +62,10 @@ callback does not trust that record by itself: an injected verifier must find th
 the coordinator's append-only approval ledger and confirm its plan, step, human subject, and
 approved verdict.
 
+The canonical JSON is transported as `text/plain` so RocketRide routes it through the reviewed
+`text` lane. Labeling it `application/json` routes it away from that lane and produces an empty
+callback payload even though the bytes themselves are valid JSON.
+
 The following always require verified human evidence:
 
 - proposed uncertain physical properties

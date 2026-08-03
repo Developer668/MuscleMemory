@@ -65,6 +65,7 @@ def _require_aware(value: datetime, name: str) -> None:
 class EpisodeLifecycleState(StrEnum):
     OPEN = "open"
     CLOSED = "closed"
+    ABORTED = "aborted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +89,20 @@ class EpisodeIdentity:
         _require_hash(self.world_hash, "world_hash")
         _require_hash(self.policy_hash, "policy_hash")
         _require_aware(self.opened_at, "opened_at")
+
+
+@dataclass(frozen=True, slots=True)
+class EpisodeAbort:
+    """The immutable terminal fact for an episode that could not be measured."""
+
+    episode_id: str
+    error_type: str
+    aborted_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_identifier(self.episode_id, "episode_id")
+        _require_identifier(self.error_type, "error_type")
+        _require_aware(self.aborted_at, "aborted_at")
 
 
 @dataclass(frozen=True, slots=True)

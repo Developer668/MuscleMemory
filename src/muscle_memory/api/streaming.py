@@ -17,6 +17,8 @@ from muscle_memory.api.models import (
 )
 
 DEFAULT_SUBSCRIBER_QUEUE_SIZE = 40
+DEFAULT_MAXIMUM_SUBSCRIBERS = 128
+DEFAULT_MAXIMUM_SUBSCRIBERS_PER_EPISODE = 16
 _CLOSED = object()
 
 
@@ -41,13 +43,29 @@ class LiveSubscription:
         return item
 
 
+class LiveSubscriberLimitError(RuntimeError):
+    pass
+
+
 class LiveTelemetryHub:
     """Drop oldest stale data per slow consumer instead of blocking ingestion."""
 
-    def __init__(self, *, queue_size: int = DEFAULT_SUBSCRIBER_QUEUE_SIZE) -> None:
+    def __init__(
+        self,
+        *,
+        queue_size: int = DEFAULT_SUBSCRIBER_QUEUE_SIZE,
+        maximum_subscribers: int = DEFAULT_MAXIMUM_SUBSCRIBERS,
+        maximum_subscribers_per_episode: int = DEFAULT_MAXIMUM_SUBSCRIBERS_PER_EPISODE,
+    ) -> None:
         if queue_size < 1:
             raise ValueError("live subscriber queue_size must be positive")
+        if maximum_subscribers < 1 or maximum_subscribers_per_episode < 1:
+            raise ValueError("live subscriber limits must be positive")
+        if maximum_subscribers_per_episode > maximum_subscribers:
+            raise ValueError("per-episode subscriber limit exceeds the global limit")
         self._queue_size = queue_size
+        self._maximum_subscribers = maximum_subscribers
+        self._maximum_subscribers_per_episode = maximum_subscribers_per_episode
         self._subscribers: dict[str, dict[int, _Subscriber]] = {}
         self._ids = itertools.count()
         self._lock = asyncio.Lock()
@@ -96,15 +114,24 @@ class LiveTelemetryHub:
         async with self._lock:
             if self._closed:
                 raise RuntimeError("live telemetry hub is closed")
-            self._subscribers.setdefault(episode_id, {})[subscription_id] = subscriber
+            episode_subscribers = self._subscribers.setdefault(episode_id, {})
+            total_subscribers = sum(len(items) for items in self._subscribers.values())
+            if (
+                total_subscribers >= self._maximum_subscribers
+                or len(episode_subscribers) >= self._maximum_subscribers_per_episode
+            ):
+                if not episode_subscribers:
+                    self._subscribers.pop(episode_id, None)
+                raise LiveSubscriberLimitError("live telemetry subscriber capacity reached")
+            episode_subscribers[subscription_id] = subscriber
         try:
             yield LiveSubscription(subscriber)
         finally:
             async with self._lock:
-                episode_subscribers = self._subscribers.get(episode_id)
-                if episode_subscribers is not None:
-                    episode_subscribers.pop(subscription_id, None)
-                    if not episode_subscribers:
+                active_subscribers = self._subscribers.get(episode_id)
+                if active_subscribers is not None:
+                    active_subscribers.pop(subscription_id, None)
+                    if not active_subscribers:
                         self._subscribers.pop(episode_id, None)
 
     async def publish_telemetry(self, telemetry: TelemetryRecordView) -> None:
@@ -174,4 +201,4 @@ class LiveTelemetryHub:
                 subscriber.queue.put_nowait(_CLOSED)
 
 
-__all__ = ["LiveSubscription", "LiveTelemetryHub"]
+__all__ = ["LiveSubscriberLimitError", "LiveSubscription", "LiveTelemetryHub"]
