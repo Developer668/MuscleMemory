@@ -4,6 +4,42 @@ export const HOUSE_WIDTH = 13.2;
 export const HOUSE_DEPTH = 9.2;
 export const STORY_HEIGHT = 3.12;
 
+/**
+ * Every wall, trim and piece of furniture in this file is positioned against the
+ * *walking surface* of its storey: y = 0 downstairs, y = STORY_HEIGHT upstairs.
+ * Floor slabs therefore hang below that line rather than straddling it.
+ */
+const FLOOR_THICKNESS = 0.16;
+const GROUND_SOFFIT = -FLOOR_THICKNESS;
+const UPPER_SOFFIT = STORY_HEIGHT - FLOOR_THICKNESS;
+const WALL_HEIGHT = 2.9;
+const DOOR_HEIGHT = 2.1;
+
+/**
+ * One straight flight of stairs, plus the hole it rises through. The stairwell
+ * opening, the guard rails, the landing and the upper partitions are all derived
+ * from these constants, so the flight cannot drift out of its own hole again.
+ */
+const STAIR_RISERS = 15;
+const STAIR_RISE = STORY_HEIGHT / STAIR_RISERS;
+const STAIR_GOING = 0.27;
+const STAIR_WIDTH = 1.3;
+const STAIR_CENTER_X = -1.2;
+const STAIR_WEST_X = STAIR_CENTER_X - STAIR_WIDTH / 2;
+const STAIR_EAST_X = STAIR_CENTER_X + STAIR_WIDTH / 2;
+/** Nosing of the bottom tread, and the floor edge the top tread lands against. */
+const STAIR_BOTTOM_Z = 4.1;
+const STAIR_TOP_Z = STAIR_BOTTOM_Z - (STAIR_RISERS - 1) * STAIR_GOING;
+const HANDRAIL_HEIGHT = 0.9;
+const HANDRAIL_THICKNESS = 0.07;
+
+/** Upper-floor partitions and the door openings punched through them. */
+const WEST_PARTITION_X = -2.6;
+const EAST_PARTITION_X = 0.35;
+const CROSS_PARTITION_Z = 0.66;
+const PARTITION_THICKNESS = 0.14;
+const BEDROOM_DOOR_Z: [number, number] = [-1.25, -0.35];
+
 export type TwoStoryHouseModel = {
   root: THREE.Group;
   groundFloor: THREE.Group;
@@ -42,6 +78,112 @@ function addBox(
   const result = item(new THREE.BoxGeometry(...dimensions), material, position, rotation);
   parent.add(result);
   return result;
+}
+
+/**
+ * A gap in a wall. `full` gaps run floor to ceiling (a stairwell, an open plan
+ * threshold); the rest get a header and casing so they read as a door.
+ */
+type Opening = { from: number; to: number; full?: boolean };
+
+function addOpeningTrim(
+  parent: THREE.Group,
+  along: "x" | "z",
+  offset: number,
+  baseY: number,
+  opening: Opening,
+  casing: THREE.Material,
+): void {
+  const depth = PARTITION_THICKNESS + 0.05;
+  const mid = (opening.from + opening.to) / 2;
+  const span = opening.to - opening.from;
+  for (const edge of [opening.from, opening.to]) {
+    const size: [number, number, number] = along === "z"
+      ? [depth, DOOR_HEIGHT, 0.07]
+      : [0.07, DOOR_HEIGHT, depth];
+    const at: [number, number, number] = along === "z"
+      ? [offset, baseY + DOOR_HEIGHT / 2, edge]
+      : [edge, baseY + DOOR_HEIGHT / 2, offset];
+    addBox(parent, size, at, casing);
+  }
+  const lintel: [number, number, number] = along === "z"
+    ? [depth, 0.07, span + 0.14]
+    : [span + 0.14, 0.07, depth];
+  const lintelAt: [number, number, number] = along === "z"
+    ? [offset, baseY + DOOR_HEIGHT, mid]
+    : [mid, baseY + DOOR_HEIGHT, offset];
+  addBox(parent, lintel, lintelAt, casing);
+}
+
+/**
+ * Builds one partition as a run of panels between its openings, so a wall can
+ * never float over a hole in the floor and every threshold gets a real head.
+ */
+function addPartition(
+  parent: THREE.Group,
+  along: "x" | "z",
+  offset: number,
+  span: [number, number],
+  baseY: number,
+  openings: Opening[],
+  material: THREE.Material,
+  casing?: THREE.Material,
+): void {
+  const panel = (from: number, to: number, height: number, bottom: number) => {
+    if (to - from <= 0.001 || height <= 0.001) return;
+    const size: [number, number, number] = along === "z"
+      ? [PARTITION_THICKNESS, height, to - from]
+      : [to - from, height, PARTITION_THICKNESS];
+    const at: [number, number, number] = along === "z"
+      ? [offset, bottom + height / 2, (from + to) / 2]
+      : [(from + to) / 2, bottom + height / 2, offset];
+    addBox(parent, size, at, material);
+  };
+
+  let cursor = span[0];
+  for (const opening of [...openings].sort((a, b) => a.from - b.from)) {
+    panel(cursor, opening.from, WALL_HEIGHT, baseY);
+    if (!opening.full) {
+      panel(opening.from, opening.to, WALL_HEIGHT - DOOR_HEIGHT, baseY + DOOR_HEIGHT);
+      if (casing) addOpeningTrim(parent, along, offset, baseY, opening, casing);
+    }
+    cursor = opening.to;
+  }
+  panel(cursor, span[1], WALL_HEIGHT, baseY);
+}
+
+/** Guard rail along one edge of the stairwell, standing on the floor it protects. */
+function addWellRailing(
+  parent: THREE.Group,
+  x: number,
+  span: [number, number],
+  baseY: number,
+): void {
+  const railing = surface("#333735", 0.34, 0.6);
+  const [from, to] = span;
+  const clear = HANDRAIL_HEIGHT - HANDRAIL_THICKNESS / 2;
+  const count = Math.max(2, Math.round((to - from) / 0.17));
+  for (let index = 0; index <= count; index += 1) {
+    const z = from + ((to - from) * index) / count;
+    parent.add(item(
+      new THREE.CylinderGeometry(0.022, 0.022, clear, 8),
+      railing,
+      [x, baseY + clear / 2, z],
+    ));
+  }
+  addBox(
+    parent,
+    [HANDRAIL_THICKNESS, HANDRAIL_THICKNESS, to - from],
+    [x, baseY + HANDRAIL_HEIGHT - HANDRAIL_THICKNESS / 2, (from + to) / 2],
+    railing,
+  );
+  for (const z of [from, to]) {
+    parent.add(item(
+      new THREE.CylinderGeometry(0.032, 0.032, HANDRAIL_HEIGHT, 10),
+      railing,
+      [x, baseY + HANDRAIL_HEIGHT / 2, z],
+    ));
+  }
 }
 
 function canvasTexture(
@@ -319,6 +461,8 @@ function makeBed(width: number, depth: number, color: string): THREE.Group {
     color,
     roughness: 0.97,
   });
+  // Recessed plinth carrying the frame, so the bed rests on the floor.
+  addBox(bed, [width - 0.16, 0.2, depth - 0.16], [0, 0.1, 0], surface("#4f382a", 0.7));
   addBox(bed, [width, 0.28, depth], [0, 0.34, 0], frame);
   addBox(bed, [width - 0.12, 0.28, depth - 0.14], [0, 0.58, 0], linen);
   addBox(bed, [width, 1.12, 0.16], [0, 0.78, -depth / 2 + 0.02], surface("#83705f", 0.9));
@@ -444,7 +588,7 @@ function addKitchen(parent: THREE.Group): void {
   }
   for (const x of [-3.85, -2.65]) {
     const pendant = makePendant("#725d47");
-    pendant.position.set(x, 2.45, -1.84);
+    pendant.position.set(x, UPPER_SOFFIT - 0.8, -1.84);
     parent.add(pendant);
   }
 }
@@ -455,7 +599,7 @@ function addLivingRoom(parent: THREE.Group): void {
     color: "#718782",
     roughness: 0.97,
   });
-  addBox(parent, [4.75, 0.035, 3.15], [3.55, 0.035, -1.62], rug);
+  addBox(parent, [4.75, 0.035, 3.15], [3.55, 0.0175, -1.62], rug);
   const sofa = makeSofa();
   sofa.position.set(3.55, 0, -3.65);
   parent.add(sofa);
@@ -484,23 +628,32 @@ function addLivingRoom(parent: THREE.Group): void {
   parent.add(floorLamp);
 }
 
+/**
+ * The dining room sits east of the stair hall, between the flight and the study
+ * wall. Chairs face the table: makeDiningChair puts its back at local +z, so a
+ * seat north of the table is turned by PI and a seat west of it by -PI/2.
+ */
+const DINING_X = 1.15;
+const DINING_Z = 2.75;
+const DINING_TOP = 0.85;
+
 function addDining(parent: THREE.Group): void {
   const oak = surface("#76503a", 0.52);
   const diningTable = new THREE.Group();
   diningTable.name = "procedural-dining-table";
-  addBox(diningTable, [2.8, 0.14, 1.28], [0.05, 0.78, 2.73], oak);
-  for (const x of [-1.05, 1.15]) {
-    for (const z of [2.3, 3.16]) diningTable.add(item(new THREE.CylinderGeometry(0.05, 0.07, 0.72, 12), surface("#393332", 0.38, 0.55), [x, 0.38, z]));
+  addBox(diningTable, [2.0, 0.14, 1.2], [DINING_X, DINING_TOP - 0.07, DINING_Z], oak);
+  for (const x of [DINING_X - 0.78, DINING_X + 0.78]) {
+    for (const z of [DINING_Z - 0.42, DINING_Z + 0.42]) {
+      diningTable.add(item(new THREE.CylinderGeometry(0.05, 0.07, DINING_TOP - 0.14, 12), surface("#393332", 0.38, 0.55), [x, (DINING_TOP - 0.14) / 2, z]));
+    }
   }
   parent.add(diningTable);
   const upholstery = surface("#a7795e", 0.9);
   const placements: Array<[number, number, number]> = [
-    [-1.58, 2.39, Math.PI / 2 + 0.08],
-    [-1.5, 3.12, Math.PI / 2 - 0.05],
-    [1.72, 2.34, -Math.PI / 2 - 0.12],
-    [1.62, 3.08, -Math.PI / 2 + 0.04],
-    [-0.12, 1.7, -0.11],
-    [0.18, 3.76, Math.PI + 0.07],
+    [DINING_X - 0.55, DINING_Z - 0.88, Math.PI + 0.06],
+    [DINING_X + 0.55, DINING_Z - 0.88, Math.PI - 0.04],
+    [DINING_X - 0.55, DINING_Z + 0.88, -0.05],
+    [DINING_X + 0.55, DINING_Z + 0.88, 0.07],
   ];
   for (const [x, z, rotation] of placements) {
     const chair = makeDiningChair(upholstery);
@@ -510,9 +663,9 @@ function addDining(parent: THREE.Group): void {
   }
   const pendant = makePendant("#353332");
   pendant.scale.setScalar(1.25);
-  pendant.position.set(0.05, 2.35, 2.73);
+  pendant.position.set(DINING_X, UPPER_SOFFIT - 1.0, DINING_Z);
   parent.add(pendant);
-  parent.add(item(new THREE.CylinderGeometry(0.16, 0.12, 0.13, 24), surface("#ede8dd", 0.42), [0.05, 0.93, 2.72]));
+  parent.add(item(new THREE.CylinderGeometry(0.16, 0.12, 0.13, 24), surface("#ede8dd", 0.42), [DINING_X, DINING_TOP + 0.065, DINING_Z - 0.01]));
 }
 
 function addFoyerAndStudy(parent: THREE.Group): void {
@@ -528,7 +681,7 @@ function addFoyerAndStudy(parent: THREE.Group): void {
   addBox(parent, [1.18, 0.65, 0.08], [-5.55, 1.35, 2.45], surface("#b6a07d", 0.86));
 
   const studyRug = new THREE.MeshStandardMaterial({ map: fabricTexture("#7e6e77", "rgba(255,255,255,.06)"), roughness: 0.97 });
-  addBox(parent, [2.9, 0.03, 2.35], [4.72, 0.03, 2.72], studyRug);
+  addBox(parent, [2.9, 0.03, 2.35], [4.72, 0.015, 2.72], studyRug);
   addBox(parent, [2.18, 0.11, 0.78], [4.78, 0.78, 3.62], surface("#6e4c38", 0.5));
   for (const x of [3.83, 5.73]) {
     for (const z of [3.35, 3.88]) parent.add(item(new THREE.CylinderGeometry(0.03, 0.045, 0.73, 10), surface("#242827", 0.28, 0.72), [x, 0.38, z]));
@@ -601,23 +754,24 @@ function addLivedInClutter(ground: THREE.Group, upper: THREE.Group): void {
   for (let index = 0; index < 4; index += 1) {
     ground.add(item(new THREE.SphereGeometry(0.075 + index * 0.006, 16, 12), surface(["#d8894b", "#b74d3d", "#d3b34d"][index % 3], 0.78), [-2.8 + index * 0.13, 1.08, -1.82 + (index % 2) * 0.06]));
   }
-  addBookStack(ground, [-0.36, 0.93, 2.7], 0.24, 2);
-  ground.add(item(new THREE.CylinderGeometry(0.13, 0.11, 0.12, 20), ceramic, [0.48, 0.93, 2.78]));
+  addBookStack(ground, [DINING_X - 0.45, DINING_TOP + 0.023, DINING_Z - 0.15], 0.24, 2);
+  ground.add(item(new THREE.CylinderGeometry(0.13, 0.11, 0.12, 20), ceramic, [DINING_X + 0.4, DINING_TOP + 0.06, DINING_Z + 0.1]));
 
   // Upstairs has laundry, rumpled clothes, bedside reading, and scattered blocks.
-  const laundry = item(new THREE.SphereGeometry(0.34, 18, 12), clothBlue, [2.45, STORY_HEIGHT + 0.2, 0.02]);
+  const laundry = item(new THREE.SphereGeometry(0.34, 18, 12), clothBlue, [2.45, STORY_HEIGHT + 0.177, 0.02]);
   laundry.scale.set(1.1, 0.52, 0.82);
   upper.add(laundry);
   for (let index = 0; index < 6; index += 1) {
     const color = ["#d5a53e", "#a65c4e", "#4f7770", "#d7d2c5"][index % 4];
-    const block = addBox(upper, [0.16, 0.16, 0.16], [-1.42 + (index % 3) * 0.24, STORY_HEIGHT + 0.1, 2.05 + Math.floor(index / 3) * 0.22], surface(color, 0.8));
+    const block = addBox(upper, [0.16, 0.16, 0.16], [-3.5 + (index % 3) * 0.24, STORY_HEIGHT + 0.1, 2.05 + Math.floor(index / 3) * 0.22], surface(color, 0.8));
     block.rotation.y = index * 0.31;
   }
-  addBookStack(upper, [2.04, STORY_HEIGHT + 0.54, -3.5], -0.1, 3);
-  addBox(upper, [0.92, 0.035, 0.66], [-2.35, STORY_HEIGHT + 0.77, -2.1], clothBlue, [-0.16, 0.08, 0.13]);
-  addBox(upper, [0.68, 0.035, 0.42], [-4.52, STORY_HEIGHT + 0.74, 3.82], clothCoral, [0, 0.06, 0]);
+  addBookStack(upper, [2.04, STORY_HEIGHT + 0.503, -3.5], -0.1, 3);
+  addBox(upper, [0.92, 0.035, 0.66], [-4.6, STORY_HEIGHT + 0.7375, -2.1], clothBlue, [-0.16, 0.08, 0.13]);
+  addBox(upper, [0.68, 0.035, 0.42], [-4.52, STORY_HEIGHT + 0.6775, 3.82], clothCoral, [0, 0.06, 0]);
   for (let index = 0; index < 3; index += 1) {
-    upper.add(item(new THREE.CylinderGeometry(0.035, 0.04, 0.18 + index * 0.05, 14), surface(["#d8b45a", "#668c82", "#bd7160"][index], 0.58), [-5.84 + index * 0.16, STORY_HEIGHT + 0.82, 3.88]));
+    const height = 0.18 + index * 0.05;
+    upper.add(item(new THREE.CylinderGeometry(0.035, 0.04, height, 14), surface(["#d8b45a", "#668c82", "#bd7160"][index], 0.58), [-5.84 + index * 0.16, STORY_HEIGHT + 0.66 + height / 2, 3.88]));
   }
 }
 
@@ -644,17 +798,31 @@ function addArchitecturalCharacter(root: THREE.Group, ground: THREE.Group, upper
   });
   const trim = surface("#eee9df", 0.74);
 
-  // Room-specific finishes keep the cutaway readable while giving each space an identity.
-  addBox(ground, [3.58, 2.66, 0.025], [4.58, 1.48, 1.081], sagePlaster);
-  addBox(upper, [5.72, 2.62, 0.025], [-3.58, STORY_HEIGHT + 1.47, 0.742], bluePlaster);
-  addBox(upper, [3.56, 2.62, 0.025], [4.68, STORY_HEIGHT + 1.47, 0.742], rosePlaster);
+  // Room finishes run the full solid section of the wall they sit on: from the top
+  // of the skirting to the head of the wall, and never across a door or the well.
+  const finish = (
+    parent: THREE.Group,
+    span: [number, number],
+    baseY: number,
+    z: number,
+    material: THREE.Material,
+  ) => {
+    const skirting = 0.11;
+    addBox(
+      parent,
+      [span[1] - span[0], WALL_HEIGHT - skirting, 0.025],
+      [(span[0] + span[1]) / 2, baseY + skirting + (WALL_HEIGHT - skirting) / 2, z],
+      material,
+    );
+    addBox(parent, [span[1] - span[0], skirting, 0.06], [(span[0] + span[1]) / 2, baseY + skirting / 2, z - 0.018], trim);
+  };
+  finish(ground, [2.72, HOUSE_WIDTH / 2], 0, 1.081, sagePlaster);
+  finish(upper, [-HOUSE_WIDTH / 2, WEST_PARTITION_X], STORY_HEIGHT, 0.742, bluePlaster);
+  finish(upper, [EAST_PARTITION_X - PARTITION_THICKNESS / 2, HOUSE_WIDTH / 2], STORY_HEIGHT, 0.742, rosePlaster);
   addBox(ground, [4.78, 0.77, 0.035], [-3.75, 1.42, -4.49], tile);
   addBox(ground, [4.82, 0.58, 0.03], [3.98, 0.33, -4.49], sagePlaster);
 
-  // Baseboards and door casings add the small depth cues that make the walls feel built.
-  addBox(ground, [3.68, 0.11, 0.06], [4.58, 0.08, 1.1], trim);
-  addBox(upper, [5.82, 0.11, 0.06], [-3.58, STORY_HEIGHT + 0.08, 0.76], trim);
-  addBox(upper, [3.66, 0.11, 0.06], [4.68, STORY_HEIGHT + 0.08, 0.76], trim);
+  // Front door casing.
   for (const x of [-5.56, -4.34]) addBox(ground, [0.09, 2.48, 0.13], [x, 1.25, 4.42], trim);
   addBox(ground, [1.31, 0.09, 0.13], [-4.95, 2.46, 4.42], trim);
 
@@ -712,35 +880,113 @@ function addArchitecturalCharacter(root: THREE.Group, ground: THREE.Group, upper
     color: "#795f49",
     roughness: 1,
   });
-  addBox(root, [1.2, 0.035, 0.62], [-4.95, -0.3, 4.96], doormat, [0, 0.03, 0]);
+  addBox(root, [1.2, 0.035, 0.62], [-4.95, -0.1425, 4.96], doormat, [0, 0.03, 0]);
 }
 
+/**
+ * One straight flight rising toward -z. There are STAIR_RISERS risers but only
+ * STAIR_RISERS - 1 treads: the upper floor itself is the last walking surface,
+ * which is what stops the top tread from intersecting the slab.
+ *
+ * The handrail is generated from the flight's own pitch and the balusters are cut
+ * to reach it, so the rail can never slope against the steps or drift off the
+ * treads the way a hand-tuned rotation did.
+ */
 function addStairs(parent: THREE.Group): void {
   const tread = surface("#795039", 0.54);
   const stringer = surface("#e6e0d4", 0.78);
   const rail = surface("#353735", 0.34, 0.55);
-  const steps = 15;
-  for (let index = 0; index < steps; index += 1) {
-    const height = (index + 1) * (STORY_HEIGHT / steps);
-    const z = 3.86 - index * 0.235;
-    addBox(parent, [1.58, height, 0.29], [-1.12, height / 2, z], stringer);
-    addBox(parent, [1.68, 0.075, 0.34], [-1.12, height + 0.035, z], tread);
+  const treadThickness = 0.05;
+  const nosing = 0.03;
+  const railX = STAIR_EAST_X - 0.09;
+  const pitch = Math.atan2(STAIR_RISE, STAIR_GOING);
+  // Height of the rail's centre line directly above a tread's walking surface.
+  const railCentreAt = (z: number) =>
+    STAIR_RISE + HANDRAIL_HEIGHT + (STAIR_BOTTOM_Z - z) * (STAIR_RISE / STAIR_GOING);
+
+  for (let index = 0; index < STAIR_RISERS - 1; index += 1) {
+    const walking = (index + 1) * STAIR_RISE;
+    const front = STAIR_BOTTOM_Z - index * STAIR_GOING;
+    const back = front - STAIR_GOING;
+    // Solid carriage below, tread board on top: together they fill 0 .. walking.
+    addBox(
+      parent,
+      [STAIR_WIDTH, walking - treadThickness, STAIR_GOING],
+      [STAIR_CENTER_X, (walking - treadThickness) / 2, (front + back) / 2],
+      stringer,
+    );
+    addBox(
+      parent,
+      [STAIR_WIDTH, treadThickness, STAIR_GOING + nosing],
+      [STAIR_CENTER_X, walking - treadThickness / 2, (front + nosing + back) / 2],
+      tread,
+    );
+
     if (index % 2 === 0) {
-      parent.add(item(new THREE.CylinderGeometry(0.025, 0.025, 0.88, 9), rail, [-0.22, height + 0.44, z]));
+      const z = (front + back) / 2;
+      const clear = railCentreAt(z) - HANDRAIL_THICKNESS / 2 - walking;
+      parent.add(item(
+        new THREE.CylinderGeometry(0.022, 0.022, clear, 9),
+        rail,
+        [railX, walking + clear / 2, z],
+      ));
     }
   }
-  const handrail = addBox(parent, [0.07, 0.07, 3.56], [-0.22, 2.1, 2.22], rail, [-0.66, 0, 0]);
-  handrail.rotation.x = -0.66;
+
+  // Riser board closing the gap between the top tread and the landing soffit.
+  const topTread = (STAIR_RISERS - 1) * STAIR_RISE;
+  addBox(
+    parent,
+    [STAIR_WIDTH, UPPER_SOFFIT - topTread, 0.06],
+    [STAIR_CENTER_X, (UPPER_SOFFIT + topTread) / 2, STAIR_TOP_Z - 0.03],
+    stringer,
+  );
+
+  const run = (STAIR_RISERS - 1) * STAIR_GOING;
+  const rise = (STAIR_RISERS - 1) * STAIR_RISE;
+  addBox(
+    parent,
+    [HANDRAIL_THICKNESS, HANDRAIL_THICKNESS, Math.hypot(run, rise)],
+    [railX, (railCentreAt(STAIR_BOTTOM_Z) + railCentreAt(STAIR_TOP_Z)) / 2, (STAIR_BOTTOM_Z + STAIR_TOP_Z) / 2],
+    rail,
+    [pitch, 0, 0],
+  );
+  // Newel posts anchoring each end of the rail to the flight.
+  parent.add(item(
+    new THREE.CylinderGeometry(0.038, 0.038, railCentreAt(STAIR_BOTTOM_Z), 12),
+    rail,
+    [railX, railCentreAt(STAIR_BOTTOM_Z) / 2, STAIR_BOTTOM_Z - 0.06],
+  ));
+  parent.add(item(
+    new THREE.CylinderGeometry(0.038, 0.038, railCentreAt(STAIR_TOP_Z) - STORY_HEIGHT + 0.4, 12),
+    rail,
+    [railX, STORY_HEIGHT - 0.4 + (railCentreAt(STAIR_TOP_Z) - STORY_HEIGHT + 0.4) / 2, STAIR_TOP_Z + 0.08],
+  ));
 }
 
 function addUpperArchitecture(upper: THREE.Group): void {
   const oak = new THREE.MeshStandardMaterial({ map: oakTexture(), color: "#a4744e", roughness: 0.57 });
   const wall = surface("#e9e5dc", 0.94);
+  const casing = surface("#f4f0e7", 0.7);
   const tile = new THREE.MeshStandardMaterial({ map: tileTexture("#d6d2ca", "#aeb0ac", 9), roughness: 0.72 });
-  addBox(upper, [HOUSE_WIDTH, 0.16, 4.92], [0, STORY_HEIGHT, -2.14], oak);
-  addBox(upper, [4.9, 0.16, 4.28], [-4.15, STORY_HEIGHT, 2.44], oak);
-  addBox(upper, [6.2, 0.16, 4.28], [3.5, STORY_HEIGHT, 2.44], oak);
-  addBox(upper, [3.2, 0.02, 3.1], [-4.55, STORY_HEIGHT + 0.1, 2.55], tile);
+  const west = -HOUSE_WIDTH / 2;
+  const east = HOUSE_WIDTH / 2;
+  const back = -HOUSE_DEPTH / 2;
+  const front = HOUSE_DEPTH / 2;
+
+  // Three slabs: the bedroom half, then two front slabs flanking the stairwell.
+  const slab = (span: [number, number], depth: [number, number]) =>
+    addBox(
+      upper,
+      [span[1] - span[0], FLOOR_THICKNESS, depth[1] - depth[0]],
+      [(span[0] + span[1]) / 2, UPPER_SOFFIT + FLOOR_THICKNESS / 2, (depth[0] + depth[1]) / 2],
+      oak,
+    );
+  slab([west, east], [back, STAIR_TOP_Z]);
+  slab([west, STAIR_WEST_X], [STAIR_TOP_Z, front]);
+  slab([STAIR_EAST_X, east], [STAIR_TOP_Z, front]);
+  addBox(upper, [3.2, 0.02, 3.1], [-4.55, STORY_HEIGHT + 0.01, 2.55], tile);
+
   addBackWall(upper, STORY_HEIGHT, [
     { x: -4.55, width: 2.0 },
     { x: -0.9, width: 1.8 },
@@ -748,15 +994,22 @@ function addUpperArchitecture(upper: THREE.Group): void {
   ]);
   addLeftWall(upper, STORY_HEIGHT);
   addTrim(upper, STORY_HEIGHT);
-  addBox(upper, [0.14, 2.9, 4.72], [0.35, STORY_HEIGHT + 1.45, -2.18], wall);
-  addBox(upper, [6.05, 2.9, 0.14], [-3.58, STORY_HEIGHT + 1.45, 0.66], wall);
-  addBox(upper, [3.85, 2.9, 0.14], [4.68, STORY_HEIGHT + 1.45, 0.66], wall);
-  addBox(upper, [1.2, 2.9, 0.14], [0.95, STORY_HEIGHT + 1.45, 0.66], wall);
-  const railing = surface("#333735", 0.34, 0.6);
-  for (let index = 0; index < 9; index += 1) {
-    upper.add(item(new THREE.CylinderGeometry(0.022, 0.022, 0.88, 8), railing, [-0.2, STORY_HEIGHT + 0.5, 0.95 + index * 0.36]));
-  }
-  addBox(upper, [0.07, 0.07, 3.05], [-0.2, STORY_HEIGHT + 0.96, 2.38], railing);
+
+  // Bedroom 2 and the master each open onto the landing through a cased door.
+  addPartition(upper, "z", WEST_PARTITION_X, [back, CROSS_PARTITION_Z], STORY_HEIGHT,
+    [{ from: BEDROOM_DOOR_Z[0], to: BEDROOM_DOOR_Z[1] }], wall, casing);
+  addPartition(upper, "z", EAST_PARTITION_X, [back, CROSS_PARTITION_Z], STORY_HEIGHT,
+    [{ from: BEDROOM_DOOR_Z[0], to: BEDROOM_DOOR_Z[1] }], wall, casing);
+  // The cross wall carries the bathroom door, the stairwell, and the front room door.
+  addPartition(upper, "x", CROSS_PARTITION_Z, [west, east], STORY_HEIGHT, [
+    { from: WEST_PARTITION_X, to: STAIR_WEST_X },
+    { from: STAIR_WEST_X, to: STAIR_EAST_X, full: true },
+    { from: STAIR_EAST_X, to: EAST_PARTITION_X - PARTITION_THICKNESS / 2 },
+  ], wall, casing);
+
+  // Guard rails stand on the slabs either side of the well, not inside it.
+  addWellRailing(upper, STAIR_WEST_X - 0.06, [CROSS_PARTITION_Z, front - 0.05], STORY_HEIGHT);
+  addWellRailing(upper, STAIR_EAST_X + 0.06, [CROSS_PARTITION_Z, front - 0.05], STORY_HEIGHT);
 }
 
 function addUpperRooms(upper: THREE.Group): void {
@@ -765,10 +1018,10 @@ function addUpperRooms(upper: THREE.Group): void {
   upper.add(master);
   for (const x of [2.03, 5.37]) {
     addBox(upper, [0.62, 0.48, 0.5], [x, STORY_HEIGHT + 0.24, -3.5], surface("#6c4b39", 0.56));
-    upper.add(item(new THREE.CylinderGeometry(0.1, 0.18, 0.3, 24, 1, true), surface("#c5aa7f", 0.86), [x, STORY_HEIGHT + 0.84, -3.5]));
+    upper.add(item(new THREE.CylinderGeometry(0.1, 0.18, 0.3, 24, 1, true), surface("#c5aa7f", 0.86), [x, STORY_HEIGHT + 0.63, -3.5]));
   }
   const masterRug = new THREE.MeshStandardMaterial({ map: fabricTexture("#7a8882", "rgba(255,255,255,.06)"), roughness: 0.96 });
-  addBox(upper, [3.7, 0.025, 2.95], [3.7, STORY_HEIGHT + 0.03, -2.22], masterRug);
+  addBox(upper, [3.7, 0.025, 2.95], [3.7, STORY_HEIGHT + 0.0125, -2.22], masterRug);
   const wardrobe = new THREE.Group();
   wardrobe.name = "procedural-master-wardrobe";
   addBox(wardrobe, [1.8, 2.2, 0.58], [5.62, STORY_HEIGHT + 1.1, -0.2], surface("#786553", 0.7));
@@ -777,7 +1030,7 @@ function addUpperRooms(upper: THREE.Group): void {
 
   const secondBed = makeBed(2.2, 2.05, "#a8bec3");
   secondBed.name = "procedural-second-bed";
-  secondBed.position.set(-2.25, STORY_HEIGHT, -2.7);
+  secondBed.position.set(-4.5, STORY_HEIGHT, -2.7);
   upper.add(secondBed);
   addBox(upper, [1.72, 0.1, 0.65], [-5.18, STORY_HEIGHT + 0.77, -1.16], surface("#76513a", 0.54));
   for (const x of [-5.88, -4.48]) {
@@ -796,19 +1049,19 @@ function addUpperRooms(upper: THREE.Group): void {
   addBox(upper, [2.15, 0.56, 0.86], [-3.72, bathroomY + 0.28, 1.24], porcelain);
   addBox(upper, [2.0, 0.07, 0.7], [-3.72, bathroomY + 0.58, 1.24], porcelain);
   const showerGlass = new THREE.MeshPhysicalMaterial({ color: "#cbe5e8", roughness: 0.05, transmission: 0.35, transparent: true, opacity: 0.48, clearcoat: 1 });
-  addBox(upper, [1.5, 1.95, 0.05], [-5.78, bathroomY + 1.02, 1.62], showerGlass);
-  addBox(upper, [0.05, 1.95, 1.35], [-5.03, bathroomY + 1.02, 0.96], showerGlass);
-  upper.add(item(new THREE.CylinderGeometry(0.19, 0.24, 0.45, 28), porcelain, [-2.38, bathroomY + 0.31, 2.75]));
-  addBox(upper, [0.52, 0.12, 0.65], [-2.38, bathroomY + 0.59, 2.89], porcelain);
+  addBox(upper, [1.5, 1.95, 0.05], [-5.78, bathroomY + 0.985, 1.62], showerGlass);
+  addBox(upper, [0.05, 1.95, 1.35], [-5.03, bathroomY + 0.985, 0.96], showerGlass);
+  upper.add(item(new THREE.CylinderGeometry(0.19, 0.24, 0.45, 28), porcelain, [-2.38, bathroomY + 0.225, 2.75]));
+  addBox(upper, [0.52, 0.12, 0.65], [-2.38, bathroomY + 0.51, 2.89], porcelain);
 
-  addBox(upper, [1.65, 0.45, 0.5], [1.5, STORY_HEIGHT + 0.24, 2.76], surface("#8b6d53", 0.72));
-  addBox(upper, [1.45, 0.08, 0.44], [1.5, STORY_HEIGHT + 0.51, 2.76], surface("#c4aa87", 0.92));
+  addBox(upper, [1.65, 0.45, 0.5], [1.5, STORY_HEIGHT + 0.225, 2.76], surface("#8b6d53", 0.72));
+  addBox(upper, [1.45, 0.08, 0.44], [1.5, STORY_HEIGHT + 0.49, 2.76], surface("#c4aa87", 0.92));
   const plant = makePlant(0.82);
   plant.position.set(3.2, STORY_HEIGHT, 2.9);
   upper.add(plant);
-  for (const x of [-3.5, 2.9]) {
+  for (const x of [-4.0, 2.9]) {
     const pendant = makePendant("#8c785d");
-    pendant.position.set(x, STORY_HEIGHT + 2.38, -2.0);
+    pendant.position.set(x, STORY_HEIGHT + WALL_HEIGHT - 0.8, -2.0);
     upper.add(pendant);
   }
 }
@@ -848,8 +1101,8 @@ export function buildTwoStoryHouse(): TwoStoryHouseModel {
 
   const oak = new THREE.MeshStandardMaterial({ map: oakTexture(), color: "#a4744e", roughness: 0.57, metalness: 0.01 });
   const foundation = surface("#71675f", 0.84);
-  addBox(ground, [HOUSE_WIDTH + 0.36, 0.3, HOUSE_DEPTH + 0.36], [0, -0.18, 0], foundation);
-  addBox(ground, [HOUSE_WIDTH, 0.16, HOUSE_DEPTH], [0, 0, 0], oak);
+  addBox(ground, [HOUSE_WIDTH + 0.36, 0.3, HOUSE_DEPTH + 0.36], [0, GROUND_SOFFIT - 0.15, 0], foundation);
+  addBox(ground, [HOUSE_WIDTH, FLOOR_THICKNESS, HOUSE_DEPTH], [0, GROUND_SOFFIT / 2, 0], oak);
   addBackWall(ground, 0, [
     { x: -4.5, width: 2.0 },
     { x: -0.3, width: 2.0 },
@@ -859,10 +1112,17 @@ export function buildTwoStoryHouse(): TwoStoryHouseModel {
   addTrim(ground, 0);
 
   const wall = surface("#e9e5dc", 0.94);
-  addBox(ground, [0.14, 2.95, 2.65], [2.65, 1.48, 3.28], wall);
-  addBox(ground, [3.85, 2.95, 0.14], [4.58, 1.48, 1.0], wall);
-  addBox(ground, [1.1, 2.95, 0.14], [0.35, 1.48, 1.0], wall);
-  addBox(ground, [2.1, 2.95, 0.14], [-4.95, 1.48, 1.0], wall);
+  const casing = surface("#f4f0e7", 0.7);
+  // Dining room / study divider, with the study's doorway at its open end.
+  const spineFace = 1.0 + PARTITION_THICKNESS / 2;
+  addPartition(ground, "z", 2.65, [spineFace, HOUSE_DEPTH / 2], 0,
+    [{ from: spineFace, to: 1.96 }], wall, casing);
+  // The spine wall: foyer, then the stair hall, then thresholds into each room.
+  addPartition(ground, "x", 1.0, [-HOUSE_WIDTH / 2, HOUSE_WIDTH / 2], 0, [
+    { from: -3.9, to: STAIR_WEST_X - 0.1 },
+    { from: STAIR_WEST_X - 0.1, to: -0.2, full: true },
+    { from: 0.9, to: 2.58 },
+  ], wall, casing);
 
   addKitchen(ground);
   addLivingRoom(ground);
