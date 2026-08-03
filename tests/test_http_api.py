@@ -30,6 +30,9 @@ from muscle_memory.api.models import (
     EpisodeSummary,
     LiveMessageKind,
     LiveStreamMessage,
+    MemoryGraphEdge,
+    MemoryGraphNode,
+    MemoryGraphSnapshot,
     PendingApprovalList,
     PolicySummaryList,
     PromotionEligibility,
@@ -126,6 +129,40 @@ class FakeBackend:
             state=ProviderOperationalState.HEALTHY,
             providers=(_provider(),),
             checked_at=NOW,
+        )
+
+    async def memory_graph(self) -> MemoryGraphSnapshot:
+        return MemoryGraphSnapshot(
+            provider_state=ProviderOperationalState.CACHED,
+            graph_name="local-cache",
+            source="local_cache",
+            provider_checked_at=NOW,
+            refreshed_at=NOW,
+            fact_count=1,
+            nodes=(
+                MemoryGraphNode(
+                    id="agent:world-physics",
+                    label="World & Physics Agent",
+                    record_kind="runtime_agent",
+                    owner="World & Physics Agent",
+                    properties={"fact_count": 1},
+                ),
+                MemoryGraphNode(
+                    id="fact:world:world-training-1",
+                    label="world-training-1",
+                    record_kind="world",
+                    owner="World & Physics Agent",
+                    properties={"validated": True},
+                ),
+            ),
+            edges=(
+                MemoryGraphEdge(
+                    id="agent:world-physics:OWNS:fact:world:world-training-1",
+                    source="agent:world-physics",
+                    target="fact:world:world-training-1",
+                    relationship="OWNS",
+                ),
+            ),
         )
 
     async def list_episodes(self, *, cursor: str | None, limit: int) -> EpisodeList:
@@ -292,6 +329,7 @@ def test_health_episode_telemetry_and_replay_are_typed_and_operational_only() ->
         episodes = client.get("/api/v1/episodes")
         telemetry = client.get("/api/v1/episodes/episode-1/telemetry")
         replay = client.get("/api/v1/episodes/episode-1/replay")
+        memory_graph = client.get("/api/v1/memory/graph")
 
     assert health.status_code == 200
     assert health.json()["providers"][0]["state"] == "healthy"
@@ -301,6 +339,10 @@ def test_health_episode_telemetry_and_replay_are_typed_and_operational_only() ->
     assert telemetry.json()["cadence_hz"] == 20
     assert telemetry.json()["records"][0]["frame_join_key"] == "frame_id"
     assert replay.json()["frame_join_key"] == "frame_id"
+    assert memory_graph.status_code == 200
+    assert memory_graph.json()["source"] == "local_cache"
+    assert memory_graph.json()["fact_count"] == 1
+    assert "held_out" not in json.dumps(memory_graph.json())
     assert backend.started == 1
     assert backend.stopped == 1
     assert backend.live_publisher is not None
@@ -412,6 +454,7 @@ def test_openapi_has_versioned_routes_security_and_no_credential_schema() -> Non
     paths = schema["paths"]
     required = {
         "/api/v1/health",
+        "/api/v1/memory/graph",
         "/api/v1/episodes",
         "/api/v1/episodes/{episode_id}",
         "/api/v1/episodes/{episode_id}/telemetry",

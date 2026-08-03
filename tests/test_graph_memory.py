@@ -574,6 +574,46 @@ def test_append_only_cache_reloads_and_excludes_held_out_experience(tmp_path: Pa
     assert excluded.lessons == ()
 
 
+def test_operational_graph_projection_is_dependency_closed_and_excludes_held_out(
+    tmp_path: Path,
+) -> None:
+    cache = AppendOnlyGraphCache(tmp_path / "graph-events.jsonl")
+    cache.record_evaluated_policy(make_policy("policy-v0", POLICY_V0_HASH))
+    cache.record_evaluated_policy(make_policy("policy-v1", POLICY_V1_HASH))
+    record_experience_chain(
+        cache,
+        suffix="11",
+        split=WorldSplit.TRAINING,
+        signature_hash="1" * 64,
+    )
+    record_experience_chain(
+        cache,
+        suffix="33",
+        split=WorldSplit.HELD_OUT,
+        signature_hash="3" * 64,
+    )
+
+    events = cache.operational_events()
+    rendered = canonical_json([event.model_dump(mode="json") for event in events])
+
+    assert {event.record_kind for event in events} == {
+        "world",
+        "obstacle",
+        "evaluated_policy",
+        "episode",
+        "failure",
+        "correction",
+        "lesson",
+    }
+    assert "world-11" in rendered
+    assert "episode-11" in rendered
+    assert "world-33" not in rendered
+    assert "episode-33" not in rendered
+    assert "failure-33" not in rendered
+    assert "correction-33" not in rendered
+    assert "lesson-33" not in rendered
+
+
 def test_append_only_cache_rejects_replacement_under_same_identity(tmp_path: Path) -> None:
     cache = AppendOnlyGraphCache(tmp_path / "events.jsonl")
     world = make_world("11")
