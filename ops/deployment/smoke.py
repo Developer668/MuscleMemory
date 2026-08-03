@@ -65,7 +65,14 @@ def validate_health(
 
 
 def fetch_health(url: str, *, timeout_seconds: float) -> object:
-    request = urllib.request.Request(url, method="GET")
+    request = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 MuscleMemoryDeploy/1.0",
+        },
+    )
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         if response.status != 200:
             raise SmokeError(f"health endpoint returned HTTP {response.status}")
