@@ -14,6 +14,7 @@ from muscle_memory.api.models import (
     DecisionRequest,
     EpisodeDetail,
     EpisodeList,
+    MemoryGraphSnapshot,
     PendingApprovalList,
     PolicySummaryList,
     PromotionEligibility,
@@ -70,6 +71,8 @@ class ApiBackend(Protocol):
     async def shutdown(self) -> None: ...
 
     async def health(self) -> ServiceHealth: ...
+
+    async def memory_graph(self) -> MemoryGraphSnapshot: ...
 
     async def list_episodes(self, *, cursor: str | None, limit: int) -> EpisodeList: ...
 

@@ -25,6 +25,40 @@ export interface ServiceHealth {
   checked_at: string;
 }
 
+export type MemoryGraphOwner =
+  | "system"
+  | "World & Physics Agent"
+  | "Failure & Curriculum Agent"
+  | "Safety & Evaluation Agent";
+
+export interface MemoryGraphNode {
+  id: string;
+  label: string;
+  record_kind: string;
+  owner: MemoryGraphOwner;
+  properties: Record<string, unknown>;
+}
+
+export interface MemoryGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  relationship: string;
+}
+
+export interface MemoryGraphSnapshot {
+  exposure: "operational_only";
+  provider: "FalkorDB";
+  provider_state: ProviderState;
+  graph_name: string;
+  source: "falkordb" | "local_cache";
+  provider_checked_at: string;
+  refreshed_at: string;
+  fact_count: number;
+  nodes: MemoryGraphNode[];
+  edges: MemoryGraphEdge[];
+}
+
 export interface EpisodeSummary {
   episode_id: string;
   kind: "training" | "development_evaluation" | "demo";

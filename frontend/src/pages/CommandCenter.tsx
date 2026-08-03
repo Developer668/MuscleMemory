@@ -38,6 +38,7 @@ import { BrandMark } from "../components/BrandMark";
 import { RealisticHomeScene } from "../operator/RealisticHomeScene";
 import type {
   CorrectionPoint,
+  MemoryGraphNode as MemoryGraphNodeData,
   ProviderHealth,
   SensorReading,
   SignalUse,
@@ -96,27 +97,6 @@ const PIPELINE_STEPS = [
   { label: "Train candidate", owner: "RocketRide", gate: false },
   { label: "Evaluate candidate", owner: "Safety & Evaluation", gate: false },
   { label: "Promote or roll back", owner: "Safety & Evaluation", gate: true },
-] as const;
-
-const GRAPH_NODES = [
-  { id: "robot", label: "MM-01", kind: "Fixed robot", x: 50, y: 12, tone: "mint" },
-  { id: "worlds", label: "Worlds", kind: "Validated layouts", x: 16, y: 34, tone: "blue" },
-  { id: "obstacles", label: "Obstacles", kind: "Approved colliders", x: 16, y: 68, tone: "violet" },
-  { id: "episodes", label: "Episodes", kind: "Operational runs", x: 38, y: 78, tone: "green" },
-  { id: "failures", label: "Failures", kind: "Measured outcomes", x: 58, y: 78, tone: "coral" },
-  { id: "corrections", label: "Corrections", kind: "Human proposals", x: 76, y: 64, tone: "amber" },
-  { id: "lessons", label: "Lessons", kind: "Explicit memory", x: 84, y: 40, tone: "mint" },
-  { id: "policies", label: "Policies", kind: "Immutable versions", x: 72, y: 18, tone: "blue" },
-] as const;
-
-const GRAPH_EDGES = [
-  { from: "robot", to: "episodes", label: "EXPERIENCED" },
-  { from: "worlds", to: "episodes", label: "HOSTED" },
-  { from: "obstacles", to: "episodes", label: "APPEARED_IN" },
-  { from: "episodes", to: "failures", label: "PRODUCED" },
-  { from: "failures", to: "corrections", label: "LED_TO" },
-  { from: "corrections", to: "lessons", label: "PRODUCED" },
-  { from: "lessons", to: "policies", label: "TRAINED_INTO" },
 ] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -545,76 +525,174 @@ function OperationsView({ data }: { data: OperatorData }) {
 }
 
 function GraphCanvas({ data }: { data: OperatorData }) {
-  const [selected, setSelected] = useState("robot");
-  const active = GRAPH_NODES.find((node) => node.id === selected) ?? GRAPH_NODES[0];
-  const counts: Record<string, string> = {
-    robot: "Fixed identity",
-    worlds: String(new Set(data.episodes.map((episode) => episode.world_id)).size),
-    obstacles: "From validated worlds",
-    episodes: String(data.episodes.length),
-    failures: String(data.detail?.failure_ids.length ?? 0),
-    corrections: String(data.detail?.correction_ids.length ?? 0),
-    lessons: "Provider query required",
-    policies: String(data.policies.length),
+  const graph = data.memoryGraph;
+  const [selected, setSelected] = useState("memory:explicit");
+  const [query, setQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState<string | null>(null);
+  const allNodes = useMemo(() => graph?.nodes ?? [], [graph]);
+  const nodeById = useMemo(
+    () => Object.fromEntries(allNodes.map((node) => [node.id, node])),
+    [allNodes],
+  );
+  const active = nodeById[selected] ?? nodeById["memory:explicit"] ?? allNodes[0];
+  const structuralKinds = new Set(["memory_provider", "runtime_agent", "fixed_robot"]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const structuralNodes = allNodes.filter((node) => structuralKinds.has(node.record_kind));
+  const matchingFacts = allNodes.filter((node) => {
+    if (structuralKinds.has(node.record_kind)) return false;
+    if (kindFilter && node.record_kind !== kindFilter) return false;
+    if (!normalizedQuery) return true;
+    return `${node.label} ${node.record_kind} ${node.owner} ${JSON.stringify(node.properties)}`
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
+  const visibleNodes = [...structuralNodes, ...matchingFacts.slice(-24)];
+  const visibleIds = new Set(visibleNodes.map((node) => node.id));
+  const visibleEdges = (graph?.edges ?? []).filter(
+    (edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target),
+  );
+  const relationships = (graph?.edges ?? []).filter(
+    (edge) => edge.source === active?.id || edge.target === active?.id,
+  );
+  const kinds = [...new Set(allNodes.map((node) => node.record_kind))]
+    .filter((kind) => !structuralKinds.has(kind));
+  const factsByOwner = new Map<string, MemoryGraphNodeData[]>();
+  for (const node of visibleNodes) {
+    if (structuralKinds.has(node.record_kind)) continue;
+    const group = factsByOwner.get(node.owner) ?? [];
+    group.push(node);
+    factsByOwner.set(node.owner, group);
+  }
+
+  const tone = (node: MemoryGraphNodeData): string => {
+    const byKind: Record<string, string> = {
+      memory_provider: "mint",
+      fixed_robot: "mint",
+      world: "blue",
+      obstacle: "violet",
+      episode: "green",
+      failure: "coral",
+      correction: "amber",
+      lesson: "mint",
+      evaluated_policy: "blue",
+      outperformance: "amber",
+    };
+    if (node.record_kind === "runtime_agent") {
+      if (node.owner === "World & Physics Agent") return "blue";
+      if (node.owner === "Failure & Curriculum Agent") return "violet";
+      return "amber";
+    }
+    return byKind[node.record_kind] ?? "mint";
   };
-  const falkor = providerFor(data, "FalkorDB");
-  const points = Object.fromEntries(GRAPH_NODES.map((node) => [node.id, node]));
+  const nodeIcon = (node: MemoryGraphNodeData): ReactNode => {
+    if (node.record_kind === "memory_provider") return <Database />;
+    if (node.record_kind === "fixed_robot") return <Bot />;
+    if (node.record_kind === "runtime_agent") return <Network />;
+    if (node.record_kind === "evaluated_policy") return <ShieldCheck />;
+    if (node.record_kind === "failure") return <AlertTriangle />;
+    if (node.record_kind === "lesson") return <Activity />;
+    return <Circle />;
+  };
+  const position = (node: MemoryGraphNodeData): { x: number; y: number } => {
+    if (node.id === "memory:explicit") return { x: 50, y: 9 };
+    if (node.id === "robot:mm-01") return { x: 50, y: 91 };
+    if (node.id === "agent:world-physics") return { x: 18, y: 29 };
+    if (node.id === "agent:failure-curriculum") return { x: 50, y: 29 };
+    if (node.id === "agent:safety-evaluation") return { x: 82, y: 29 };
+    const centers: Record<string, number> = {
+      "World & Physics Agent": 18,
+      "Failure & Curriculum Agent": 50,
+      "Safety & Evaluation Agent": 82,
+      system: 50,
+    };
+    const group = factsByOwner.get(node.owner) ?? [node];
+    const index = Math.max(0, group.findIndex((item) => item.id === node.id));
+    const columns = node.owner === "system" ? 2 : 3;
+    const spacing = node.owner === "system" ? 10 : 9;
+    return {
+      x: centers[node.owner] + (index % columns - (columns - 1) / 2) * spacing,
+      y: 53 + Math.floor(index / columns) * 17,
+    };
+  };
+  const points = Object.fromEntries(visibleNodes.map((node) => [node.id, position(node)]));
+  const nodeSummary = (node: MemoryGraphNodeData): string => {
+    const count = node.properties.fact_count;
+    if (typeof count === "number") return `${count} ${count === 1 ? "fact" : "facts"}`;
+    if (node.record_kind === "fixed_robot") return "Fixed identity";
+    return readableState(node.record_kind);
+  };
+  const displayValue = (value: unknown): string => {
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(3);
+    if (typeof value === "string") return value.length > 32 ? `${value.slice(0, 32)}…` : readableState(value);
+    return JSON.stringify(value);
+  };
   return (
     <div className="cc-graph-layout">
       <section className="cc-graph-surface">
         <div className="cc-view-heading">
-          <div><h1>Memory schema</h1><p>Live operational counts projected onto the FalkorDB relationship schema. Explicit memory never enters the control path.</p></div>
-          <div className="cc-search"><Search size={15} /><input aria-label="Search memory graph" placeholder="Search nodes or relationships" /></div>
+          <div><h1>Live memory graph</h1><p>Operational FalkorDB facts across the three agent roles. Explicit memory never enters the control path.</p></div>
+          <div className="cc-graph-heading-tools">
+            <span className={`cc-provider-label is-${graph?.provider_state ?? "unconfigured"}`}><i />{graph ? `${graph.source === "falkordb" ? "FalkorDB" : "Local mirror"} · ${graph.fact_count} facts` : "Loading memory"}</span>
+            <div className="cc-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search live memory graph" placeholder="Search live facts" /></div>
+          </div>
         </div>
         <div className="cc-node-filters" aria-label="Node families">
-          {GRAPH_NODES.map((node) => <span key={node.id}><i className={`is-${node.tone}`} />{node.label}</span>)}
-        </div>
-        <div className="cc-graph-canvas">
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            {GRAPH_EDGES.map((edge) => {
-              const from = points[edge.from];
-              const to = points[edge.to];
-              return <line key={`${edge.from}:${edge.to}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />;
-            })}
-          </svg>
-          {GRAPH_EDGES.map((edge) => {
-            const from = points[edge.from];
-            const to = points[edge.to];
-            return <span key={`${edge.from}:${edge.to}:label`} className="cc-edge-label" style={{ left: `${(from.x + to.x) / 2}%`, top: `${(from.y + to.y) / 2}%` }}>{edge.label}</span>;
-          })}
-          {GRAPH_NODES.map((node) => (
-            <button
-              type="button"
-              key={node.id}
-              className={`cc-graph-node is-${node.tone} ${selected === node.id ? "is-selected" : ""}`}
-              style={{ left: `${node.x}%`, top: `${node.y}%` }}
-              onClick={() => setSelected(node.id)}
-              aria-pressed={selected === node.id}
-            >
-              <i>{node.id === "robot" ? <Bot /> : node.id === "policies" ? <ShieldCheck /> : node.id === "lessons" ? <Activity /> : <Circle />}</i>
-              <strong>{node.label}</strong><span>{counts[node.id]}</span>
+          <button type="button" className={kindFilter === null ? "is-active" : ""} onClick={() => setKindFilter(null)}>All facts <b>{graph?.fact_count ?? 0}</b></button>
+          {kinds.map((kind) => (
+            <button type="button" key={kind} className={kindFilter === kind ? "is-active" : ""} onClick={() => setKindFilter(kindFilter === kind ? null : kind)}>
+              {readableState(kind)} <b>{allNodes.filter((node) => node.record_kind === kind).length}</b>
             </button>
           ))}
         </div>
+        <div className="cc-graph-canvas">
+          {!graph && <EmptyState icon={<Database size={24} />} title="Loading operational memory" detail="Reading the backend graph snapshot." />}
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {visibleEdges.map((edge) => {
+              const from = points[edge.source];
+              const to = points[edge.target];
+              return <line key={edge.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />;
+            })}
+          </svg>
+          {visibleEdges.map((edge) => {
+            const from = points[edge.source];
+            const to = points[edge.target];
+            return <span key={`${edge.id}:label`} className="cc-edge-label" style={{ left: `${(from.x + to.x) / 2}%`, top: `${(from.y + to.y) / 2}%` }}>{edge.relationship}</span>;
+          })}
+          {visibleNodes.map((node) => {
+            const point = points[node.id];
+            return (
+            <button
+              type="button"
+              key={node.id}
+              className={`cc-graph-node is-${tone(node)} ${structuralKinds.has(node.record_kind) ? "is-structure" : "is-fact"} ${selected === node.id ? "is-selected" : ""}`}
+              style={{ left: `${point.x}%`, top: `${point.y}%` }}
+              onClick={() => setSelected(node.id)}
+              aria-pressed={selected === node.id}
+            >
+              <i>{nodeIcon(node)}</i>
+              <strong>{node.label.replace(" Agent", "")}</strong><span>{nodeSummary(node)}</span>
+            </button>
+          )})}
+          {graph && graph.fact_count === 0 && <p className="cc-graph-empty-note">No operational facts yet. The live topology will populate after a validated episode closes.</p>}
+        </div>
       </section>
       <aside className="cc-inspector">
-        <Panel title="Selected node" icon={<Circle size={14} />} meta={active.kind}>
-          <div className={`cc-selected-node is-${active.tone}`}><i><Network /></i><div><strong>{active.label}</strong><span>{counts[active.id]}</span></div></div>
+        <Panel title="Selected live node" icon={<Circle size={14} />} meta={active ? readableState(active.record_kind) : "Loading"}>
+          {active && <div className={`cc-selected-node is-${tone(active)}`}><i>{nodeIcon(active)}</i><div><strong>{active.label}</strong><span>{active.owner === "system" ? nodeSummary(active) : active.owner}</span></div></div>}
         </Panel>
-        <Panel title="Agent memory" icon={<Database size={14} />} meta="Append-only">
+        <Panel title="Node data" icon={<Database size={14} />} meta={graph ? `Refreshed ${new Date(graph.refreshed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Loading"}>
           <div className="cc-inspector-list">
-            <div><span>Scope</span><strong>Operational data</strong></div>
-            <div><span>Provider</span><strong>{readableState(falkor?.state)}</strong></div>
-            <div><span>Control path</span><strong>Never</strong></div>
-            <div><span>Evidence</span><strong>{falkor?.evidence_id ? shortId(falkor.evidence_id) : "Unavailable"}</strong></div>
+            {active && Object.entries(active.properties).slice(0, 9).map(([key, value]) => <div key={key}><span>{readableState(key)}</span><strong title={String(value)}>{displayValue(value)}</strong></div>)}
+            {!active && <div><span>Status</span><strong>Loading snapshot</strong></div>}
           </div>
         </Panel>
-        <Panel title="Relationships" icon={<GitBranch size={14} />} meta={`${GRAPH_EDGES.length} schema links`}>
+        <Panel title="Live relationships" icon={<GitBranch size={14} />} meta={`${relationships.length} connected`}>
           <div className="cc-relationship-list">
-            {GRAPH_EDGES.filter((edge) => edge.from === active.id || edge.to === active.id).map((edge) => (
-              <div key={`${edge.from}:${edge.to}`}><span>{edge.label}</span><strong>{edge.from === active.id ? points[edge.to].label : points[edge.from].label}</strong></div>
+            {active && relationships.map((edge) => (
+              <div key={edge.id}><span>{edge.relationship}</span><strong>{nodeById[edge.source === active.id ? edge.target : edge.source]?.label ?? "Related node"}</strong></div>
             ))}
-            {!GRAPH_EDGES.some((edge) => edge.from === active.id || edge.to === active.id) && <p>No displayed relationships.</p>}
+            {!relationships.length && <p>No relationships in the current operational snapshot.</p>}
           </div>
         </Panel>
       </aside>

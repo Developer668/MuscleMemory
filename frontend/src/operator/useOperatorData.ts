@@ -9,6 +9,7 @@ import type {
   LiveEpisodeOptions,
   LiveEpisodeStatus,
   LiveStreamMessage,
+  MemoryGraphSnapshot,
   PendingApproval,
   PolicySummary,
   PromotionEligibility,
@@ -42,6 +43,7 @@ function mergeRecords(
 
 export interface OperatorData {
   health: ServiceHealth | null;
+  memoryGraph: MemoryGraphSnapshot | null;
   providers: ProviderHealth[];
   episodes: EpisodeSummary[];
   selectedEpisodeId: string;
@@ -84,6 +86,7 @@ export interface OperatorData {
 
 export function useOperatorData(): OperatorData {
   const [health, setHealth] = useState<ServiceHealth | null>(null);
+  const [memoryGraph, setMemoryGraph] = useState<MemoryGraphSnapshot | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState("");
   const [detail, setDetail] = useState<EpisodeDetail | null>(null);
@@ -108,9 +111,10 @@ export function useOperatorData(): OperatorData {
   const [mutationBusy, setMutationBusy] = useState<string | null>(null);
   const [mutationIssue, setMutationIssue] = useState<string | null>(null);
   const refresh = useCallback(async () => {
-    const [healthResult, episodeResult, approvalsResult, policiesResult, liveResult] =
+    const [healthResult, graphResult, episodeResult, approvalsResult, policiesResult, liveResult] =
       await Promise.allSettled([
         operatorApi.health(),
+        operatorApi.memoryGraph(),
         operatorApi.episodes(),
         operatorApi.approvals(),
         operatorApi.policies(),
@@ -120,6 +124,9 @@ export function useOperatorData(): OperatorData {
     const failures: string[] = [];
     if (healthResult.status === "fulfilled") setHealth(healthResult.value);
     else failures.push(errorMessage(healthResult.reason));
+
+    if (graphResult.status === "fulfilled") setMemoryGraph(graphResult.value);
+    else failures.push(errorMessage(graphResult.reason));
 
     if (episodeResult.status === "fulfilled") {
       const nextEpisodes = episodeResult.value.items;
@@ -384,6 +391,7 @@ export function useOperatorData(): OperatorData {
 
   return {
     health,
+    memoryGraph,
     providers,
     episodes,
     selectedEpisodeId,

@@ -60,6 +60,42 @@ class ServiceHealth(ApiModel):
     checked_at: AwareDatetime
 
 
+MemoryGraphOwner = Literal[
+    "system",
+    "World & Physics Agent",
+    "Failure & Curriculum Agent",
+    "Safety & Evaluation Agent",
+]
+
+
+class MemoryGraphNode(ApiModel):
+    id: str = Field(min_length=1, max_length=256)
+    label: str = Field(min_length=1, max_length=256)
+    record_kind: str = Field(min_length=1, max_length=64)
+    owner: MemoryGraphOwner
+    properties: dict[str, object]
+
+
+class MemoryGraphEdge(ApiModel):
+    id: str = Field(min_length=1, max_length=512)
+    source: str = Field(min_length=1, max_length=256)
+    target: str = Field(min_length=1, max_length=256)
+    relationship: str = Field(pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
+
+
+class MemoryGraphSnapshot(ApiModel):
+    exposure: Literal["operational_only"] = "operational_only"
+    provider: Literal["FalkorDB"] = "FalkorDB"
+    provider_state: ProviderOperationalState
+    graph_name: str = Field(min_length=1, max_length=128)
+    source: Literal["falkordb", "local_cache"]
+    provider_checked_at: AwareDatetime
+    refreshed_at: AwareDatetime
+    fact_count: int = Field(ge=0)
+    nodes: tuple[MemoryGraphNode, ...]
+    edges: tuple[MemoryGraphEdge, ...]
+
+
 class EpisodeKind(StrEnum):
     """Only non-held-out episode kinds may cross the operational API."""
 

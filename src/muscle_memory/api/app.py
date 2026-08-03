@@ -63,6 +63,7 @@ from muscle_memory.api.models import (
     LiveEpisodeStartRequest,
     LiveEpisodeStatusView,
     LivePolicyOptionView,
+    MemoryGraphSnapshot,
     PendingApprovalList,
     PolicySummaryList,
     PromotionEligibility,
@@ -295,6 +296,14 @@ def _build_router() -> APIRouter:
     )
     async def health(request: Request) -> ServiceHealth:
         return await _runtime_from_request(request).backend.health()
+
+    @router.get(
+        "/memory/graph",
+        response_model=MemoryGraphSnapshot,
+        summary="Read the operational FalkorDB memory graph",
+    )
+    async def memory_graph(request: Request) -> MemoryGraphSnapshot:
+        return await _runtime_from_request(request).backend.memory_graph()
 
     @router.get(
         "/episodes",

@@ -6,6 +6,7 @@ import type {
   EpisodeList,
   LiveEpisodeOptions,
   LiveEpisodeStatus,
+  MemoryGraphSnapshot,
   PendingApprovalList,
   PolicySummaryList,
   PromotionEligibility,
@@ -55,6 +56,7 @@ async function request<T>(path: string, init?: RequestInit, token?: string): Pro
 
 export const operatorApi = {
   health: () => request<ServiceHealth>("/health"),
+  memoryGraph: () => request<MemoryGraphSnapshot>("/memory/graph"),
   episodes: () => request<EpisodeList>("/episodes?limit=200"),
   episode: (episodeId: string) =>
     request<EpisodeDetail>(`/episodes/${encodeURIComponent(episodeId)}`),

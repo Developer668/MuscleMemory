@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import cast
+from typing import Literal, cast
 
 from pydantic import TypeAdapter
 
 from muscle_memory.api.adapters import (
     asset_provider_view,
+    graph_provider_view,
     orchestration_provider_view,
     pipeline_run_view,
     promotion_eligibility_view,
@@ -34,6 +35,10 @@ from muscle_memory.api.models import (
     EpisodeList,
     EpisodeState,
     EpisodeSummary,
+    MemoryGraphEdge,
+    MemoryGraphNode,
+    MemoryGraphOwner,
+    MemoryGraphSnapshot,
     PendingApproval,
     PendingApprovalList,
     PolicyMetrics,
@@ -239,6 +244,247 @@ class MuscleMemoryApiBackend:
             state=state,
             providers=(*provider_health.providers, *consumers),
             checked_at=datetime.now(UTC),
+        )
+
+    async def memory_graph(self) -> MemoryGraphSnapshot:
+        graph_health = self.providers.graph_memory.health()
+        provider = graph_provider_view(graph_health)
+        events = self.providers.graph_memory.operational_events()
+        refreshed_at = datetime.now(UTC)
+
+        agent_specs: tuple[tuple[str, str, str], ...] = (
+            (
+                "agent:world-physics",
+                "World & Physics Agent",
+                "Validated worlds, approved colliders, and physical episode context",
+            ),
+            (
+                "agent:failure-curriculum",
+                "Failure & Curriculum Agent",
+                "Failures, human corrections, and curriculum lessons",
+            ),
+            (
+                "agent:safety-evaluation",
+                "Safety & Evaluation Agent",
+                "Evaluated policies, comparisons, and promotion evidence",
+            ),
+        )
+        owner_by_kind: dict[str, MemoryGraphOwner] = {
+            "world": "World & Physics Agent",
+            "obstacle": "World & Physics Agent",
+            "episode": "system",
+            "failure": "Failure & Curriculum Agent",
+            "correction": "Failure & Curriculum Agent",
+            "lesson": "Failure & Curriculum Agent",
+            "evaluated_policy": "Safety & Evaluation Agent",
+            "outperformance": "Safety & Evaluation Agent",
+        }
+        agent_id_by_owner = {
+            cast(MemoryGraphOwner, label): node_id for node_id, label, _detail in agent_specs
+        }
+        fact_counts = {
+            label: sum(1 for event in events if owner_by_kind[event.record_kind] == label)
+            for _node_id, label, _detail in agent_specs
+        }
+
+        nodes: list[MemoryGraphNode] = [
+            MemoryGraphNode(
+                id="memory:explicit",
+                label=graph_health.graph_name,
+                record_kind="memory_provider",
+                owner="system",
+                properties={
+                    "provider": "FalkorDB",
+                    "state": provider.state.value,
+                    "source": (
+                        "falkordb"
+                        if provider.state
+                        in {
+                            ProviderOperationalState.HEALTHY,
+                            ProviderOperationalState.END_TO_END_VERIFIED,
+                        }
+                        else "local_cache"
+                    ),
+                    "checked_at": graph_health.checked_at.isoformat(),
+                    "fact_count": len(events),
+                },
+            ),
+            MemoryGraphNode(
+                id="robot:mm-01",
+                label="MM-01",
+                record_kind="fixed_robot",
+                owner="system",
+                properties={"identity": "fixed", "control_path": "policy_only"},
+            ),
+        ]
+        nodes.extend(
+            MemoryGraphNode(
+                id=node_id,
+                label=label,
+                record_kind="runtime_agent",
+                owner=cast(MemoryGraphOwner, label),
+                properties={"responsibility": detail, "fact_count": fact_counts[label]},
+            )
+            for node_id, label, detail in agent_specs
+        )
+
+        safe_properties: dict[str, tuple[str, ...]] = {
+            "world": ("seed", "generation_version", "validated", "recorded_at"),
+            "obstacle": (
+                "world_id",
+                "category",
+                "collider_kind",
+                "physical_properties_approved",
+                "recorded_at",
+            ),
+            "evaluated_policy": ("evaluation_split", "evaluated_at"),
+            "episode": (
+                "world_id",
+                "policy_id",
+                "outcome",
+                "completion_time_seconds",
+                "collision_count",
+                "fall_count",
+                "minimum_clearance_m",
+                "human_interventions",
+                "ended_at",
+            ),
+            "failure": (
+                "episode_id",
+                "category",
+                "obstacle_id",
+                "severity",
+                "summary",
+                "detected_at",
+            ),
+            "correction": (
+                "failure_id",
+                "kind",
+                "description",
+                "approved",
+                "created_at",
+            ),
+            "lesson": (
+                "correction_id",
+                "kind",
+                "summary",
+                "trained_policy_id",
+                "created_at",
+            ),
+            "outperformance": (
+                "candidate_policy_id",
+                "baseline_policy_id",
+                "success_rate_delta",
+                "collision_rate_delta",
+                "measured_at",
+            ),
+        }
+        fact_node_id: dict[tuple[str, str], str] = {}
+        for event in events:
+            node_id = f"fact:{event.record_kind}:{event.record_id}"
+            fact_node_id[(event.record_kind, event.record_id)] = node_id
+            properties = {
+                key: event.payload[key]
+                for key in safe_properties[event.record_kind]
+                if key in event.payload
+            }
+            properties["content_hash"] = event.content_hash
+            nodes.append(
+                MemoryGraphNode(
+                    id=node_id,
+                    label=event.record_id,
+                    record_kind=event.record_kind,
+                    owner=owner_by_kind[event.record_kind],
+                    properties=properties,
+                )
+            )
+
+        edges: list[MemoryGraphEdge] = []
+
+        def add_edge(source: str, target: str, relationship: str) -> None:
+            edges.append(
+                MemoryGraphEdge(
+                    id=f"{source}:{relationship}:{target}",
+                    source=source,
+                    target=target,
+                    relationship=relationship,
+                )
+            )
+
+        for agent_id, _label, _detail in agent_specs:
+            add_edge("memory:explicit", agent_id, "SERVES")
+        add_edge("memory:explicit", "robot:mm-01", "DESCRIBES")
+
+        for event in events:
+            source = fact_node_id[(event.record_kind, event.record_id)]
+            owner = owner_by_kind[event.record_kind]
+            if owner != "system":
+                add_edge(agent_id_by_owner[owner], source, "OWNS")
+            payload = event.payload
+            if event.record_kind == "obstacle":
+                add_edge(source, fact_node_id[("world", str(payload["world_id"]))], "IN_WORLD")
+            elif event.record_kind == "episode":
+                add_edge("robot:mm-01", source, "EXPERIENCED")
+                add_edge(source, fact_node_id[("world", str(payload["world_id"]))], "RAN_IN")
+                add_edge(
+                    source,
+                    fact_node_id[("evaluated_policy", str(payload["policy_id"]))],
+                    "USED_POLICY",
+                )
+            elif event.record_kind == "failure":
+                add_edge(
+                    source,
+                    fact_node_id[("episode", str(payload["episode_id"]))],
+                    "FROM_EPISODE",
+                )
+                obstacle_id = payload.get("obstacle_id")
+                if obstacle_id is not None:
+                    add_edge(source, fact_node_id[("obstacle", str(obstacle_id))], "NEAR_OBSTACLE")
+            elif event.record_kind == "correction":
+                add_edge(source, fact_node_id[("failure", str(payload["failure_id"]))], "CORRECTS")
+            elif event.record_kind == "lesson":
+                add_edge(
+                    source,
+                    fact_node_id[("correction", str(payload["correction_id"]))],
+                    "DERIVED_FROM",
+                )
+                trained_policy_id = payload.get("trained_policy_id")
+                if trained_policy_id is not None:
+                    add_edge(
+                        source,
+                        fact_node_id[("evaluated_policy", str(trained_policy_id))],
+                        "TRAINED_INTO",
+                    )
+            elif event.record_kind == "outperformance":
+                add_edge(
+                    source,
+                    fact_node_id[("evaluated_policy", str(payload["candidate_policy_id"]))],
+                    "CANDIDATE",
+                )
+                add_edge(
+                    source,
+                    fact_node_id[("evaluated_policy", str(payload["baseline_policy_id"]))],
+                    "BASELINE",
+                )
+
+        snapshot_source: Literal["falkordb", "local_cache"] = (
+            "falkordb"
+            if provider.state
+            in {
+                ProviderOperationalState.HEALTHY,
+                ProviderOperationalState.END_TO_END_VERIFIED,
+            }
+            else "local_cache"
+        )
+        return MemoryGraphSnapshot(
+            provider_state=provider.state,
+            graph_name=graph_health.graph_name,
+            source=snapshot_source,
+            provider_checked_at=graph_health.checked_at,
+            refreshed_at=refreshed_at,
+            fact_count=len(events),
+            nodes=tuple(nodes),
+            edges=tuple(edges),
         )
 
     async def list_episodes(self, *, cursor: str | None, limit: int) -> EpisodeList:

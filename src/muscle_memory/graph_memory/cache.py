@@ -93,6 +93,57 @@ class AppendOnlyGraphCache:
         with self._lock:
             return tuple(self._events)
 
+    def operational_events(self) -> tuple[CachedGraphEvent, ...]:
+        """Return a dependency-closed view that can never expose held-out worlds."""
+
+        with self._lock:
+            events = tuple(self._events)
+
+        training_world_ids = {
+            str(event.payload["world_id"])
+            for event in events
+            if event.record_kind == "world" and event.payload.get("split") == WorldSplit.TRAINING
+        }
+        episode_ids = {
+            str(event.payload["episode_id"])
+            for event in events
+            if event.record_kind == "episode"
+            and event.payload.get("world_split") == WorldSplit.TRAINING
+            and event.payload.get("world_id") in training_world_ids
+        }
+        failure_ids = {
+            str(event.payload["failure_id"])
+            for event in events
+            if event.record_kind == "failure" and event.payload.get("episode_id") in episode_ids
+        }
+        correction_ids = {
+            str(event.payload["correction_id"])
+            for event in events
+            if event.record_kind == "correction" and event.payload.get("failure_id") in failure_ids
+        }
+
+        selected: list[CachedGraphEvent] = []
+        for event in events:
+            payload = event.payload
+            include = (
+                event.record_kind in {"world", "obstacle"}
+                and payload.get("world_id") in training_world_ids
+            )
+            include = include or (
+                event.record_kind == "episode" and payload.get("episode_id") in episode_ids
+            )
+            include = include or (
+                event.record_kind == "failure" and payload.get("failure_id") in failure_ids
+            )
+            include = include or (
+                event.record_kind in {"correction", "lesson"}
+                and payload.get("correction_id") in correction_ids
+            )
+            include = include or event.record_kind in {"evaluated_policy", "outperformance"}
+            if include:
+                selected.append(event)
+        return tuple(selected)
+
     def health(self) -> GraphMemoryHealth:
         return GraphMemoryHealth(
             provider_state=ProviderState.UNCONFIGURED,
