@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Protocol, cast
 
-from muscle_memory.graph_memory.cache import AppendOnlyGraphCache
+from muscle_memory.graph_memory.cache import AppendOnlyGraphCache, CachedGraphEvent
 from muscle_memory.graph_memory.falkordb import FalkorGraph, FalkorGraphMemory
 from muscle_memory.graph_memory.models import (
     ContentAddressedRecord,
@@ -134,6 +134,11 @@ class ResilientGraphMemory:
             detail=detail,
             checked_at=datetime.now(UTC),
         )
+
+    def operational_events(self) -> tuple[CachedGraphEvent, ...]:
+        """Expose only the cache's operational-safe graph projection."""
+
+        return self._cache.operational_events()
 
     def health(self) -> GraphMemoryHealth:
         if self._settings.url is None:
