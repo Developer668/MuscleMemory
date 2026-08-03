@@ -368,6 +368,10 @@ function DirectionPad({
 function RobotVideo({ record }: { record: TelemetryRecord | null }) {
   const [feed, setFeed] = useState<VideoProduct>("stereo_composite");
   const url = mediaUrl(record, feed);
+  const action = record ? numberValue(record.payload, ["policy_action.forward_speed_mps"]) : null;
+  const battery = record
+    ? numberValue(record.sensors.find((sensor) => sensor.category === "Battery and energy")?.values, ["battery_percent"])
+    : null;
   return (
     <div className="cc-pov-stack">
       <div className="cc-pov-tabs" role="tablist" aria-label="Robot POV products">
@@ -389,6 +393,13 @@ function RobotVideo({ record }: { record: TelemetryRecord | null }) {
           <div className="cc-video"><img src={url} alt={`MM-01 ${feed.replaceAll("_", " ")} feed`} /><span>Joined by frame_id</span></div>
         ) : feed === "derived_depth" ? (
           <DepthView record={record} />
+        ) : record?.payload.routine_mode === "local_synthetic" ? (
+          <div className="cc-telemetry-readout">
+            <small>Local synthetic telemetry</small>
+            <strong>{action === null ? "0.00" : action.toFixed(2)} <span>m/s command</span></strong>
+            <div><span>Frame</span><b>{shortId(record.frame_id, 15)}</b></div>
+            <div><span>Battery</span><b>{battery === null ? "--" : `${battery.toFixed(1)}%`}</b></div>
+          </div>
         ) : (
           <EmptyState icon={<EyeOff size={21} />} title={`${VIDEO_FEEDS.find((item) => item.id === feed)?.label} unavailable`} detail="Waiting for a frame joined by frame_id." />
         )}
@@ -454,7 +465,15 @@ function OperationsView({ data }: { data: OperatorData }) {
       <section className="cc-world-panel">
         <header className="cc-world-panel__header">
           <div><Route size={15} /><strong>World</strong><span>Third-person view</span></div>
-          <div><i className={`cc-dot cc-dot--${running ? "live" : "unconfigured"}`} />{running ? "Live episode" : "Visual staging"}</div>
+          <div className="cc-world-actions">
+            <span><i className={`cc-dot cc-dot--${running ? "live" : "unconfigured"}`} />{running ? "Routine active" : data.isLocalRoutine ? "Local simulator" : "Visual staging"}</span>
+            <button
+              type="button"
+              className="cc-start-routine"
+              disabled={running || Boolean(data.mutationBusy) || !data.liveOptions?.enabled || (!data.isLocalRoutine && !data.token)}
+              onClick={() => void data.startLiveEpisode()}
+            ><Play size={13} /> Start routine</button>
+          </div>
         </header>
         <div className="cc-world-stage">
           <RealisticHomeScene
@@ -798,7 +817,7 @@ function SettingsView({
             <label><span>Evaluated policy</span><select value={data.livePolicyId} onChange={(event) => data.setLivePolicyId(event.target.value)} disabled={!data.liveOptions?.enabled || liveActive}><option value="">Unavailable</option>{data.liveOptions?.policies.map((policy) => <option value={policy.policy_id} key={policy.policy_id}>{policy.policy_id}</option>)}</select></label>
           </div>
           <div className="cc-runtime-actions">
-            <button type="button" disabled={!data.token || !data.liveOptions?.enabled || liveActive || Boolean(data.mutationBusy)} onClick={() => void data.startLiveEpisode()}><Play size={13} /> Start episode</button>
+            <button type="button" disabled={(!data.isLocalRoutine && !data.token) || !data.liveOptions?.enabled || liveActive || Boolean(data.mutationBusy)} onClick={() => void data.startLiveEpisode()}><Play size={13} /> Start routine</button>
             <button type="button" disabled={!liveActive || Boolean(data.mutationBusy)} onClick={() => void data.cancelLiveEpisode()}><Square size={12} /> Cancel</button>
           </div>
         </Panel>

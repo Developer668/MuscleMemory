@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiRequestError, liveSocketUrl, operatorApi } from "./api";
+import { localDetail, localEpisode, localHealth, localLiveOptions, localLiveStatus, localRoutineRecord } from "./localRoutine";
 import type {
   CorrectionPoint,
   CorrectionView,
@@ -73,6 +74,7 @@ export interface OperatorData {
   correction: CorrectionView | null;
   mutationBusy: string | null;
   mutationIssue: string | null;
+  isLocalRoutine: boolean;
   refresh: () => Promise<void>;
   startLiveEpisode: () => Promise<void>;
   cancelLiveEpisode: () => Promise<void>;
@@ -110,6 +112,8 @@ export function useOperatorData(): OperatorData {
   const [correction, setCorrection] = useState<CorrectionView | null>(null);
   const [mutationBusy, setMutationBusy] = useState<string | null>(null);
   const [mutationIssue, setMutationIssue] = useState<string | null>(null);
+  const [isLocalRoutine, setIsLocalRoutine] = useState(false);
+  const localSequence = useRef(0);
   const refresh = useCallback(async () => {
     const [healthResult, graphResult, episodeResult, approvalsResult, policiesResult, liveResult] =
       await Promise.allSettled([
@@ -174,7 +178,22 @@ export function useOperatorData(): OperatorData {
       failures.push(errorMessage(liveResult.reason));
     }
 
-    setIssue(failures.length ? [...new Set(failures)].join(" · ") : null);
+    if (healthResult.status === "rejected") {
+      setHealth(localHealth);
+      setEpisodes([localEpisode]);
+      setSelectedEpisodeId(localEpisode.episode_id);
+      setDetail(localDetail);
+      setRecords([localRoutineRecord(0)]);
+      setLiveOptions(localLiveOptions);
+      setLiveSeed(17);
+      setLivePolicyId(localLiveOptions.default_policy_id || "");
+      setStreamState("idle");
+      setIsLocalRoutine(true);
+      setIssue(null);
+    } else {
+      setIsLocalRoutine(false);
+      setIssue(failures.length ? [...new Set(failures)].join(" · ") : null);
+    }
     setLoading(false);
   }, []);
 
@@ -188,7 +207,18 @@ export function useOperatorData(): OperatorData {
   }, [refresh]);
 
   useEffect(() => {
-    if (!selectedEpisodeId) return;
+    if (!isLocalRoutine || liveStatus?.phase !== "running") return;
+    const timer = window.setInterval(() => {
+      localSequence.current = Math.min(localSequence.current + 3, 300);
+      const record = localRoutineRecord(localSequence.current);
+      setRecords((current) => [...current, record].slice(-2000));
+      setLiveStatus(localLiveStatus(localSequence.current, localSequence.current < 300));
+    }, 300);
+    return () => window.clearInterval(timer);
+  }, [isLocalRoutine, liveStatus?.phase]);
+
+  useEffect(() => {
+    if (isLocalRoutine || !selectedEpisodeId) return;
     let active = true;
     void (async () => {
       try {
@@ -210,10 +240,10 @@ export function useOperatorData(): OperatorData {
     return () => {
       active = false;
     };
-  }, [liveStatus?.episode_id, liveStatus?.phase, selectedEpisodeId]);
+  }, [isLocalRoutine, liveStatus?.episode_id, liveStatus?.phase, selectedEpisodeId]);
 
   useEffect(() => {
-    if (
+    if (isLocalRoutine ||
       !liveStatus ||
       !["queued", "starting", "running", "cancelling"].includes(liveStatus.phase)
     ) {
@@ -237,10 +267,10 @@ export function useOperatorData(): OperatorData {
       window.clearTimeout(initial);
       window.clearInterval(timer);
     };
-  }, [liveStatus, refresh]);
+  }, [isLocalRoutine, liveStatus, refresh]);
 
   useEffect(() => {
-    if (!selectedEpisodeId) return;
+    if (isLocalRoutine || !selectedEpisodeId) return;
     let stopped = false;
     let reconnectTimer = 0;
     let socket: WebSocket | null = null;
@@ -275,7 +305,7 @@ export function useOperatorData(): OperatorData {
       window.clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, [selectedEpisodeId]);
+  }, [isLocalRoutine, selectedEpisodeId]);
 
   useEffect(() => {
     if (!baselinePolicyId || !candidatePolicyId || baselinePolicyId === candidatePolicyId) {
@@ -352,6 +382,14 @@ export function useOperatorData(): OperatorData {
     setMutationBusy("live-start");
     setMutationIssue(null);
     try {
+      if (isLocalRoutine) {
+        localSequence.current = 0;
+        setDetail({ ...localDetail, episode: { ...localEpisode, state: "running" } });
+        setRecords([localRoutineRecord(0)]);
+        setLiveStatus(localLiveStatus(0, true));
+        setSelectedEpisodeId(localEpisode.episode_id);
+        return;
+      }
       const started = await operatorApi.startLiveEpisode(
         liveSeed,
         livePolicyId,
@@ -369,13 +407,18 @@ export function useOperatorData(): OperatorData {
     } finally {
       setMutationBusy(null);
     }
-  }, [livePolicyId, liveSeed, refresh, tokenValue]);
+  }, [isLocalRoutine, livePolicyId, liveSeed, refresh, tokenValue]);
 
   const cancelLiveEpisode = useCallback(async () => {
     if (!liveStatus) return;
     setMutationBusy("live-cancel");
     setMutationIssue(null);
     try {
+      if (isLocalRoutine) {
+        setLiveStatus(localLiveStatus(localSequence.current, false));
+        setDetail({ ...localDetail, episode: { ...localEpisode, state: "aborted" } });
+        return;
+      }
       setLiveStatus(
         await operatorApi.cancelLiveEpisode(liveStatus.episode_id, tokenValue),
       );
@@ -384,7 +427,7 @@ export function useOperatorData(): OperatorData {
     } finally {
       setMutationBusy(null);
     }
-  }, [liveStatus, tokenValue]);
+  }, [isLocalRoutine, liveStatus, tokenValue]);
 
   const latestRecord = records.at(-1) || null;
   const providers = useMemo(() => health?.providers || [], [health]);
@@ -425,6 +468,7 @@ export function useOperatorData(): OperatorData {
     correction,
     mutationBusy,
     mutationIssue,
+    isLocalRoutine,
     refresh,
     startLiveEpisode,
     cancelLiveEpisode,

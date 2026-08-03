@@ -5,51 +5,17 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 
 import { makeRobot } from "../operator/RealisticHomeScene";
 import { attachImportedFurnishings } from "./ImportedFurnishings";
+import type { DemoTask } from "./demoRoutes";
+import { TASK_FOCUS, TASK_WORLDS } from "./demoRoutes";
 import { buildTwoStoryHouse, STORY_HEIGHT } from "./TwoStoryHouse";
 
 export type DemoScenario = "clear" | "laundry" | "low_friction";
-export type DemoTask = "medicine" | "breakfast" | "kitchen_check" | "parcel";
+export type { DemoTask };
 
 type LandingWorldProps = {
   progress: MotionValue<number>;
   scenario: DemoScenario;
   task: DemoTask;
-};
-
-type TaskWorldConfig = {
-  route: Array<[number, number]>;
-  color: string;
-  payloadColor: string;
-};
-
-const TASK_WORLDS: Record<DemoTask, TaskWorldConfig> = {
-  medicine: {
-    route: [[-4.9, 3.82], [-3.75, 2.72], [-2.15, 1.48], [-0.45, 0.52], [1.42, -0.18], [2.48, -1.42], [3.42, -2.68]],
-    color: "#ff6e57",
-    payloadColor: "#b84d46",
-  },
-  breakfast: {
-    route: [[-4.72, -0.48], [-3.78, 0.18], [-2.55, 0.5], [-1.42, 0.76], [-0.24, 0.98], [0.68, 1.18]],
-    color: "#ffd75f",
-    payloadColor: "#d6a542",
-  },
-  kitchen_check: {
-    route: [[4.62, 0.88], [3.18, 0.58], [1.72, 0.18], [0.18, -0.58], [-0.72, -1.26], [-1.08, -1.98], [-1.45, -2.6]],
-    color: "#77e7ff",
-    payloadColor: "#77e7ff",
-  },
-  parcel: {
-    route: [[4.76, 0.94], [3.32, 0.7], [1.78, 0.52], [0.22, 0.48], [-1.34, 0.8], [-2.35, 1.12], [-3.05, 1.36], [-3.55, 1.55]],
-    color: "#ff9a78",
-    payloadColor: "#ad7548",
-  },
-};
-
-const TASK_FOCUS: Record<DemoTask, THREE.Vector3> = {
-  medicine: new THREE.Vector3(3.55, 0.82, -3.42),
-  breakfast: new THREE.Vector3(0.05, 0.82, 2.73),
-  kitchen_check: new THREE.Vector3(-3.72, 0.98, -4.05),
-  parcel: new THREE.Vector3(-5.55, 0.58, 2.75),
 };
 
 const clamp = (value: number, minimum = 0, maximum = 1) =>
@@ -96,7 +62,7 @@ function makeDropObject(kind: "box" | "basket" | "lamp"): THREE.Group {
 
 function curveFor(task: DemoTask): THREE.CatmullRomCurve3 {
   return new THREE.CatmullRomCurve3(
-    TASK_WORLDS[task].route.map(([x, z]) => new THREE.Vector3(x, 0.08, z)),
+    TASK_WORLDS[task].route.map(([x, z]) => new THREE.Vector3(x, 0, z)),
   );
 }
 
@@ -177,7 +143,7 @@ export function LandingWorld({ progress, scenario, task }: LandingWorldProps) {
     );
     destination.rotation.x = -Math.PI / 2;
     destination.position.copy(initialCurve.getPoint(1));
-    destination.position.y = 0.07;
+    destination.position.y = 0.024;
     scene.add(destination);
 
     const completionHalo = new THREE.Mesh(
@@ -226,13 +192,13 @@ export function LandingWorld({ progress, scenario, task }: LandingWorldProps) {
     scene.add(burst);
 
     const box = makeDropObject("box");
-    box.position.set(-2.35, 7.8, 1.2);
+    box.position.set(-2.9, 7.8, 2.05);
     scene.add(box);
     const basket = makeDropObject("basket");
-    basket.position.set(-0.55, 8.4, 0.72);
+    basket.position.set(-2.55, 8.4, 1.65);
     scene.add(basket);
     const lamp = makeDropObject("lamp");
-    lamp.position.set(5.45, 8.8, -0.2);
+    lamp.position.set(6.1, 8.8, -1.15);
     scene.add(lamp);
 
     const frictionPatch = new THREE.Mesh(
@@ -240,7 +206,7 @@ export function LandingWorld({ progress, scenario, task }: LandingWorldProps) {
       new THREE.MeshBasicMaterial({ color: "#77e7ff", transparent: true, opacity: 0.26, side: THREE.DoubleSide }),
     );
     frictionPatch.rotation.x = -Math.PI / 2;
-    frictionPatch.position.set(1.1, 0.062, -0.15);
+    frictionPatch.position.set(0.55, 0.018, -0.55);
     scene.add(frictionPatch);
 
     const dotGeometry = new THREE.BufferGeometry();
@@ -339,7 +305,7 @@ export function LandingWorld({ progress, scenario, task }: LandingWorldProps) {
         activeTask = liveRef.current.task;
         activeCurve = curveFor(activeTask);
         activeDestination.copy(activeCurve.getPoint(1));
-        activeDestination.y = 0.07;
+        activeDestination.y = 0.024;
         activeRouteColor.set(TASK_WORLDS[activeTask].color);
         taskTransitionStarted = elapsed;
       }
@@ -362,7 +328,7 @@ export function LandingWorld({ progress, scenario, task }: LandingWorldProps) {
         previousCurve.getPoint(routeProgress, oldRoutePoint);
         activeCurve.getPoint(routeProgress, newRoutePoint);
         morphedRoutePoint.lerpVectors(oldRoutePoint, newRoutePoint, taskMix);
-        routePositions.setXYZ(index, morphedRoutePoint.x, 0.055, morphedRoutePoint.z);
+        routePositions.setXYZ(index, morphedRoutePoint.x, 0.022, morphedRoutePoint.z);
       }
       routePositions.needsUpdate = true;
       route.computeLineDistances();
@@ -399,8 +365,8 @@ export function LandingWorld({ progress, scenario, task }: LandingWorldProps) {
       setDrop(box, 0.16, 0, p);
       setDrop(basket, 0.25, 0, p);
       setDrop(lamp, 0.34, 0, p);
-      basket.position.x = liveRef.current.scenario === "laundry" ? -0.55 : -5.45;
-      basket.position.z = liveRef.current.scenario === "laundry" ? 0.72 : 2.68;
+      basket.position.x = liveRef.current.scenario === "laundry" ? -2.55 : -6.05;
+      basket.position.z = liveRef.current.scenario === "laundry" ? 1.65 : 3.95;
       frictionPatch.visible = liveRef.current.scenario === "low_friction";
       frictionPatch.material.opacity = 0.2 + Math.sin(elapsed * 3) * 0.07;
 
@@ -437,7 +403,7 @@ export function LandingWorld({ progress, scenario, task }: LandingWorldProps) {
 
       scanRings.visible = activeTask === "kitchen_check" && mission > 0.58;
       scanRings.position.copy(TASK_FOCUS.kitchen_check);
-      scanRings.position.y = 1.01;
+      scanRings.position.y = 0.99;
       scanRings.children.forEach((ring) => {
         const phase = (elapsed * 0.5 + ring.userData.phase) % 1;
         ring.scale.setScalar(0.65 + phase * 3.1);

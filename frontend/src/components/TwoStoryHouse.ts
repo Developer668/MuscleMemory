@@ -34,11 +34,16 @@ const HANDRAIL_HEIGHT = 0.9;
 const HANDRAIL_THICKNESS = 0.07;
 
 /** Upper-floor partitions and the door openings punched through them. */
-const WEST_PARTITION_X = -2.6;
+const WEST_PARTITION_X = -2.85;
 const EAST_PARTITION_X = 0.35;
 const CROSS_PARTITION_Z = 0.66;
 const PARTITION_THICKNESS = 0.14;
 const BEDROOM_DOOR_Z: [number, number] = [-1.25, -0.35];
+/** Bathroom door, stopping short of the well so a pier can carry the guard rail. */
+const BATHROOM_DOOR_X: [number, number] = [WEST_PARTITION_X + 0.08, -2.05];
+/** Where the two guard rails stand: just clear of the well on the slab side. */
+const WEST_RAIL_X = STAIR_WEST_X - 0.06;
+const EAST_RAIL_X = STAIR_EAST_X + 0.045;
 
 export type TwoStoryHouseModel = {
   root: THREE.Group;
@@ -355,6 +360,7 @@ function makeClock(): THREE.Group {
 
 function makeGardenTree(): THREE.Group {
   const tree = new THREE.Group();
+  tree.name = "garden-tree";
   const bark = new THREE.MeshStandardMaterial({
     map: plasterTexture("#5d4533", "#1e1712"),
     color: "#75543d",
@@ -633,8 +639,8 @@ function addLivingRoom(parent: THREE.Group): void {
  * wall. Chairs face the table: makeDiningChair puts its back at local +z, so a
  * seat north of the table is turned by PI and a seat west of it by -PI/2.
  */
-const DINING_X = 1.15;
-const DINING_Z = 2.75;
+const DINING_X = 1.4;
+const DINING_Z = 3.1;
 const DINING_TOP = 0.85;
 
 function addDining(parent: THREE.Group): void {
@@ -728,13 +734,14 @@ function addLivedInClutter(ground: THREE.Group, upper: THREE.Group): void {
   const clothBlue = surface("#496f83", 0.96);
   const clothCoral = surface("#b96f5b", 0.96);
 
-  // Entryway overflow: parcels, a slouched tote, and yesterday's mail.
-  addBox(ground, [0.62, 0.42, 0.48], [-4.05, 0.21, 3.88], cardboard, [0, -0.14, 0]);
-  addBox(ground, [0.44, 0.28, 0.36], [-4.48, 0.14, 3.6], cardboard, [0, 0.2, 0]);
-  const tote = item(new THREE.SphereGeometry(0.29, 18, 12), clothCoral, [-5.85, 0.23, 3.42], [0, 0.35, 0]);
+  // Entryway overflow, banked against the walls so the hall keeps a clear lane
+  // from the front door past the console table.
+  addBox(ground, [0.62, 0.42, 0.48], [-3.45, 0.21, 4.22], cardboard, [0, -0.14, 0]);
+  addBox(ground, [0.44, 0.28, 0.36], [-3.3, 0.14, 3.55], cardboard, [0, 0.2, 0]);
+  const tote = item(new THREE.SphereGeometry(0.29, 18, 12), clothCoral, [-6.25, 0.267, 4.05], [0, 0.35, 0]);
   tote.scale.set(0.72, 0.92, 0.42);
   ground.add(tote);
-  addBookStack(ground, [-5.47, 0.61, 2.74], 0.12, 3);
+  addBookStack(ground, [-5.47, 0.6375, 2.74], 0.12, 3);
 
   // A used living room: blanket, mug, magazines, and a toy left in the route's periphery.
   addBox(ground, [0.78, 0.035, 0.54], [2.66, 0.83, -3.44], clothCoral, [0.18, 0.12, -0.18]);
@@ -817,7 +824,7 @@ function addArchitecturalCharacter(root: THREE.Group, ground: THREE.Group, upper
     addBox(parent, [span[1] - span[0], skirting, 0.06], [(span[0] + span[1]) / 2, baseY + skirting / 2, z - 0.018], trim);
   };
   finish(ground, [2.72, HOUSE_WIDTH / 2], 0, 1.081, sagePlaster);
-  finish(upper, [-HOUSE_WIDTH / 2, WEST_PARTITION_X], STORY_HEIGHT, 0.742, bluePlaster);
+  finish(upper, [-HOUSE_WIDTH / 2, BATHROOM_DOOR_X[0]], STORY_HEIGHT, 0.742, bluePlaster);
   finish(upper, [EAST_PARTITION_X - PARTITION_THICKNESS / 2, HOUSE_WIDTH / 2], STORY_HEIGHT, 0.742, rosePlaster);
   addBox(ground, [4.78, 0.77, 0.035], [-3.75, 1.42, -4.49], tile);
   addBox(ground, [4.82, 0.58, 0.03], [3.98, 0.33, -4.49], sagePlaster);
@@ -852,7 +859,9 @@ function addArchitecturalCharacter(root: THREE.Group, ground: THREE.Group, upper
 
   // The garden is intentionally imperfect: uneven pavers, an established tree, and mixed planters.
   const tree = makeGardenTree();
-  tree.position.set(-7.45, -0.4, -2.85);
+  // Stood in the front yard clear of the gable: beside the house its crown reached
+  // through the left wall and the upper floor slab.
+  tree.position.set(-7.6, -0.41, 6.2);
   root.add(tree);
   const paver = surface("#b0aca1", 0.94);
   for (let index = 0; index < 7; index += 1) {
@@ -898,7 +907,7 @@ function addStairs(parent: THREE.Group): void {
   const rail = surface("#353735", 0.34, 0.55);
   const treadThickness = 0.05;
   const nosing = 0.03;
-  const railX = STAIR_EAST_X - 0.09;
+  const railX = STAIR_EAST_X - 0.05;
   const pitch = Math.atan2(STAIR_RISE, STAIR_GOING);
   // Height of the rail's centre line directly above a tread's walking surface.
   const railCentreAt = (z: number) =>
@@ -944,13 +953,14 @@ function addStairs(parent: THREE.Group): void {
 
   const run = (STAIR_RISERS - 1) * STAIR_GOING;
   const rise = (STAIR_RISERS - 1) * STAIR_RISE;
-  addBox(
+  const handrail = addBox(
     parent,
     [HANDRAIL_THICKNESS, HANDRAIL_THICKNESS, Math.hypot(run, rise)],
     [railX, (railCentreAt(STAIR_BOTTOM_Z) + railCentreAt(STAIR_TOP_Z)) / 2, (STAIR_BOTTOM_Z + STAIR_TOP_Z) / 2],
     rail,
     [pitch, 0, 0],
   );
+  handrail.name = "stair-handrail";
   // Newel posts anchoring each end of the rail to the flight.
   parent.add(item(
     new THREE.CylinderGeometry(0.038, 0.038, railCentreAt(STAIR_BOTTOM_Z), 12),
@@ -1000,16 +1010,19 @@ function addUpperArchitecture(upper: THREE.Group): void {
     [{ from: BEDROOM_DOOR_Z[0], to: BEDROOM_DOOR_Z[1] }], wall, casing);
   addPartition(upper, "z", EAST_PARTITION_X, [back, CROSS_PARTITION_Z], STORY_HEIGHT,
     [{ from: BEDROOM_DOOR_Z[0], to: BEDROOM_DOOR_Z[1] }], wall, casing);
-  // The cross wall carries the bathroom door, the stairwell, and the front room door.
+  // The cross wall carries the bathroom door, then opens full height across the
+  // stairwell and the landing beside it, so no guard rail has to cross a doorway.
   addPartition(upper, "x", CROSS_PARTITION_Z, [west, east], STORY_HEIGHT, [
-    { from: WEST_PARTITION_X, to: STAIR_WEST_X },
-    { from: STAIR_WEST_X, to: STAIR_EAST_X, full: true },
-    { from: STAIR_EAST_X, to: EAST_PARTITION_X - PARTITION_THICKNESS / 2 },
+    { from: BATHROOM_DOOR_X[0], to: BATHROOM_DOOR_X[1] },
+    { from: STAIR_WEST_X, to: EAST_PARTITION_X - PARTITION_THICKNESS / 2, full: true },
   ], wall, casing);
 
-  // Guard rails stand on the slabs either side of the well, not inside it.
-  addWellRailing(upper, STAIR_WEST_X - 0.06, [CROSS_PARTITION_Z, front - 0.05], STORY_HEIGHT);
-  addWellRailing(upper, STAIR_EAST_X + 0.06, [CROSS_PARTITION_Z, front - 0.05], STORY_HEIGHT);
+  // Guard rails stand on the slabs either side of the well, never inside it. The
+  // west rail starts at the pier beside the bathroom door; the east rail runs the
+  // full length of the landing from the head of the flight.
+  const railFront = front - 0.05;
+  addWellRailing(upper, WEST_RAIL_X, [CROSS_PARTITION_Z + PARTITION_THICKNESS / 2, railFront], STORY_HEIGHT);
+  addWellRailing(upper, EAST_RAIL_X, [STAIR_TOP_Z, railFront], STORY_HEIGHT);
 }
 
 function addUpperRooms(upper: THREE.Group): void {
@@ -1046,8 +1059,9 @@ function addUpperRooms(upper: THREE.Group): void {
     upper.add(item(new THREE.SphereGeometry(0.22, 24, 16), porcelain, [x, bathroomY + 0.72, 3.9], [Math.PI / 2, 0, 0]));
   }
   addBox(upper, [1.74, 0.85, 0.05], [-5.22, bathroomY + 1.52, 4.16], new THREE.MeshPhysicalMaterial({ color: "#b9d2d8", roughness: 0.04, metalness: 0.18, clearcoat: 1 }));
-  addBox(upper, [2.15, 0.56, 0.86], [-3.72, bathroomY + 0.28, 1.24], porcelain);
-  addBox(upper, [2.0, 0.07, 0.7], [-3.72, bathroomY + 0.58, 1.24], porcelain);
+  // Tub kept west of the doorway so the threshold stays walkable.
+  addBox(upper, [1.9, 0.56, 0.86], [-4.05, bathroomY + 0.28, 1.24], porcelain);
+  addBox(upper, [1.75, 0.07, 0.7], [-4.05, bathroomY + 0.58, 1.24], porcelain);
   const showerGlass = new THREE.MeshPhysicalMaterial({ color: "#cbe5e8", roughness: 0.05, transmission: 0.35, transparent: true, opacity: 0.48, clearcoat: 1 });
   addBox(upper, [1.5, 1.95, 0.05], [-5.78, bathroomY + 0.985, 1.62], showerGlass);
   addBox(upper, [0.05, 1.95, 1.35], [-5.03, bathroomY + 0.985, 0.96], showerGlass);
@@ -1117,11 +1131,13 @@ export function buildTwoStoryHouse(): TwoStoryHouseModel {
   const spineFace = 1.0 + PARTITION_THICKNESS / 2;
   addPartition(ground, "z", 2.65, [spineFace, HOUSE_DEPTH / 2], 0,
     [{ from: spineFace, to: 1.96 }], wall, casing);
-  // The spine wall: foyer, then the stair hall, then thresholds into each room.
+  // The spine wall. The flight passes through it full height, so the openings
+  // either side have to be wide enough to walk round the stair: the foyer reaches
+  // the kitchen to the west, and the kitchen reaches the dining room to the east.
   addPartition(ground, "x", 1.0, [-HOUSE_WIDTH / 2, HOUSE_WIDTH / 2], 0, [
     { from: -3.9, to: STAIR_WEST_X - 0.1 },
-    { from: STAIR_WEST_X - 0.1, to: -0.2, full: true },
-    { from: 0.9, to: 2.58 },
+    { from: STAIR_WEST_X - 0.1, to: STAIR_EAST_X + 0.1, full: true },
+    { from: STAIR_EAST_X + 0.1, to: 2.58 },
   ], wall, casing);
 
   addKitchen(ground);
