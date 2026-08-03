@@ -720,7 +720,7 @@ function DepthFeed({ sectors }: { sectors: number[] }) {
   );
 }
 
-function VideoFeed({ feedKey, label, record, featured }: {
+function VideoFeed({ feedKey, label, record, featured, running }: {
   feedKey: string;
   label: string;
   record: TelemetryRecord | null;
