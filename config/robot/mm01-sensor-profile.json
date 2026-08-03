@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "profile_id": "mm01-sensor-profile-v1",
+  "frame_join_key": "frame_id",
+  "stereo": {
+    "baseline_m": 0.07,
+    "depth_sector_count": 48,
+    "depth_range_m": [0.2, 8.0],
+    "left_eye_local_position_m": [0.2, 0.035, 0.2],
+    "right_eye_local_position_m": [0.2, -0.035, 0.2]
+  },
+  "categories": [
+    {"name": "stereo_vision_and_depth", "use": "Used by policy", "status": "available"},
+    {"name": "linkwise_imus", "use": "Used by policy", "status": "available"},
+    {"name": "joint_position_and_effort", "use": "Used by policy", "status": "available"},
+    {"name": "foot_contacts", "use": "Used by policy", "status": "available"},
+    {"name": "wrist_force_and_tray_balance", "use": "Used by policy", "status": "partial", "unavailable_signals": ["six_axis_force_torque"]},
+    {"name": "hand_pressure_and_slip", "use": "Used by policy", "status": "partial", "unavailable_signals": ["pressure", "shear"]},
+    {"name": "microphone_activity", "use": "Logged only", "status": "unavailable"},
+    {"name": "battery_and_energy", "use": "Logged only", "status": "available"}
+  ],
+  "debug_products": [
+    {"name": "simulator_debug_depth", "use": "Simulator ground truth"},
+    {"name": "simulator_debug_segmentation", "use": "Simulator ground truth"}
+  ]
+}

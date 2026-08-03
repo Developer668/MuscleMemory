@@ -1,0 +1,32 @@
+diff --git a/mujoco_playground/_src/locomotion/g1/joystick.py b/mujoco_playground/_src/locomotion/g1/joystick.py
+index 6a02516..aac2a1c 100644
+--- a/mujoco_playground/_src/locomotion/g1/joystick.py
++++ b/mujoco_playground/_src/locomotion/g1/joystick.py
+@@ -31,7 +31,7 @@ from mujoco_playground._src.locomotion.g1 import g1_constants as consts
+ 
+ def default_config() -> config_dict.ConfigDict:
+   return config_dict.create(
+-      ctrl_dt=0.02,
++      ctrl_dt=0.01,
+       sim_dt=0.002,
+-      episode_length=1000,
++      episode_length=2000,
+       action_repeat=1,
+@@ -393,12 +393,11 @@ class Joystick(g1_base.G1Env):
+     state.info["push_step"] += 1
+     phase_tp1 = state.info["phase"] + state.info["phase_dt"]
+     state.info["phase"] = jp.fmod(phase_tp1 + jp.pi, 2 * jp.pi) - jp.pi
+-    # NOTE(kevin): Enable this to make the policy stand still at 0 command.
+-    # state.info["phase"] = jp.where(
+-    #     jp.linalg.norm(state.info["command"]) > 0.01,
+-    #     state.info["phase"],
+-    #     jp.ones(2) * jp.pi,
+-    # )
++    state.info["phase"] = jp.where(
++        jp.linalg.norm(state.info["command"]) > 0.01,
++        state.info["phase"],
++        jp.ones(2) * jp.pi,
++    )
+     state.info["last_last_act"] = state.info["last_act"]
+     state.info["last_act"] = action
+     state.info["rng"], cmd_rng = jax.random.split(state.info["rng"])

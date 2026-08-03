@@ -16,7 +16,7 @@ Muscle Memory doesn't just teach a robot to complete one route. It helps the sam
 
 The application uses one permanently fixed humanoid called **MM-01**.
 
-MM-01 is inspired by the sensor and control architecture publicly described for the 1X NEO household robot. It **must not** be presented as an official NEO digital twin — 1X has not published its complete robot model, controller, or sensor API.
+MM-01 is independently inspired by the sensor and control architecture publicly described for the 1X NEO household robot. It is not affiliated with, endorsed by, or validated by 1X, which has not published its complete robot model, controller, or sensor API.
 
 For stability, MM-01 is built from validated public components:
 
@@ -102,19 +102,17 @@ MM-01 targets the sensor modalities publicly described for 1X NEO.
 
 | Sensor | Muscle Memory implementation | Application usage |
 | --- | --- | --- |
-| Stereo vision | Two head-mounted fisheye cameras | Robot POV and obstacle perception |
-| Stereo-derived depth | 32–64 depth sectors calculated from stereo vision | Primary navigation input |
-| Linkwise IMUs | Pelvis, torso, head, and selected limb acceleration/orientation | Balance and motion awareness |
+| Stereo vision | Two head-relative rendered RGB views with a fixed 0.07 m baseline | Robot POV and obstacle perception |
+| Stereo-derived depth | 48 OpenCV SGBM sectors calculated from the RGB pair | Primary navigation input |
+| Linkwise IMUs | Existing pelvis and torso acceleration, angular velocity, and orientation; head and limb channels unavailable | Balance and motion awareness |
 | Joint proprioception | Joint position, velocity, actuator effort | Low-level control and diagnostics |
-| Foot contacts | Heel/toe contact force and centre of pressure | Stability monitoring |
-| Wrist force | Six-axis force and torque at the tray | Tray balance and package security |
-| Hand tactile | Pressure, approximate shear, slip state | Package-slip detection |
-| Audio | Four simulated microphone channels and browser voice input | Task-command recognition |
-| Battery | Charge, power draw, estimated energy use | System monitoring |
+| Foot contacts | Existing left/right force and floor-contact state; centre of pressure unavailable | Stability monitoring |
+| Wrist and tray | Tray tilt from external payload physics; force-torque channel unavailable | Tray balance |
+| Hand and package | Relative-pose slip state; pressure and shear channels unavailable | Package-slip detection |
+| Audio | Unavailable in the current fixed profile | Logged-only placeholder |
+| Battery | Actuator power and integrated energy; charge percentage unavailable | System monitoring |
 
-Official 1X information describes dual 8.85 MP, 90 Hz stereo fisheye cameras, linkwise IMUs, four beamforming microphones, joint positions and applied forces, and tactile hand sensing. Its mobility system derives depth from stereo vision rather than relying on LiDAR — see [NEO specifications](https://www.1x.tech/neo), [Redwood AI](https://www.1x.tech/discover/redwood-ai), and [NEO hands](https://www.1x.tech/discover/neos-hands).
-
-**Muscle Memory must not display LiDAR as if it were part of the NEO-inspired sensor profile.**
+Official 1X information describes dual stereo fisheye cameras, linkwise IMUs, four beamforming microphones, joint positions and applied forces, and tactile hand sensing. Those public descriptions motivate the category rail, but unavailable MM-01 channels remain visibly unavailable rather than simulated as working signals. See [NEO specifications](https://www.1x.tech/neo), [Redwood AI](https://www.1x.tech/discover/redwood-ai), and [NEO hands](https://www.1x.tech/discover/neos-hands).
 
 ### Recommended simulation rates
 
