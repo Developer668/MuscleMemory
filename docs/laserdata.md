@@ -11,7 +11,7 @@ The production image must install the exact official release validated against t
 self-hosted Apache Iggy protocol:
 
 ```text
-laser-sdk==0.0.1rc16
+laser-sdk==0.0.1
 ```
 
 The import is lazy so an unconfigured developer process can still start and report its real

@@ -42,6 +42,7 @@ from muscle_memory.live.models import (
     LiveTelemetryPayload,
     PolicyActionEvent,
     RewardProgressEvent,
+    SimulatorPoseEvent,
     TactileSlipEvent,
     TrayStateEvent,
     ValidatedTrainingWorldEnvelope,
@@ -272,7 +273,6 @@ class LiveEpisodeRunner:
             opened_at=datetime.now(UTC),
         )
         await self._lifecycle.open_episode(identity)
-        self._video.start_episode(episode_id)
 
         wall_started = time.monotonic()
         path_length = 0.0
@@ -369,7 +369,10 @@ class LiveEpisodeRunner:
                     scheduled_time_seconds=scheduled_time,
                     captured_time_seconds=float(simulation.data.time),
                     telemetry_sequence=assigned_sequence,
-                    products=tuple(item.metadata() for item in products),
+                    products=tuple(
+                        item.metadata(episode_id=episode_id, frame_index=index)
+                        for item in products
+                    ),
                 )
                 self._video.append(
                     episode_id,
@@ -528,6 +531,16 @@ class LiveEpisodeRunner:
                             progress_m=tick_progress,
                             tick_reward=tick_reward,
                             cumulative_reward=cumulative_reward,
+                        ),
+                        simulator_pose=SimulatorPoseEvent(
+                            position_x_m=float(simulation.data.qpos[0]),
+                            position_y_m=float(simulation.data.qpos[1]),
+                            yaw_radians=float(
+                                math.atan2(
+                                    float(simulation.data.body("pelvis").xmat[3]),
+                                    float(simulation.data.body("pelvis").xmat[0]),
+                                )
+                            ),
                         ),
                         safety_markers=markers,
                         completion=CompletionEvent(

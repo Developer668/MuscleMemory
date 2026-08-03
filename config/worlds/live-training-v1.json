@@ -1,0 +1,3914 @@
+{
+  "schema_version": 1,
+  "catalog_id": "live-training-v1",
+  "worlds": [
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000000",
+        "split": "training",
+        "seed": 0,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "chair-00",
+            "category": "chair",
+            "position": {
+              "x": 4.908,
+              "y": 1.09
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.552,
+                "width_m": 0.537,
+                "height_m": 0.949
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 16.596,
+              "sliding_friction": 0.371,
+              "restitution": 0.019,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-01",
+            "category": "stool",
+            "position": {
+              "x": 7.251,
+              "y": 3.013
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.51,
+                "width_m": 0.51,
+                "height_m": 0.584
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 11.448,
+              "sliding_friction": 0.439,
+              "restitution": 0.07,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-02",
+            "category": "chair",
+            "position": {
+              "x": 4.474,
+              "y": 0.392
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.566,
+                "width_m": 0.68,
+                "height_m": 0.719
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 12.532,
+              "sliding_friction": 0.913,
+              "restitution": 0.186,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-03",
+            "category": "chair",
+            "position": {
+              "x": 1.165,
+              "y": 2.564
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.561,
+                "width_m": 0.56,
+                "height_m": 0.785
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 5.832,
+              "sliding_friction": 0.633,
+              "restitution": 0.026,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-04",
+            "category": "box",
+            "position": {
+              "x": 0.64,
+              "y": 1.5
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.677,
+                "width_m": 0.464,
+                "height_m": 0.368
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 11.984,
+              "sliding_friction": 0.286,
+              "restitution": 0.242,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "c71cd8dac01628d3559645471072c7a7b815c1fc9456adcc066ca9cef81deaf2",
+      "baseline_path_sha256": "0028796966927b3e392727bbe87e50856fb2e2794cc086e26c19fe7d99f7aba6",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000001",
+        "split": "training",
+        "seed": 1,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "laundry-basket-00",
+            "category": "laundry_basket",
+            "position": {
+              "x": 6.343,
+              "y": 2.485
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.739,
+                "width_m": 0.438,
+                "height_m": 0.758
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 11.507,
+              "sliding_friction": 0.421,
+              "restitution": 0.169,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-01",
+            "category": "table",
+            "position": {
+              "x": 3.631,
+              "y": 5.023
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.533,
+                "width_m": 1.2,
+                "height_m": 0.947
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 26.081,
+              "sliding_friction": 0.787,
+              "restitution": 0.104,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-02",
+            "category": "chair",
+            "position": {
+              "x": 3.256,
+              "y": 1.443
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.464,
+                "width_m": 0.738,
+                "height_m": 0.928
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.015,
+              "sliding_friction": 0.41,
+              "restitution": 0.076,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-03",
+            "category": "stool",
+            "position": {
+              "x": 6.33,
+              "y": 3.373
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.52,
+                "width_m": 0.52,
+                "height_m": 0.519
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 5.307,
+              "sliding_friction": 0.821,
+              "restitution": 0.05,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-04",
+            "category": "stool",
+            "position": {
+              "x": 4.664,
+              "y": 3.583
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.542,
+                "width_m": 0.542,
+                "height_m": 0.73
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 2.426,
+              "sliding_friction": 0.628,
+              "restitution": 0.155,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-05",
+            "category": "table",
+            "position": {
+              "x": 2.436,
+              "y": 3.395
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.069,
+                "width_m": 0.632,
+                "height_m": 0.683
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 55.61,
+              "sliding_friction": 0.564,
+              "restitution": 0.082,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-06",
+            "category": "stool",
+            "position": {
+              "x": 5.421,
+              "y": 5.602
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.52,
+                "width_m": 0.52,
+                "height_m": 0.597
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 1.828,
+              "sliding_friction": 0.762,
+              "restitution": 0.033,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "0de542b4951b63fdc48a2244c39f4d377677d7ba7f6af6d69d5300f3a4fb6a0f",
+      "baseline_path_sha256": "3ca050cf9f3bd5b19da9c945989b449d702840bb7d0698922ad6928710c87aad",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000002",
+        "split": "training",
+        "seed": 2,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "destination": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "objects": [
+          {
+            "object_id": "stool-00",
+            "category": "stool",
+            "position": {
+              "x": 4.218,
+              "y": 5.133
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.444,
+                "width_m": 0.444,
+                "height_m": 0.471
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.993,
+              "sliding_friction": 0.79,
+              "restitution": 0.033,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-01",
+            "category": "chair",
+            "position": {
+              "x": 3.823,
+              "y": 2.729
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.526,
+                "width_m": 0.507,
+                "height_m": 1.143
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 3.084,
+              "sliding_friction": 0.914,
+              "restitution": 0.06,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-02",
+            "category": "table",
+            "position": {
+              "x": 4.597,
+              "y": 3.724
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.16,
+                "width_m": 0.659,
+                "height_m": 0.846
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 20.898,
+              "sliding_friction": 0.713,
+              "restitution": 0.027,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-03",
+            "category": "stool",
+            "position": {
+              "x": 4.014,
+              "y": 1.732
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.417,
+                "width_m": 0.417,
+                "height_m": 0.365
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.325,
+              "sliding_friction": 0.776,
+              "restitution": 0.124,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-04",
+            "category": "stool",
+            "position": {
+              "x": 1.57,
+              "y": 3.119
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.397,
+                "width_m": 0.397,
+                "height_m": 0.584
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.569,
+              "sliding_friction": 0.965,
+              "restitution": 0.064,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "74119a4869d705cba6488e29d65c932f06a5e0be23ab7326a95549f1c988e36d",
+      "baseline_path_sha256": "d82346a9023812fecf2ee4a1d96f3f8cf06537cd0975843482f0f294fdab3efa",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000003",
+        "split": "training",
+        "seed": 3,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "objects": [
+          {
+            "object_id": "laundry-basket-00",
+            "category": "laundry_basket",
+            "position": {
+              "x": 4.503,
+              "y": 0.752
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.668,
+                "width_m": 0.556,
+                "height_m": 0.449
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 3.129,
+              "sliding_friction": 0.315,
+              "restitution": 0.19,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-01",
+            "category": "chair",
+            "position": {
+              "x": 4.46,
+              "y": 4.858
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.49,
+                "width_m": 0.699,
+                "height_m": 0.709
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 12.894,
+              "sliding_friction": 0.945,
+              "restitution": 0.182,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-02",
+            "category": "stool",
+            "position": {
+              "x": 6.839,
+              "y": 2.292
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.511,
+                "width_m": 0.511,
+                "height_m": 0.505
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 5.245,
+              "sliding_friction": 0.621,
+              "restitution": 0.084,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-03",
+            "category": "box",
+            "position": {
+              "x": 0.882,
+              "y": 5.039
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.466,
+                "width_m": 0.49,
+                "height_m": 0.412
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.178,
+              "sliding_friction": 0.971,
+              "restitution": 0.233,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-04",
+            "category": "laundry_basket",
+            "position": {
+              "x": 1.337,
+              "y": 1.813
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.45,
+                "width_m": 0.617,
+                "height_m": 0.417
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.964,
+              "sliding_friction": 0.455,
+              "restitution": 0.079,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-05",
+            "category": "chair",
+            "position": {
+              "x": 6.331,
+              "y": 5.423
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.627,
+                "width_m": 0.55,
+                "height_m": 1.154
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.162,
+              "sliding_friction": 0.801,
+              "restitution": 0.186,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "0816f54a276f402c1ea84ec826daa2b9f3318e7d727652ed318816def25f3b8f",
+      "baseline_path_sha256": "b3e66d8a76d84f7dc90f61d916762f2a9556364243af1666e824ebdc8a5febe1",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000004",
+        "split": "training",
+        "seed": 4,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "stool-00",
+            "category": "stool",
+            "position": {
+              "x": 0.876,
+              "y": 4.539
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.418,
+                "width_m": 0.418,
+                "height_m": 0.656
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.497,
+              "sliding_friction": 0.722,
+              "restitution": 0.068,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-01",
+            "category": "laundry_basket",
+            "position": {
+              "x": 4.535,
+              "y": 1.184
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.55,
+                "width_m": 0.457,
+                "height_m": 0.531
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.1,
+              "sliding_friction": 0.86,
+              "restitution": 0.18,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-02",
+            "category": "box",
+            "position": {
+              "x": 3.862,
+              "y": 2.441
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.747,
+                "width_m": 0.322,
+                "height_m": 0.421
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.418,
+              "sliding_friction": 0.553,
+              "restitution": 0.223,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-03",
+            "category": "table",
+            "position": {
+              "x": 7.124,
+              "y": 2.675
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.649,
+                "width_m": 1.088,
+                "height_m": 0.987
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 25.455,
+              "sliding_friction": 0.953,
+              "restitution": 0.115,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-04",
+            "category": "table",
+            "position": {
+              "x": 6.005,
+              "y": 3.92
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.194,
+                "width_m": 1.121,
+                "height_m": 0.921
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.623,
+              "sliding_friction": 0.303,
+              "restitution": 0.091,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "d566b88c33ed4cbeff38cca4a378a08e1af118994a72894e6ee6a7627aab358a",
+      "baseline_path_sha256": "84be89ebb5eaba44e2574f86477817a419520a94cb19fa33a886b0b5b86ff22c",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000005",
+        "split": "training",
+        "seed": 5,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "objects": [
+          {
+            "object_id": "table-00",
+            "category": "table",
+            "position": {
+              "x": 0.486,
+              "y": 3.942
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.851,
+                "width_m": 0.639,
+                "height_m": 0.727
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 34.031,
+              "sliding_friction": 0.734,
+              "restitution": 0.043,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-01",
+            "category": "stool",
+            "position": {
+              "x": 2.065,
+              "y": 1.692
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.35,
+                "width_m": 0.35,
+                "height_m": 0.423
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.774,
+              "sliding_friction": 0.544,
+              "restitution": 0.123,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-02",
+            "category": "box",
+            "position": {
+              "x": 5.262,
+              "y": 3.397
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.751,
+                "width_m": 0.519,
+                "height_m": 0.312
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 10.257,
+              "sliding_friction": 0.6,
+              "restitution": 0.065,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-03",
+            "category": "chair",
+            "position": {
+              "x": 2.412,
+              "y": 1.043
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.553,
+                "width_m": 0.619,
+                "height_m": 1.128
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.419,
+              "sliding_friction": 0.791,
+              "restitution": 0.147,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-04",
+            "category": "box",
+            "position": {
+              "x": 6.991,
+              "y": 1.84
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.603,
+                "width_m": 0.856,
+                "height_m": 0.213
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.173,
+              "sliding_friction": 0.447,
+              "restitution": 0.017,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "92f19e99b3e6db57a7f66891afe556d4b6266e2f4082705da50ce09c9fc21dec",
+      "baseline_path_sha256": "711c55a4ae30cfc0bcc78aa68747a622108238278c574bdb1bc384c74063a582",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000006",
+        "split": "training",
+        "seed": 6,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "table-00",
+            "category": "table",
+            "position": {
+              "x": 2.383,
+              "y": 5.096
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.863,
+                "width_m": 1.148,
+                "height_m": 0.971
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 49.258,
+              "sliding_friction": 0.8,
+              "restitution": 0.067,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-01",
+            "category": "box",
+            "position": {
+              "x": 2.246,
+              "y": 0.605
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.794,
+                "width_m": 0.372,
+                "height_m": 0.325
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 0.616,
+              "sliding_friction": 0.783,
+              "restitution": 0.207,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-02",
+            "category": "table",
+            "position": {
+              "x": 6.01,
+              "y": 3.763
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.845,
+                "width_m": 0.829,
+                "height_m": 0.821
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 41.572,
+              "sliding_friction": 0.35,
+              "restitution": 0.084,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-03",
+            "category": "chair",
+            "position": {
+              "x": 3.495,
+              "y": 2.47
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.588,
+                "width_m": 0.59,
+                "height_m": 1.106
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 12.113,
+              "sliding_friction": 0.883,
+              "restitution": 0.065,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-04",
+            "category": "stool",
+            "position": {
+              "x": 6.888,
+              "y": 2.339
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.552,
+                "width_m": 0.552,
+                "height_m": 0.718
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 2.574,
+              "sliding_friction": 0.971,
+              "restitution": 0.069,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "d0500d0ee00c9ae778103b91bd65badcf66b30f413e79da2c64099816a5751b4",
+      "baseline_path_sha256": "6ab858fbafca50e66fff356e15823faea42cace57164135bf6fecbcd72a54474",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000007",
+        "split": "training",
+        "seed": 7,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "objects": [
+          {
+            "object_id": "stool-00",
+            "category": "stool",
+            "position": {
+              "x": 0.482,
+              "y": 5.109
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.443,
+                "width_m": 0.443,
+                "height_m": 0.609
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 10.339,
+              "sliding_friction": 0.381,
+              "restitution": 0.026,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-01",
+            "category": "chair",
+            "position": {
+              "x": 5.089,
+              "y": 1.45
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.705,
+                "width_m": 0.469,
+                "height_m": 1.001
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 18.124,
+              "sliding_friction": 0.801,
+              "restitution": 0.118,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-02",
+            "category": "chair",
+            "position": {
+              "x": 2.739,
+              "y": 5.617
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.503,
+                "width_m": 0.498,
+                "height_m": 1.06
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 10.198,
+              "sliding_friction": 0.561,
+              "restitution": 0.173,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-03",
+            "category": "chair",
+            "position": {
+              "x": 3.289,
+              "y": 3.558
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.655,
+                "width_m": 0.461,
+                "height_m": 0.979
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.933,
+              "sliding_friction": 0.685,
+              "restitution": 0.154,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-04",
+            "category": "box",
+            "position": {
+              "x": 4.324,
+              "y": 2.68
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.83,
+                "width_m": 0.52,
+                "height_m": 0.51
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.644,
+              "sliding_friction": 0.506,
+              "restitution": 0.156,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "00dfec9019fb66814743470a97d8a069af1a581a0c8b95381eb8b52170356ca9",
+      "baseline_path_sha256": "597964b988c4702190211e4afb815e420ae64bd508619acc28891ad55645d03c",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000008",
+        "split": "training",
+        "seed": 8,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "chair-00",
+            "category": "chair",
+            "position": {
+              "x": 4.745,
+              "y": 3.372
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.618,
+                "width_m": 0.739,
+                "height_m": 1.137
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 8.67,
+              "sliding_friction": 0.348,
+              "restitution": 0.038,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-01",
+            "category": "laundry_basket",
+            "position": {
+              "x": 3.96,
+              "y": 1.244
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.603,
+                "width_m": 0.551,
+                "height_m": 0.786
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.797,
+              "sliding_friction": 0.682,
+              "restitution": 0.152,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-02",
+            "category": "laundry_basket",
+            "position": {
+              "x": 1.241,
+              "y": 0.51
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.661,
+                "width_m": 0.388,
+                "height_m": 0.612
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 3.321,
+              "sliding_friction": 0.428,
+              "restitution": 0.062,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-03",
+            "category": "stool",
+            "position": {
+              "x": 5.886,
+              "y": 3.913
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.372,
+                "width_m": 0.372,
+                "height_m": 0.634
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 8.773,
+              "sliding_friction": 0.588,
+              "restitution": 0.051,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-04",
+            "category": "chair",
+            "position": {
+              "x": 6.999,
+              "y": 2.652
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.503,
+                "width_m": 0.745,
+                "height_m": 1.083
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 14.671,
+              "sliding_friction": 0.95,
+              "restitution": 0.006,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-05",
+            "category": "laundry_basket",
+            "position": {
+              "x": 5.447,
+              "y": 5.455
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.723,
+                "width_m": 0.459,
+                "height_m": 0.612
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.832,
+              "sliding_friction": 0.365,
+              "restitution": 0.072,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-06",
+            "category": "chair",
+            "position": {
+              "x": 1.862,
+              "y": 1.445
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.618,
+                "width_m": 0.52,
+                "height_m": 1.004
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 15.513,
+              "sliding_friction": 0.932,
+              "restitution": 0.075,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-07",
+            "category": "laundry_basket",
+            "position": {
+              "x": 4.324,
+              "y": 0.476
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.475,
+                "width_m": 0.483,
+                "height_m": 0.708
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.403,
+              "sliding_friction": 0.567,
+              "restitution": 0.071,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-08",
+            "category": "chair",
+            "position": {
+              "x": 2.639,
+              "y": 1.502
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.587,
+                "width_m": 0.452,
+                "height_m": 1.184
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 3.349,
+              "sliding_friction": 0.578,
+              "restitution": 0.057,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "c02ba01d85893b5e37dc5b6c7ea17f49a585b4badff8dbfa8ed32692abb36358",
+      "baseline_path_sha256": "dee558e811b749bca684fee1a6acf6fb2d48b3c21d73522d01a7357862752b9a",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000009",
+        "split": "training",
+        "seed": 9,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "stool-00",
+            "category": "stool",
+            "position": {
+              "x": 5.687,
+              "y": 5.064
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.441,
+                "width_m": 0.441,
+                "height_m": 0.451
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 11.593,
+              "sliding_friction": 0.902,
+              "restitution": 0.032,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-01",
+            "category": "laundry_basket",
+            "position": {
+              "x": 3.592,
+              "y": 1.857
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.473,
+                "width_m": 0.408,
+                "height_m": 0.779
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 11.069,
+              "sliding_friction": 0.865,
+              "restitution": 0.089,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-02",
+            "category": "box",
+            "position": {
+              "x": 6.347,
+              "y": 1.764
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.361,
+                "width_m": 0.618,
+                "height_m": 0.569
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 0.577,
+              "sliding_friction": 0.612,
+              "restitution": 0.235,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-03",
+            "category": "stool",
+            "position": {
+              "x": 6.141,
+              "y": 4.178
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.49,
+                "width_m": 0.49,
+                "height_m": 0.59
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.407,
+              "sliding_friction": 0.827,
+              "restitution": 0.039,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-04",
+            "category": "chair",
+            "position": {
+              "x": 5.743,
+              "y": 0.95
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.631,
+                "width_m": 0.486,
+                "height_m": 1.192
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.62,
+              "sliding_friction": 0.809,
+              "restitution": 0.196,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "e0b12f2e19c557d396cc80c79287f84048a4e59633b6804a69e8e11f2215d05d",
+      "baseline_path_sha256": "aaa38ac1f406655bd70aed4092be3e98e1a0fa6eef159830ae12b440a405c628",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-000000000000000a",
+        "split": "training",
+        "seed": 10,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "chair-00",
+            "category": "chair",
+            "position": {
+              "x": 3.511,
+              "y": 1.213
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.484,
+                "width_m": 0.68,
+                "height_m": 0.936
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 5.34,
+              "sliding_friction": 0.856,
+              "restitution": 0.07,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-01",
+            "category": "box",
+            "position": {
+              "x": 6.462,
+              "y": 2.003
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.612,
+                "width_m": 0.762,
+                "height_m": 0.714
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 13.693,
+              "sliding_friction": 0.329,
+              "restitution": 0.039,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-02",
+            "category": "chair",
+            "position": {
+              "x": 6.014,
+              "y": 1.207
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.675,
+                "width_m": 0.724,
+                "height_m": 0.951
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.142,
+              "sliding_friction": 0.638,
+              "restitution": 0.015,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-03",
+            "category": "chair",
+            "position": {
+              "x": 0.91,
+              "y": 3.788
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.706,
+                "width_m": 0.495,
+                "height_m": 0.853
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 13.978,
+              "sliding_friction": 0.88,
+              "restitution": 0.063,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-04",
+            "category": "box",
+            "position": {
+              "x": 3.308,
+              "y": 3.522
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.327,
+                "width_m": 0.351,
+                "height_m": 0.574
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 2.462,
+              "sliding_friction": 0.338,
+              "restitution": 0.136,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "4ac07a6d1d405f3d1c3bca5c6e3ca73cae43bbd6fc9cd397518db84ba75c5865",
+      "baseline_path_sha256": "7f678c3cad189db71aa43462500718653173b66804465b5366347ccd9809b07a",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-000000000000000b",
+        "split": "training",
+        "seed": 11,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "laundry-basket-00",
+            "category": "laundry_basket",
+            "position": {
+              "x": 4.335,
+              "y": 2.334
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.606,
+                "width_m": 0.492,
+                "height_m": 0.561
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.567,
+              "sliding_friction": 0.759,
+              "restitution": 0.069,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-01",
+            "category": "laundry_basket",
+            "position": {
+              "x": 6.845,
+              "y": 3.984
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.635,
+                "width_m": 0.643,
+                "height_m": 0.428
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.426,
+              "sliding_friction": 0.44,
+              "restitution": 0.092,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-02",
+            "category": "stool",
+            "position": {
+              "x": 7.435,
+              "y": 4.473
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.363,
+                "width_m": 0.363,
+                "height_m": 0.482
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 1.717,
+              "sliding_friction": 0.461,
+              "restitution": 0.199,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-03",
+            "category": "chair",
+            "position": {
+              "x": 1.013,
+              "y": 3.983
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.474,
+                "width_m": 0.469,
+                "height_m": 1.08
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 17.123,
+              "sliding_friction": 0.367,
+              "restitution": 0.143,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-04",
+            "category": "stool",
+            "position": {
+              "x": 3.615,
+              "y": 2.401
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.464,
+                "width_m": 0.464,
+                "height_m": 0.655
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.359,
+              "sliding_friction": 0.882,
+              "restitution": 0.014,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-05",
+            "category": "table",
+            "position": {
+              "x": 6.665,
+              "y": 2.259
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.429,
+                "width_m": 0.866,
+                "height_m": 0.96
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 27.614,
+              "sliding_friction": 0.342,
+              "restitution": 0.129,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-06",
+            "category": "chair",
+            "position": {
+              "x": 6.725,
+              "y": 5.453
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.456,
+                "width_m": 0.541,
+                "height_m": 0.724
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 10.038,
+              "sliding_friction": 0.652,
+              "restitution": 0.128,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-07",
+            "category": "chair",
+            "position": {
+              "x": 3.907,
+              "y": 3.874
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.588,
+                "width_m": 0.602,
+                "height_m": 0.97
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.681,
+              "sliding_friction": 0.302,
+              "restitution": 0.059,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "60cf62ffa3efdc740e351fd6a3a7f4009f39fc3981fb0b9618a1e6cbebece009",
+      "baseline_path_sha256": "a496683cd4107d69a1c2d2f3183bcaf8a3e32be2050ae6578f70d51f6bcca0ce",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-000000000000000c",
+        "split": "training",
+        "seed": 12,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "stool-00",
+            "category": "stool",
+            "position": {
+              "x": 2.126,
+              "y": 5.368
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.502,
+                "width_m": 0.502,
+                "height_m": 0.505
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 3.655,
+              "sliding_friction": 0.793,
+              "restitution": 0.106,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-01",
+            "category": "laundry_basket",
+            "position": {
+              "x": 3.421,
+              "y": 3.367
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.471,
+                "width_m": 0.401,
+                "height_m": 0.755
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.053,
+              "sliding_friction": 0.465,
+              "restitution": 0.142,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-02",
+            "category": "box",
+            "position": {
+              "x": 6.148,
+              "y": 1.461
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.31,
+                "width_m": 0.597,
+                "height_m": 0.487
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 5.343,
+              "sliding_friction": 0.97,
+              "restitution": 0.141,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-03",
+            "category": "laundry_basket",
+            "position": {
+              "x": 2.331,
+              "y": 4.443
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.626,
+                "width_m": 0.584,
+                "height_m": 0.551
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.864,
+              "sliding_friction": 0.599,
+              "restitution": 0.097,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-04",
+            "category": "chair",
+            "position": {
+              "x": 4.476,
+              "y": 3.566
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.499,
+                "width_m": 0.623,
+                "height_m": 0.735
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.947,
+              "sliding_friction": 0.509,
+              "restitution": 0.034,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "3528cfe1e4bcd9fd8d65e02cc12d3b47c8bcab7fcdc5962320d91caae49324d4",
+      "baseline_path_sha256": "634682dcb3ef3d19a066d096c42724eef92ff3728f94df5c95faa3d20ce72675",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-000000000000000d",
+        "split": "training",
+        "seed": 13,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "destination": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "objects": [
+          {
+            "object_id": "box-00",
+            "category": "box",
+            "position": {
+              "x": 4.867,
+              "y": 3.83
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.687,
+                "width_m": 0.587,
+                "height_m": 0.337
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 13.027,
+              "sliding_friction": 0.813,
+              "restitution": 0.061,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-01",
+            "category": "laundry_basket",
+            "position": {
+              "x": 1.027,
+              "y": 2.382
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.671,
+                "width_m": 0.624,
+                "height_m": 0.726
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.743,
+              "sliding_friction": 0.503,
+              "restitution": 0.031,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-02",
+            "category": "stool",
+            "position": {
+              "x": 0.881,
+              "y": 3.581
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.404,
+                "width_m": 0.404,
+                "height_m": 0.622
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.947,
+              "sliding_friction": 0.616,
+              "restitution": 0.034,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-03",
+            "category": "box",
+            "position": {
+              "x": 3.99,
+              "y": 3.913
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.468,
+                "width_m": 0.746,
+                "height_m": 0.56
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 14.682,
+              "sliding_friction": 0.391,
+              "restitution": 0.229,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-04",
+            "category": "stool",
+            "position": {
+              "x": 3.949,
+              "y": 2.141
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.481,
+                "width_m": 0.481,
+                "height_m": 0.463
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 8.815,
+              "sliding_friction": 0.654,
+              "restitution": 0.153,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-05",
+            "category": "box",
+            "position": {
+              "x": 1.871,
+              "y": 1.559
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.312,
+                "width_m": 0.718,
+                "height_m": 0.221
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.221,
+              "sliding_friction": 0.267,
+              "restitution": 0.068,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "6b016be2441e7f87468089bd4386bde451da9764052e22a92e9e0c5fab2ac80e",
+      "baseline_path_sha256": "4beefefd467e9880cd1f1cb7a14c042a31291d22f65913ddad2fe5fe8e67ffad",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-000000000000000e",
+        "split": "training",
+        "seed": 14,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "objects": [
+          {
+            "object_id": "chair-00",
+            "category": "chair",
+            "position": {
+              "x": 3.881,
+              "y": 5.049
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.451,
+                "width_m": 0.496,
+                "height_m": 0.731
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.417,
+              "sliding_friction": 0.549,
+              "restitution": 0.075,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-01",
+            "category": "chair",
+            "position": {
+              "x": 3.65,
+              "y": 1.12
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.563,
+                "width_m": 0.581,
+                "height_m": 1.154
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.744,
+              "sliding_friction": 0.551,
+              "restitution": 0.114,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-02",
+            "category": "table",
+            "position": {
+              "x": 4.559,
+              "y": 3.723
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.477,
+                "width_m": 0.824,
+                "height_m": 0.764
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 55.323,
+              "sliding_friction": 0.412,
+              "restitution": 0.086,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-03",
+            "category": "table",
+            "position": {
+              "x": 2.0,
+              "y": 3.454
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.388,
+                "width_m": 1.013,
+                "height_m": 0.946
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 29.777,
+              "sliding_friction": 0.344,
+              "restitution": 0.001,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-04",
+            "category": "laundry_basket",
+            "position": {
+              "x": 7.695,
+              "y": 1.573
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.503,
+                "width_m": 0.449,
+                "height_m": 0.479
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 1.348,
+              "sliding_friction": 0.562,
+              "restitution": 0.157,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-05",
+            "category": "stool",
+            "position": {
+              "x": 2.028,
+              "y": 0.604
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.408,
+                "width_m": 0.408,
+                "height_m": 0.602
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 2.593,
+              "sliding_friction": 0.764,
+              "restitution": 0.184,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-06",
+            "category": "box",
+            "position": {
+              "x": 5.907,
+              "y": 3.512
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.842,
+                "width_m": 0.649,
+                "height_m": 0.214
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 5.97,
+              "sliding_friction": 0.608,
+              "restitution": 0.082,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-07",
+            "category": "box",
+            "position": {
+              "x": 3.102,
+              "y": 4.443
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.31,
+                "width_m": 0.651,
+                "height_m": 0.299
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 14.215,
+              "sliding_friction": 0.568,
+              "restitution": 0.191,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "b6c54690ac96fefecf35d47fedf4d95c6b503b5d9b0c50309e28044784e1c158",
+      "baseline_path_sha256": "a62bb5e7fd782248ac9f37a191063f242f4cc5434a70f65f34875fbd3f26889a",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-000000000000000f",
+        "split": "training",
+        "seed": 15,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "chair-00",
+            "category": "chair",
+            "position": {
+              "x": 6.868,
+              "y": 3.318
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.496,
+                "width_m": 0.549,
+                "height_m": 0.853
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.023,
+              "sliding_friction": 0.444,
+              "restitution": 0.196,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-01",
+            "category": "stool",
+            "position": {
+              "x": 6.994,
+              "y": 2.744
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.498,
+                "width_m": 0.498,
+                "height_m": 0.634
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.127,
+              "sliding_friction": 0.812,
+              "restitution": 0.076,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-02",
+            "category": "chair",
+            "position": {
+              "x": 4.458,
+              "y": 5.26
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.727,
+                "width_m": 0.512,
+                "height_m": 0.731
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.597,
+              "sliding_friction": 0.426,
+              "restitution": 0.083,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-03",
+            "category": "chair",
+            "position": {
+              "x": 1.993,
+              "y": 4.285
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.667,
+                "width_m": 0.529,
+                "height_m": 0.723
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.18,
+              "sliding_friction": 0.359,
+              "restitution": 0.013,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-04",
+            "category": "table",
+            "position": {
+              "x": 5.693,
+              "y": 4.662
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.539,
+                "width_m": 0.938,
+                "height_m": 0.796
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 36.504,
+              "sliding_friction": 0.961,
+              "restitution": 0.144,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-05",
+            "category": "box",
+            "position": {
+              "x": 0.379,
+              "y": 1.158
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.465,
+                "width_m": 0.596,
+                "height_m": 0.657
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 3.169,
+              "sliding_friction": 0.871,
+              "restitution": 0.118,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "2eaec59e98561803ad0b06482d9ff919fc412aabd70cd7f4f840ae0c1427bc72",
+      "baseline_path_sha256": "bd1a82247c123a8c020f8b859425527d2dcbf954a7518145d29d2c5104db9ae5",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000010",
+        "split": "training",
+        "seed": 16,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "destination": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "objects": [
+          {
+            "object_id": "chair-00",
+            "category": "chair",
+            "position": {
+              "x": 2.264,
+              "y": 4.099
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.481,
+                "width_m": 0.505,
+                "height_m": 0.761
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.821,
+              "sliding_friction": 0.474,
+              "restitution": 0.102,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-01",
+            "category": "chair",
+            "position": {
+              "x": 5.658,
+              "y": 1.541
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.502,
+                "width_m": 0.738,
+                "height_m": 1.081
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 7.075,
+              "sliding_friction": 0.675,
+              "restitution": 0.047,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-02",
+            "category": "table",
+            "position": {
+              "x": 1.512,
+              "y": 3.185
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.839,
+                "width_m": 0.676,
+                "height_m": 0.738
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 28.649,
+              "sliding_friction": 0.669,
+              "restitution": 0.082,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-03",
+            "category": "table",
+            "position": {
+              "x": 6.906,
+              "y": 2.499
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.987,
+                "width_m": 0.873,
+                "height_m": 0.805
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 36.657,
+              "sliding_friction": 0.485,
+              "restitution": 0.042,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-04",
+            "category": "box",
+            "position": {
+              "x": 4.713,
+              "y": 2.708
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.678,
+                "width_m": 0.835,
+                "height_m": 0.473
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 0.973,
+              "sliding_friction": 0.583,
+              "restitution": 0.137,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "1dcb43105c39a452f419808ce0d054b7052a24d55399c4d20dcdccabf3158bf4",
+      "baseline_path_sha256": "321640279e941c97882bd12d1da00da9795ed55b8877c0bced8a0567b4048f41",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000011",
+        "split": "training",
+        "seed": 17,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "chair-00",
+            "category": "chair",
+            "position": {
+              "x": 1.961,
+              "y": 2.571
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.513,
+                "width_m": 0.563,
+                "height_m": 1.177
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 19.842,
+              "sliding_friction": 0.861,
+              "restitution": 0.198,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-01",
+            "category": "table",
+            "position": {
+              "x": 2.065,
+              "y": 4.869
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.101,
+                "width_m": 0.604,
+                "height_m": 0.76
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 36.994,
+              "sliding_friction": 0.496,
+              "restitution": 0.042,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-02",
+            "category": "stool",
+            "position": {
+              "x": 4.915,
+              "y": 4.867
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.561,
+                "width_m": 0.561,
+                "height_m": 0.721
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.35,
+              "sliding_friction": 0.603,
+              "restitution": 0.049,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-03",
+            "category": "table",
+            "position": {
+              "x": 1.952,
+              "y": 1.77
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.047,
+                "width_m": 0.78,
+                "height_m": 0.771
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 23.592,
+              "sliding_friction": 0.49,
+              "restitution": 0.004,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-04",
+            "category": "laundry_basket",
+            "position": {
+              "x": 4.788,
+              "y": 0.573
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "capsule",
+              "dimensions": {
+                "length_m": 0.671,
+                "width_m": 0.522,
+                "height_m": 0.662
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 3.407,
+              "sliding_friction": 0.721,
+              "restitution": 0.073,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "37c940baf5f9c7e99806fd2e8efe70ac4be0ed76b812d678ba62181092e31de6",
+      "baseline_path_sha256": "14fdb9920f25927f8a507094e7d60bbaf991d92787682bad4bf82a921203b118",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000012",
+        "split": "training",
+        "seed": 18,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "destination": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "objects": [
+          {
+            "object_id": "stool-00",
+            "category": "stool",
+            "position": {
+              "x": 5.046,
+              "y": 1.043
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.559,
+                "width_m": 0.559,
+                "height_m": 0.482
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 4.55,
+              "sliding_friction": 0.634,
+              "restitution": 0.187,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-01",
+            "category": "stool",
+            "position": {
+              "x": 4.584,
+              "y": 2.921
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.462,
+                "width_m": 0.462,
+                "height_m": 0.389
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 9.808,
+              "sliding_friction": 0.781,
+              "restitution": 0.072,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-02",
+            "category": "box",
+            "position": {
+              "x": 5.567,
+              "y": 3.164
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.405,
+                "width_m": 0.838,
+                "height_m": 0.21
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 12.564,
+              "sliding_friction": 0.689,
+              "restitution": 0.154,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "laundry-basket-03",
+            "category": "laundry_basket",
+            "position": {
+              "x": 4.069,
+              "y": 3.71
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.745,
+                "width_m": 0.575,
+                "height_m": 0.644
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 10.482,
+              "sliding_friction": 0.643,
+              "restitution": 0.097,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-04",
+            "category": "stool",
+            "position": {
+              "x": 3.315,
+              "y": 0.821
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.383,
+                "width_m": 0.383,
+                "height_m": 0.68
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 11.534,
+              "sliding_friction": 0.357,
+              "restitution": 0.027,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "e2e0400cd4f2e9b5a533183065d43080799e24e19efda5f9e92f5c29f8b17cf0",
+      "baseline_path_sha256": "88a52b27c2b5e8f9bdc666448cde881881a4150b617fcc74cf90bf6be9055c36",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    },
+    {
+      "world": {
+        "world_id": "train-v1-0000000000000013",
+        "split": "training",
+        "seed": 19,
+        "generation_version": 1,
+        "template": {
+          "template_id": "bounded-apartment-8x6-v1",
+          "width_m": 8.0,
+          "depth_m": 6.0
+        },
+        "start": {
+          "x": 7.2,
+          "y": 5.2
+        },
+        "destination": {
+          "x": 0.8,
+          "y": 0.8
+        },
+        "objects": [
+          {
+            "object_id": "box-00",
+            "category": "box",
+            "position": {
+              "x": 2.9,
+              "y": 2.679
+            },
+            "yaw_degrees": 270.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.549,
+                "width_m": 0.385,
+                "height_m": 0.45
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 10.594,
+              "sliding_friction": 0.615,
+              "restitution": 0.246,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-01",
+            "category": "stool",
+            "position": {
+              "x": 4.531,
+              "y": 3.547
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.352,
+                "width_m": 0.352,
+                "height_m": 0.405
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 2.556,
+              "sliding_friction": 0.493,
+              "restitution": 0.164,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "box-02",
+            "category": "box",
+            "position": {
+              "x": 2.186,
+              "y": 1.937
+            },
+            "yaw_degrees": 90.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.678,
+                "width_m": 0.351,
+                "height_m": 0.714
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 2.718,
+              "sliding_friction": 0.505,
+              "restitution": 0.151,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "table-03",
+            "category": "table",
+            "position": {
+              "x": 1.497,
+              "y": 3.316
+            },
+            "yaw_degrees": 180.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 1.706,
+                "width_m": 0.793,
+                "height_m": 0.668
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 31.074,
+              "sliding_friction": 0.746,
+              "restitution": 0.039,
+              "movable": false
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "chair-04",
+            "category": "chair",
+            "position": {
+              "x": 6.225,
+              "y": 4.37
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "box",
+              "dimensions": {
+                "length_m": 0.692,
+                "width_m": 0.731,
+                "height_m": 1.137
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 18.671,
+              "sliding_friction": 0.462,
+              "restitution": 0.146,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          },
+          {
+            "object_id": "stool-05",
+            "category": "stool",
+            "position": {
+              "x": 3.928,
+              "y": 2.167
+            },
+            "yaw_degrees": 0.0,
+            "collider": {
+              "kind": "cylinder",
+              "dimensions": {
+                "length_m": 0.576,
+                "width_m": 0.576,
+                "height_m": 0.401
+              },
+              "centre_offset": {
+                "x": 0.0,
+                "y": 0.0
+              }
+            },
+            "physical": {
+              "mass_kg": 6.54,
+              "sliding_friction": 0.798,
+              "restitution": 0.009,
+              "movable": true
+            },
+            "visual_asset_uri": null
+          }
+        ]
+      },
+      "world_sha256": "91d038e34a4404482ed27d1b968964a35cef536e7de46b579dc1e0cd0e715037",
+      "baseline_path_sha256": "f49072c675c1ad1ce5a7984807afc9bb4b211833918b16288471a0ae51823969",
+      "validation_checks": [
+        "approved_colliders",
+        "baseline_path_exists",
+        "minimum_passage_clearance",
+        "no_overlapping_objects",
+        "physical_parameters_within_bounds",
+        "start_destination_connected"
+      ]
+    }
+  ]
+}

@@ -53,6 +53,9 @@ class OperationalEpisodeRuntime:
         self._expected_robot_checksum = expected_robot_checksum
         self._publisher: LiveEventPublisher | None = None
         self._last_consumer_error: str | None = None
+        self._dashboard_deliveries = 0
+        self._durable_event_count = 0
+        self._last_closure: EpisodeClosure | None = None
 
     def bind_live_publisher(self, publisher: LiveEventPublisher) -> None:
         self._publisher = publisher
@@ -78,6 +81,7 @@ class OperationalEpisodeRuntime:
         """Publish only after the exact event is durably accepted by the backend."""
 
         receipt = await self.service.append_telemetry(record)
+        self._durable_event_count += 1
         publisher = self._publisher
         if publisher is not None:
             try:
@@ -88,6 +92,7 @@ class OperationalEpisodeRuntime:
                     )
                 )
                 self._last_consumer_error = None
+                self._dashboard_deliveries += 1
             except Exception as exc:
                 self._last_consumer_error = type(exc).__name__
         return receipt
@@ -99,6 +104,7 @@ class OperationalEpisodeRuntime:
         closed_at: datetime | None = None,
     ) -> EpisodeClosure:
         closure = await self.service.close_episode(result, closed_at=closed_at)
+        self._last_closure = closure
         await self._publish_status(
             result.episode_id,
             {
@@ -117,7 +123,7 @@ class OperationalEpisodeRuntime:
             if self._last_consumer_error is not None
             else (
                 ProviderOperationalState.HEALTHY
-                if self._publisher is not None
+                if self._dashboard_deliveries > 0
                 else ProviderOperationalState.CONFIGURED
             )
         )
@@ -125,34 +131,75 @@ class OperationalEpisodeRuntime:
             "bounded API fanout failed on the latest durable event"
             if self._last_consumer_error is not None
             else (
-                "durable 20 Hz events fan out to the dashboard and timeline"
-                if self._publisher is not None
-                else "API publisher is not bound yet"
+                "live status or telemetry fanout has completed successfully"
+                if self._dashboard_deliveries > 0
+                else (
+                    "API publisher is bound; no live fanout evidence exists yet"
+                    if self._publisher is not None
+                    else "API publisher is not bound yet"
+                )
             )
         )
+        closure = self._last_closure
+        replay_ready = closure is not None and self._durable_event_count > 0
+        replay_state = (
+            ProviderOperationalState.HEALTHY
+            if replay_ready
+            else ProviderOperationalState.CONFIGURED
+        )
+        closed_state = (
+            ProviderOperationalState.HEALTHY
+            if closure is not None
+            else ProviderOperationalState.CONFIGURED
+        )
+        graph_state = ProviderOperationalState.CONFIGURED
+        graph_detail = "no closed episode graph-handoff evidence exists yet"
+        if closure is not None:
+            if closure.graph.provider_complete:
+                graph_state = ProviderOperationalState.END_TO_END_VERIFIED
+                graph_detail = "the latest closed episode was stored in configured graph memory"
+            elif closure.graph.complete:
+                graph_state = ProviderOperationalState.DEGRADED
+                graph_detail = (
+                    "the latest graph handoff completed only through non-provider storage"
+                )
+            else:
+                graph_state = ProviderOperationalState.DEGRADED
+                graph_detail = "the latest closed episode graph handoff is incomplete"
         return (
             RuntimeConsumerSnapshot("dashboard-and-timeline", live_state, live_detail),
             RuntimeConsumerSnapshot(
                 "replay",
-                ProviderOperationalState.HEALTHY,
-                "append-only replay reads the durable event stream at 20 Hz; "
-                "frame_id is the sole video join",
+                replay_state,
+                (
+                    "closed durable telemetry exists for append-only replay; "
+                    "frame_id is the sole video join"
+                    if replay_ready
+                    else "replay is configured but no closed durable episode exists yet"
+                ),
             ),
             RuntimeConsumerSnapshot(
                 "safety-and-failure-summary",
-                ProviderOperationalState.HEALTHY,
-                "deterministic measured episode results produce safety and failure facts",
+                closed_state,
+                (
+                    "a deterministic measured closure produced safety and failure facts"
+                    if closure is not None
+                    else "deterministic failure detection is configured; no closure exists yet"
+                ),
             ),
             RuntimeConsumerSnapshot(
                 "post-episode-graph-handoff",
-                ProviderOperationalState.HEALTHY,
-                "closed episode, failure, and correction facts are handed to graph "
-                "memory after control ends",
+                graph_state,
+                graph_detail,
             ),
             RuntimeConsumerSnapshot(
                 "training-and-evaluation-evidence",
-                ProviderOperationalState.HEALTHY,
-                "immutable closures and telemetry digests back training and evaluation evidence",
+                closed_state,
+                (
+                    "an immutable closure and telemetry digest provide audit evidence"
+                    if closure is not None
+                    else "evidence consumption is configured; no immutable closure exists yet"
+                ),
             ),
         )
 
@@ -167,6 +214,7 @@ class OperationalEpisodeRuntime:
         try:
             await publisher.publish_status(episode_id, status)
             self._last_consumer_error = None
+            self._dashboard_deliveries += 1
         except Exception as exc:
             self._last_consumer_error = type(exc).__name__
 

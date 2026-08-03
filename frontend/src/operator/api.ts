@@ -4,6 +4,8 @@ import type {
   CorrectionView,
   EpisodeDetail,
   EpisodeList,
+  LiveEpisodeOptions,
+  LiveEpisodeStatus,
   PendingApprovalList,
   PolicySummaryList,
   PromotionEligibility,
@@ -60,6 +62,24 @@ export const operatorApi = {
     request<TelemetryPage>(`/episodes/${encodeURIComponent(episodeId)}/telemetry?limit=2000`),
   replay: (episodeId: string) =>
     request<ReplayPage>(`/episodes/${encodeURIComponent(episodeId)}/replay?limit=2000`),
+  liveOptions: () => request<LiveEpisodeOptions>("/live/options"),
+  startLiveEpisode: (seed: number, policyId: string, token: string) =>
+    request<LiveEpisodeStatus>(
+      "/live/episodes",
+      {
+        method: "POST",
+        body: JSON.stringify({ seed, policy_id: policyId }),
+      },
+      token,
+    ),
+  liveEpisodeStatus: (episodeId: string) =>
+    request<LiveEpisodeStatus>(`/live/episodes/${encodeURIComponent(episodeId)}`),
+  cancelLiveEpisode: (episodeId: string, token: string) =>
+    request<LiveEpisodeStatus>(
+      `/live/episodes/${encodeURIComponent(episodeId)}/cancel`,
+      { method: "POST" },
+      token,
+    ),
   approvals: () => request<PendingApprovalList>("/approvals/pending"),
   policies: () => request<PolicySummaryList>("/policies"),
   promotionEligibility: (baselineId: string, candidateId: string) => {

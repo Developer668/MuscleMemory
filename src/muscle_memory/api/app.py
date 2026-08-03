@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path as FsPath
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -26,7 +27,7 @@ from fastapi import (
     status,
 )
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
@@ -35,6 +36,7 @@ from starlette.staticfiles import StaticFiles
 from muscle_memory.api.auth import (
     APPROVAL_WRITE_SCOPE,
     CORRECTION_WRITE_SCOPE,
+    EPISODE_WRITE_SCOPE,
     WORKFLOW_WRITE_SCOPE,
 )
 from muscle_memory.api.contracts import (
@@ -42,6 +44,7 @@ from muscle_memory.api.contracts import (
     ApiBackendError,
     AuthenticatedPrincipal,
     Authenticator,
+    LiveEpisodeControl,
 )
 from muscle_memory.api.models import (
     API_VERSION,
@@ -56,6 +59,10 @@ from muscle_memory.api.models import (
     DecisionRequest,
     EpisodeDetail,
     EpisodeList,
+    LiveEpisodeOptionsView,
+    LiveEpisodeStartRequest,
+    LiveEpisodeStatusView,
+    LivePolicyOptionView,
     PendingApprovalList,
     PolicySummaryList,
     PromotionEligibility,
@@ -77,6 +84,13 @@ from muscle_memory.backend.rocketride_callback import (
     CallbackSequenceError,
     CallbackUnauthorizedError,
 )
+from muscle_memory.live.controller import (
+    LiveEpisodeConflictError,
+    LiveEpisodeNotFoundError,
+    LiveEpisodeSelectionError,
+)
+from muscle_memory.live.models import LiveEpisodeStatus, VideoProduct
+from muscle_memory.live.video import MJPEG_BOUNDARY
 
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _bearer = HTTPBearer(
@@ -133,6 +147,7 @@ class ApiRuntime:
     backend: ApiBackend
     authenticator: Authenticator
     live_hub: LiveTelemetryHub
+    live_episodes: LiveEpisodeControl | None
 
 
 def _request_id(request: Request) -> str:
@@ -228,6 +243,37 @@ RequireCorrectionPrincipal = Annotated[
     AuthenticatedPrincipal,
     Depends(_principal_dependency(CORRECTION_WRITE_SCOPE)),
 ]
+RequireEpisodePrincipal = Annotated[
+    AuthenticatedPrincipal,
+    Depends(_principal_dependency(EPISODE_WRITE_SCOPE)),
+]
+
+
+def _live_control(request: Request) -> LiveEpisodeControl:
+    control = _runtime_from_request(request).live_episodes
+    if control is None:
+        raise ApiBackendError(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "live_runtime_unconfigured",
+            "the live simulator has no admitted world and policy configuration",
+        )
+    return control
+
+
+def _live_status_view(value: LiveEpisodeStatus) -> LiveEpisodeStatusView:
+    encoded_episode_id = quote(value.episode_id, safe="")
+    payload = value.as_json_value()
+    payload["detail"] = (
+        None if value.detail is None else redact_sensitive_text(value.detail)[:500]
+    )
+    payload["video_streams"] = {
+        product.value: (
+            f"/api/{API_VERSION}/episodes/{encoded_episode_id}/video/"
+            f"{product.value}.mjpeg"
+        )
+        for product in VideoProduct
+    }
+    return LiveEpisodeStatusView.model_validate(payload)
 
 
 def _not_found(resource: str, identifier: str) -> ApiBackendError:
@@ -322,6 +368,170 @@ def _build_router() -> APIRouter:
         if result is None:
             raise _not_found("episode", episode_id)
         return result
+
+    @router.get(
+        "/live/options",
+        response_model=LiveEpisodeOptionsView,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="Read admitted live simulator options",
+    )
+    async def live_options(request: Request) -> LiveEpisodeOptionsView:
+        control = _runtime_from_request(request).live_episodes
+        if control is None:
+            return LiveEpisodeOptionsView(
+                enabled=False,
+                unavailable_reason=(
+                    "No immutable evaluated checkpoint and live-world catalog are "
+                    "admitted in this deployment."
+                ),
+                seeds=(),
+                policies=(),
+                video_products=(),
+            )
+        options = control.options()
+        return LiveEpisodeOptionsView(
+            enabled=True,
+            catalog_id=options.catalog_id,
+            catalog_sha256=options.catalog_sha256,
+            seeds=options.seeds,
+            policies=tuple(
+                LivePolicyOptionView(
+                    policy_id=policy.policy_id,
+                    policy_hash=policy.policy_hash,
+                    evaluated_episode_count=policy.evaluated_episode_count,
+                    promotable=policy.promotable,
+                )
+                for policy in options.policies
+            ),
+            video_products=options.video_products,  # type: ignore[arg-type]
+            maximum_duration_seconds=options.maximum_duration_seconds,
+        )
+
+    @router.post(
+        "/live/episodes",
+        response_model=LiveEpisodeStatusView,
+        status_code=status.HTTP_202_ACCEPTED,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="Start one validation-gated real simulator episode",
+    )
+    async def start_live_episode(
+        request: Request,
+        body: LiveEpisodeStartRequest,
+        _principal: RequireEpisodePrincipal,
+    ) -> LiveEpisodeStatusView:
+        control = _live_control(request)
+        try:
+            started = await asyncio.to_thread(
+                control.start,
+                seed=body.seed,
+                policy_id=body.policy_id,
+            )
+        except LiveEpisodeSelectionError as exc:
+            raise ApiBackendError(422, "live_selection_not_admitted", str(exc)) from exc
+        except LiveEpisodeConflictError as exc:
+            raise ApiBackendError(409, "live_episode_conflict", str(exc)) from exc
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise ApiBackendError(
+                503,
+                "live_runtime_integrity_failure",
+                "the admitted live runtime failed its integrity check",
+            ) from exc
+        return _live_status_view(started)
+
+    @router.get(
+        "/live/episodes/{episode_id}",
+        response_model=LiveEpisodeStatusView,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="Read one live simulator worker status",
+    )
+    async def live_episode_status(
+        request: Request,
+        episode_id: Annotated[str, Path(min_length=1, max_length=128)],
+    ) -> LiveEpisodeStatusView:
+        try:
+            value = _live_control(request).status(episode_id)
+        except LiveEpisodeNotFoundError as exc:
+            raise _not_found("live_episode", episode_id) from exc
+        return _live_status_view(value)
+
+    @router.post(
+        "/live/episodes/{episode_id}/cancel",
+        response_model=LiveEpisodeStatusView,
+        status_code=status.HTTP_202_ACCEPTED,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="Request cancellation on the next 20 Hz tick",
+    )
+    async def cancel_live_episode(
+        request: Request,
+        episode_id: Annotated[str, Path(min_length=1, max_length=128)],
+        _principal: RequireEpisodePrincipal,
+    ) -> LiveEpisodeStatusView:
+        try:
+            value = _live_control(request).cancel(episode_id)
+        except LiveEpisodeNotFoundError as exc:
+            raise _not_found("live_episode", episode_id) from exc
+        return _live_status_view(value)
+
+    @router.get(
+        "/episodes/{episode_id}/video/{product}.mjpeg",
+        responses=COMMON_ERROR_RESPONSES,
+        response_class=StreamingResponse,
+        summary="Stream one direct simulator video product",
+    )
+    async def live_video_stream(
+        request: Request,
+        episode_id: Annotated[str, Path(min_length=1, max_length=128)],
+        product: VideoProduct,
+        after_frame_index: Annotated[int, Query(ge=-1)] = -1,
+    ) -> StreamingResponse:
+        try:
+            chunks = _live_control(request).iter_mjpeg(
+                episode_id,
+                product,
+                after_frame_index=after_frame_index,
+            )
+        except LiveEpisodeNotFoundError as exc:
+            raise _not_found("live_episode", episode_id) from exc
+        return StreamingResponse(
+            chunks,
+            media_type=f"multipart/x-mixed-replace; boundary={MJPEG_BOUNDARY}",
+            headers={"Cache-Control": "no-store", "X-Frame-Join-Key": "frame_id"},
+        )
+
+    @router.get(
+        "/episodes/{episode_id}/video/{product}/frames/{frame_index}",
+        responses=COMMON_ERROR_RESPONSES,
+        response_class=Response,
+        summary="Read one exact buffered simulator frame",
+    )
+    async def live_video_frame(
+        request: Request,
+        episode_id: Annotated[str, Path(min_length=1, max_length=128)],
+        product: VideoProduct,
+        frame_index: Annotated[int, Path(ge=0)],
+    ) -> Response:
+        try:
+            frame_set = _live_control(request).video_frame(episode_id, frame_index)
+        except LiveEpisodeNotFoundError as exc:
+            raise _not_found("live_episode", episode_id) from exc
+        if frame_set is None:
+            raise ApiBackendError(
+                404,
+                "video_frame_not_found",
+                "the frame is unavailable or has left the bounded direct-video buffer",
+                details={"episode_id": episode_id, "frame_index": frame_index},
+            )
+        frame = frame_set.product(product)
+        return Response(
+            content=frame.data,
+            media_type=frame.mime_type,
+            headers={
+                "Cache-Control": "no-store",
+                "ETag": f'"{frame.sha256}"',
+                "X-Frame-ID": frame_set.metadata.frame_id,
+                "X-Frame-Join-Key": "frame_id",
+            },
+        )
 
     @router.get(
         "/approvals/pending",
@@ -538,12 +748,21 @@ def create_app(
     backend: ApiBackend,
     authenticator: Authenticator,
     live_hub: LiveTelemetryHub | None = None,
+    live_episodes: LiveEpisodeControl | None = None,
 ) -> FastAPI:
     """Build an app around explicit domain services and authentication."""
 
     hub = live_hub or LiveTelemetryHub()
     backend.bind_live_publisher(hub)
-    runtime = ApiRuntime(backend=backend, authenticator=authenticator, live_hub=hub)
+    control = live_episodes
+    if control is None:
+        control = getattr(backend, "live_episode_controller", None)
+    runtime = ApiRuntime(
+        backend=backend,
+        authenticator=authenticator,
+        live_hub=hub,
+        live_episodes=control,
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -551,8 +770,12 @@ def create_app(
         try:
             yield
         finally:
-            await hub.close()
-            await backend.shutdown()
+            try:
+                if control is not None:
+                    await asyncio.to_thread(control.shutdown)
+            finally:
+                await hub.close()
+                await backend.shutdown()
 
     app = FastAPI(
         title="Muscle Memory API",

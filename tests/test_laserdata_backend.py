@@ -67,7 +67,7 @@ def make_record(
 
 
 def test_adapter_pins_the_validated_sdk() -> None:
-    assert LASERDATA_SDK_REQUIREMENT == "laser-sdk==0.0.1rc16"
+    assert LASERDATA_SDK_REQUIREMENT == "laser-sdk==0.0.1"
 
 
 class FakeLaserDataTransport:

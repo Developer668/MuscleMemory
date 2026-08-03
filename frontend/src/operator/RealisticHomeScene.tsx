@@ -172,6 +172,7 @@ function makeChair(color: string): THREE.Group {
   return chair;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function buildApartment(): THREE.Group {
   const home = new THREE.Group();
   home.name = "visual-home";
@@ -283,6 +284,7 @@ export function buildApartment(): THREE.Group {
   return home;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function makeRobot(): THREE.Group {
   const robot = new THREE.Group();
   robot.name = "mm-01-visual-body";

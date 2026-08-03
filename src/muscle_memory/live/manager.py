@@ -92,16 +92,23 @@ class LiveEpisodeManager:
                 detail="waiting for the real MuJoCo worker",
             )
             cancellation = threading.Event()
+            self._video.start_episode(episode_id)
             self._statuses[episode_id] = status
             self._cancellations[episode_id] = cancellation
-            future = self._executor.submit(
-                self._run_worker,
-                episode_id,
-                world,
-                selection,
-                config or LiveEpisodeConfig(),
-                cancellation,
-            )
+            try:
+                future = self._executor.submit(
+                    self._run_worker,
+                    episode_id,
+                    world,
+                    selection,
+                    config or LiveEpisodeConfig(),
+                    cancellation,
+                )
+            except BaseException:
+                self._video.finish_episode(episode_id)
+                del self._statuses[episode_id]
+                del self._cancellations[episode_id]
+                raise
             self._futures[episode_id] = future
             return status
 
@@ -220,7 +227,6 @@ class LiveEpisodeManager:
             )
         except BaseException as exc:
             error_type = type(exc).__name__
-            detail = str(exc)
             with suppress(KeyError):
                 self._video.finish_episode(episode_id)
             return self._update(
@@ -230,7 +236,7 @@ class LiveEpisodeManager:
                     phase=LiveEpisodePhase.FAILED,
                     health=LiveEpisodeHealth.FAILED,
                     error_type=error_type,
-                    detail=detail,
+                    detail=f"real simulator worker failed ({error_type})",
                 ),
             )
         return self._update(

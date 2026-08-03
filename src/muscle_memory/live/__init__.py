@@ -1,5 +1,7 @@
 """Live, rate-separated MM-01 episode execution and direct video transport."""
 
+from muscle_memory.live.catalog import LiveWorldCatalog, ValidatedRuntimeWorld
+from muscle_memory.live.controller import LiveEpisodeController
 from muscle_memory.live.manager import LiveEpisodeManager
 from muscle_memory.live.models import (
     EncodedVideoProduct,
@@ -20,10 +22,13 @@ __all__ = [
     "EncodedVideoProduct",
     "EvaluatedPolicySelection",
     "LiveEpisodeConfig",
+    "LiveEpisodeController",
     "LiveEpisodeHealth",
     "LiveEpisodeManager",
     "LiveEpisodePhase",
     "LiveEpisodeStatus",
+    "LiveWorldCatalog",
+    "ValidatedRuntimeWorld",
     "ValidatedTrainingWorldEnvelope",
     "VideoBufferStats",
     "VideoFrameMetadata",

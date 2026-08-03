@@ -91,6 +91,67 @@ export interface ReplayPage {
   next_sequence: number | null;
 }
 
+export type VideoProduct =
+  | "third_person"
+  | "left_eye_rgb"
+  | "right_eye_rgb"
+  | "stereo_composite"
+  | "derived_depth"
+  | "simulator_debug_segmentation";
+
+export interface LivePolicyOption {
+  policy_id: string;
+  policy_hash: string;
+  evaluated_episode_count: number;
+  promotable: boolean;
+}
+
+export interface LiveEpisodeOptions {
+  enabled: boolean;
+  unavailable_reason: string | null;
+  mode: "training";
+  catalog_id: string | null;
+  catalog_sha256: string | null;
+  seeds: number[];
+  policies: LivePolicyOption[];
+  video_products: VideoProduct[];
+  maximum_duration_seconds: number | null;
+}
+
+export type LiveEpisodePhase =
+  | "queued"
+  | "starting"
+  | "running"
+  | "cancelling"
+  | "closed"
+  | "failed";
+
+export interface LiveEpisodeStatus {
+  episode_id: string;
+  phase: LiveEpisodePhase;
+  health: "starting" | "healthy" | "degraded" | "terminal" | "failed";
+  world_id: string;
+  policy_id: string;
+  policy_hash: string;
+  policy_promotable: boolean;
+  simulation_time_seconds: number;
+  wall_elapsed_seconds: number;
+  wall_clock_lag_seconds: number;
+  telemetry_records: number;
+  video_frames: number;
+  dropped_video_frames: number;
+  last_frame_id: string | null;
+  provider_state: string | null;
+  completion_reason: string | null;
+  success: boolean | null;
+  failed_reasons: string[];
+  graph_provider_complete: boolean | null;
+  telemetry_provider_complete: boolean | null;
+  error_type: string | null;
+  detail: string | null;
+  video_streams: Record<VideoProduct, string>;
+}
+
 export interface LiveStreamMessage {
   schema_version: "muscle-memory.live.v1";
   kind: "telemetry" | "status";
@@ -182,4 +243,3 @@ export interface ApiErrorPayload {
 }
 
 export type StreamState = "idle" | "connecting" | "live" | "closed" | "error";
-

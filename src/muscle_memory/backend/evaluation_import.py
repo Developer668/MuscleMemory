@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -22,7 +23,8 @@ from muscle_memory.coordinator import (
 from muscle_memory.coordinator.models import canonical_json, require_hash, sha256_text
 from muscle_memory.evaluation.heldout import load_heldout_worlds
 from muscle_memory.evaluation.promotion import PromotionDecision, evaluate_promotion
-from muscle_memory.evaluation.runner import PolicyEpisodeResult
+from muscle_memory.evaluation.runner import STOPPED_SPEED_MPS, PolicyEpisodeResult
+from muscle_memory.evaluation.success import SAFE_DELIVERY_CRITERIA, FailureReason
 from muscle_memory.graph_memory import EvaluatedPolicyVersion
 from muscle_memory.paths import HELDOUT_WORLDS_BUNDLE, REPOSITORY_ROOT
 from muscle_memory.policy.baseline import DirectGoalPolicy
@@ -98,6 +100,8 @@ def admit_held_out_evaluation(
             "held-out artifact contains invalid measured episode results"
         ) from exc
     _validate_frozen_pairs(baseline_results, candidate_results)
+    for result in (*baseline_results, *candidate_results):
+        _validate_canonical_outcome(result)
 
     baseline_policy = DirectGoalPolicy()
     if (
@@ -149,7 +153,7 @@ def admit_held_out_evaluation(
         evaluation_evidence_hash=artifact_hash,
         evaluated_at=artifact.evaluated_at,
     )
-    coordinator.register_evaluated_checkpoint(baseline_checkpoint)
+    _register_or_verify_checkpoint(coordinator, baseline_checkpoint)
     coordinator.register_evaluated_checkpoint(candidate_checkpoint)
 
     for result in (*baseline_results, *candidate_results):
@@ -189,11 +193,12 @@ def admit_held_out_evaluation(
             )
         )
 
-    coordinator.initialize_policy_alias(
-        stable_alias,
-        baseline_checkpoint.policy_id,
-        occurred_at=artifact.evaluated_at,
-    )
+    if coordinator.current_policy(stable_alias) is None:
+        coordinator.initialize_policy_alias(
+            stable_alias,
+            baseline_checkpoint.policy_id,
+            occurred_at=artifact.evaluated_at,
+        )
     return HeldOutEvaluationAdmissionReceipt(
         artifact_hash=artifact_hash,
         baseline_policy_id=baseline_checkpoint.policy_id,
@@ -330,6 +335,112 @@ def _checkpoint_from_summary(
         metrics=metrics,
         evaluated_at=evaluated_at,
     )
+
+
+def _register_or_verify_checkpoint(
+    coordinator: CoordinatorStore,
+    checkpoint: EvaluatedPolicyVersion,
+) -> None:
+    """Keep a checkpoint immutable while allowing it in later comparisons."""
+
+    existing = next(
+        (
+            item
+            for item in coordinator.evaluated_checkpoints()
+            if item.policy_id == checkpoint.policy_id
+        ),
+        None,
+    )
+    if existing is None:
+        coordinator.register_evaluated_checkpoint(checkpoint)
+        return
+    if (
+        existing.checkpoint_hash != checkpoint.checkpoint_hash
+        or existing.evaluation_split != checkpoint.evaluation_split
+    ):
+        raise HeldOutEvaluationAdmissionError(
+            "existing baseline checkpoint identity conflicts with the held-out artifact"
+        )
+
+
+def _validate_canonical_outcome(result: PolicyEpisodeResult) -> None:
+    """Recompute the terminal decision from the artifact's measured fields."""
+
+    criteria = SAFE_DELIVERY_CRITERIA
+    nonnegative = (
+        result.simulated_duration_seconds,
+        result.stop_distance_m,
+        result.stopped_speed_mps,
+        result.falls,
+        result.body_collisions,
+        result.maximum_tray_tilt_degrees,
+        result.human_interventions,
+        result.direct_distance_m,
+        result.path_length_m,
+        result.path_efficiency,
+        result.energy_joules,
+        result.task_policy_updates,
+    )
+    if any(not math.isfinite(float(value)) or value < 0 for value in nonnegative):
+        raise HeldOutEvaluationAdmissionError(
+            "held-out result contains an invalid non-negative measurement"
+        )
+    if (
+        result.time_to_resident_seconds is not None
+        and (
+            result.time_to_resident_seconds < 0
+            or result.time_to_resident_seconds > result.simulated_duration_seconds
+        )
+    ):
+        raise HeldOutEvaluationAdmissionError(
+            "held-out result has an invalid measured completion time"
+        )
+    if (
+        result.facing_error_degrees is not None
+        and not 0.0 <= result.facing_error_degrees <= 180.0
+    ) or result.path_efficiency > 1.0:
+        raise HeldOutEvaluationAdmissionError(
+            "held-out result has an invalid measured angle or path efficiency"
+        )
+    failed: list[str] = []
+    if (
+        result.time_to_resident_seconds is None
+        or result.time_to_resident_seconds > criteria.maximum_time_to_resident_seconds
+    ):
+        failed.append(FailureReason.DID_NOT_REACH_RESIDENT_IN_TIME.name)
+    if criteria.stopped_required and result.stopped_speed_mps > STOPPED_SPEED_MPS:
+        failed.append(FailureReason.DID_NOT_STOP.name)
+    if result.stop_distance_m > criteria.maximum_stop_distance_metres:
+        failed.append(FailureReason.STOPPED_TOO_FAR_AWAY.name)
+    if (
+        result.facing_error_degrees is None
+        or result.facing_error_degrees > criteria.maximum_facing_error_degrees
+    ):
+        failed.append(FailureReason.NOT_FACING_RESIDENT.name)
+    if result.falls > criteria.maximum_falls:
+        failed.append(FailureReason.FELL.name)
+    if result.body_collisions > criteria.maximum_body_collisions:
+        failed.append(FailureReason.BODY_COLLISION.name)
+    if (
+        result.minimum_obstacle_clearance_m
+        < criteria.minimum_obstacle_clearance_metres
+    ):
+        failed.append(FailureReason.INSUFFICIENT_OBSTACLE_CLEARANCE.name)
+    if (
+        result.maximum_tray_tilt_degrees
+        >= criteria.maximum_tray_tilt_degrees_exclusive
+    ):
+        failed.append(FailureReason.EXCESSIVE_TRAY_TILT.name)
+    if result.package_slipped and not criteria.package_slip_allowed:
+        failed.append(FailureReason.PACKAGE_SLIPPED.name)
+    if result.human_interventions > criteria.maximum_human_interventions:
+        failed.append(FailureReason.HUMAN_INTERVENTION.name)
+
+    expected_reasons = tuple(failed)
+    if result.failed_reasons != expected_reasons or result.success != (not failed):
+        raise HeldOutEvaluationAdmissionError(
+            "held-out result success and failed_reasons do not match canonical measurements"
+        )
 
 
 def _load_canonical_artifact(path: Path) -> tuple[dict[str, object], str]:

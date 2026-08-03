@@ -362,15 +362,14 @@ class TrustedWorkflowEvidenceAdmitter:
             raise WorkflowEvidenceAdmissionError(
                 "workflow evaluation requires held-out evaluated checkpoints"
             )
-        measured = self._coordinator.held_out_evaluation_results_for_set(
-            heldout_world_set_id
+        artifact_hash = candidate.evaluation_evidence_hash
+        measured = self._coordinator.held_out_evaluation_results_for_artifact(
+            artifact_hash
         )
-        artifact_hashes = {item.evaluation_artifact_hash for item in measured}
-        if len(measured) != 40 or len(artifact_hashes) != 1:
+        if len(measured) != 40:
             raise WorkflowEvidenceAdmissionError(
                 "evaluation evidence requires forty results from one admitted artifact"
             )
-        artifact_hash = next(iter(artifact_hashes))
         artifact = self._coordinator.held_out_evaluation_artifact(artifact_hash)
         if artifact is None or artifact.held_out_world_set_id != heldout_world_set_id:
             raise WorkflowEvidenceAdmissionError(
@@ -413,7 +412,6 @@ class TrustedWorkflowEvidenceAdmitter:
             or baseline_results[0].policy_hash != baseline.checkpoint_hash
             or candidate_results[0].policy_id != candidate.policy_id
             or candidate_results[0].policy_hash != candidate.checkpoint_hash
-            or baseline.evaluation_evidence_hash != artifact_hash
             or candidate.evaluation_evidence_hash != artifact_hash
         ):
             raise WorkflowEvidenceAdmissionError(
@@ -453,14 +451,14 @@ class TrustedWorkflowEvidenceAdmitter:
             baseline=EvaluationPolicyEvidence(
                 policy_id=baseline.policy_id,
                 policy_checksum=baseline.checkpoint_hash,
-                evaluation_id=baseline.evaluation_evidence_hash,
+                evaluation_id=artifact_hash,
                 success_rate=decision.baseline.success_rate,
                 collision_rate=decision.baseline.collision_rate,
             ),
             candidate=CandidateEvaluationEvidence(
                 policy_id=candidate.policy_id,
                 policy_checksum=candidate.checkpoint_hash,
-                evaluation_id=candidate.evaluation_evidence_hash,
+                evaluation_id=artifact_hash,
                 success_rate=decision.candidate.success_rate,
                 collision_rate=decision.candidate.collision_rate,
                 falls=decision.candidate.total_falls,

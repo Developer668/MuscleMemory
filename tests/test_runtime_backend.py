@@ -302,6 +302,30 @@ def test_unconfigured_provider_registry_is_honest_and_secrets_are_redacted(
     asyncio.run(bundle.laserdata.close())
 
 
+def test_operational_consumers_do_not_claim_health_before_evidence(
+    tmp_path: Path,
+) -> None:
+    coordinator, spool, _journal, service = _service(tmp_path)
+    runtime = OperationalEpisodeRuntime(service, expected_robot_checksum=ROBOT_HASH)
+    runtime.bind_live_publisher(CapturingPublisher())  # type: ignore[arg-type]
+
+    snapshots = {item.consumer: item for item in runtime.consumer_snapshots()}
+    assert set(snapshots) == {
+        "dashboard-and-timeline",
+        "replay",
+        "safety-and-failure-summary",
+        "post-episode-graph-handoff",
+        "training-and-evaluation-evidence",
+    }
+    assert all(
+        item.state is ProviderOperationalState.CONFIGURED
+        for item in snapshots.values()
+    )
+    assert all("no " in item.detail.lower() for item in snapshots.values())
+    coordinator.close()
+    spool.close()
+
+
 def test_injected_laser_transport_proves_publish_replay_and_live_fanout(
     tmp_path: Path,
 ) -> None:

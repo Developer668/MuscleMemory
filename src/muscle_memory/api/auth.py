@@ -15,8 +15,14 @@ from muscle_memory.api.contracts import AuthenticatedPrincipal, Authenticator
 APPROVAL_WRITE_SCOPE = "approvals:write"
 WORKFLOW_WRITE_SCOPE = "workflows:write"
 CORRECTION_WRITE_SCOPE = "corrections:write"
+EPISODE_WRITE_SCOPE = "episodes:write"
 ALL_MUTATION_SCOPES = frozenset(
-    {APPROVAL_WRITE_SCOPE, WORKFLOW_WRITE_SCOPE, CORRECTION_WRITE_SCOPE}
+    {
+        APPROVAL_WRITE_SCOPE,
+        WORKFLOW_WRITE_SCOPE,
+        CORRECTION_WRITE_SCOPE,
+        EPISODE_WRITE_SCOPE,
+    }
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -141,6 +147,7 @@ __all__ = [
     "ALL_MUTATION_SCOPES",
     "APPROVAL_WRITE_SCOPE",
     "CORRECTION_WRITE_SCOPE",
+    "EPISODE_WRITE_SCOPE",
     "WORKFLOW_WRITE_SCOPE",
     "HashedBearerCredential",
     "Sha256BearerAuthenticator",

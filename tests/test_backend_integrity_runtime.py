@@ -15,6 +15,8 @@ from muscle_memory.backend.graph_prerequisites import (
 )
 from muscle_memory.coordinator import CoordinatorStore
 from muscle_memory.episodes import (
+    AuthenticatedHuman,
+    CorrectionPoint,
     EpisodeClosedError,
     EpisodeIdentity,
     EpisodeLifecycleState,
@@ -63,6 +65,36 @@ class FailOnceGraphDeliveryJournal:
             self.failed = True
             raise RuntimeError("injected graph-delivery journal failure")
         raise AssertionError("the failed process must not retry graph delivery")
+
+
+class FailOnceReceiptJournal:
+    def __init__(self, delegate: CoordinatorEpisodeJournal) -> None:
+        self._delegate = delegate
+        self.failed = False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
+
+    def record_receipt(self, receipt: Any) -> None:
+        if not self.failed:
+            self.failed = True
+            raise RuntimeError("injected telemetry-receipt journal failure")
+        self._delegate.record_receipt(receipt)
+
+
+class FailOnceCorrectionDeliveryJournal:
+    def __init__(self, delegate: CoordinatorEpisodeJournal) -> None:
+        self._delegate = delegate
+        self.failed = False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
+
+    def record_approval_delivery(self, approval: Any) -> None:
+        if not self.failed:
+            self.failed = True
+            raise RuntimeError("injected correction-delivery journal failure")
+        self._delegate.record_approval_delivery(approval)
 
 
 def _checkpoint() -> EvaluatedPolicyVersion:
@@ -142,6 +174,8 @@ def _build_service(
     root: Path,
     *,
     fail_delivery_journal: bool = False,
+    fail_receipt_journal: bool = False,
+    fail_correction_delivery_journal: bool = False,
 ) -> tuple[
     CoordinatorStore,
     DurableTelemetrySpool,
@@ -167,11 +201,13 @@ def _build_service(
         coordinator,
         expected_robot_checksum=ROBOT_HASH,
     )
-    journal: Any = (
-        FailOnceGraphDeliveryJournal(base_journal)
-        if fail_delivery_journal
-        else base_journal
-    )
+    journal: Any = base_journal
+    if fail_delivery_journal:
+        journal = FailOnceGraphDeliveryJournal(base_journal)
+    elif fail_receipt_journal:
+        journal = FailOnceReceiptJournal(base_journal)
+    elif fail_correction_delivery_journal:
+        journal = FailOnceCorrectionDeliveryJournal(base_journal)
     derived = derive_training_world_artifacts(SEED, recorded_at=NOW)
     identity = _identity(derived.world.world_id, derived.world.world_hash)
     service = EpisodeService(
@@ -246,5 +282,92 @@ def test_measured_closure_survives_graph_delivery_journal_failure_and_retries(
                 closed_at=NOW,
             )
         )
+    coordinator2.close()
+    spool2.close()
+
+
+def test_restart_recovers_receipt_after_durable_telemetry_crash_window(
+    tmp_path: Path,
+) -> None:
+    coordinator, spool, _graph_cache, service, identity = _build_service(
+        tmp_path,
+        fail_receipt_journal=True,
+    )
+
+    async def first_process() -> None:
+        await service.open_episode(identity)
+        with pytest.raises(RuntimeError, match="telemetry-receipt"):
+            await service.append_telemetry(_telemetry(identity))
+
+    asyncio.run(first_process())
+    assert len(spool.records_for(identity.episode_id)) == 1
+    assert coordinator.training_episode_receipts(identity.episode_id) == ()
+    coordinator.close()
+    spool.close()
+
+    coordinator2, spool2, _cache2, restored, identity2 = _build_service(tmp_path)
+    assert len(coordinator2.training_episode_receipts(identity2.episode_id)) == 1
+    closure = asyncio.run(restored.close_episode(_result(identity2), closed_at=NOW))
+    assert closure.telemetry.records_without_receipts == 0
+    assert closure.telemetry.total_records == 1
+    coordinator2.close()
+    spool2.close()
+
+
+def test_restart_recovers_correction_graph_delivery_journal_crash_window(
+    tmp_path: Path,
+) -> None:
+    coordinator, spool, graph_cache, service, identity = _build_service(
+        tmp_path,
+        fail_correction_delivery_journal=True,
+    )
+
+    async def first_process() -> str:
+        await service.open_episode(identity)
+        await service.append_telemetry(_telemetry(identity))
+        failed = replace(
+            _result(identity),
+            success=False,
+            failed_reasons=("BODY_COLLISION",),
+            body_collisions=1,
+        )
+        closure = await service.close_episode(failed, closed_at=NOW)
+        correction = await service.submit_route_correction(
+            episode_id=identity.episode_id,
+            failure_id=closure.failures[0].failure_id,
+            points=(CorrectionPoint(0.0, 0.0), CorrectionPoint(1.0, 1.0)),
+            description="Keep clear of the collision boundary.",
+            submitted_by="operator@example.test",
+            created_at=NOW,
+        )
+        with pytest.raises(RuntimeError, match="correction-delivery"):
+            await service.approve_correction(
+                correction.correction_id,
+                approver=AuthenticatedHuman(
+                    subject_id="operator@example.test",
+                    authentication_method="bearer",
+                    authenticated=True,
+                ),
+                approved_at=NOW,
+            )
+        return correction.correction_id
+
+    correction_id = asyncio.run(first_process())
+    assert coordinator.training_correction_graph_deliveries() == ()
+    first_events = tuple(graph_cache.events)
+    assert first_events[-1].record_kind == "correction"
+    coordinator.close()
+    spool.close()
+
+    coordinator2, spool2, graph_cache2, _restored, _identity2 = _build_service(tmp_path)
+    deliveries = coordinator2.training_correction_graph_deliveries()
+    assert len(deliveries) == 1
+    approval = CoordinatorEpisodeJournal(
+        coordinator2,
+        expected_robot_checksum=ROBOT_HASH,
+    ).approvals()[0]
+    assert approval.submission.correction_id == correction_id
+    assert approval.graph_receipt is not None
+    assert tuple(graph_cache2.events) == first_events
     coordinator2.close()
     spool2.close()

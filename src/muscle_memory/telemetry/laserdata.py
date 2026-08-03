@@ -23,7 +23,7 @@ from muscle_memory.telemetry.wire import LaserDataTelemetryEnvelope
 LASERDATA_PROVIDER_NAME = "LaserData"
 # The first stable release uses Iggy's VSR wire protocol, while the supported
 # self-hosted Apache Iggy image remains on the classic protocol.
-LASERDATA_SDK_REQUIREMENT = "laser-sdk==0.0.1rc16"
+LASERDATA_SDK_REQUIREMENT = "laser-sdk==0.0.1"
 NUMERIC_TELEMETRY_HZ = 20
 DEFAULT_LASERDATA_STREAM = "muscle-memory"
 DEFAULT_LASERDATA_TOPIC = "episode-events-v2"
@@ -435,6 +435,31 @@ class LaserDataTelemetryBackend:
                 pending_local_records=self.spool.pending_count,
             )
 
+    def recover_append_result(self, record: EpisodeTelemetryRecord) -> TelemetryAppendResult:
+        """Rebuild a truthful receipt after the spool/journal crash window."""
+
+        records = self.spool.records_for(record.episode_id)
+        if record.sequence >= len(records) or records[record.sequence] != record:
+            raise ValueError("cannot recover a receipt for non-durable telemetry")
+        envelope = LaserDataTelemetryEnvelope.from_domain(record)
+        accepted = self.spool.accepted_receipt(envelope.event_id)
+        if accepted is None:
+            delivery = TelemetryDelivery.DURABLE_LOCAL_CACHE_ONLY
+            state = self._state
+        else:
+            delivery = TelemetryDelivery.LASERDATA_AND_DURABLE_CACHE
+            state = (
+                LaserDataProviderState.END_TO_END_VERIFIED
+                if self.spool.verified_position(envelope.event_id) is not None
+                else LaserDataProviderState.HEALTHY
+            )
+        return TelemetryAppendResult(
+            event_id=envelope.event_id,
+            delivery=delivery,
+            provider_state=state,
+            pending_local_records=self.spool.pending_count,
+        )
+
     @property
     def _provider_active(self) -> bool:
         return self._transport is not None and self._state in {
@@ -545,6 +570,7 @@ class LaserDataTelemetryBackend:
     async def _close_transport_locked(self) -> None:
         transport = self._transport
         self._transport = None
+        self._capabilities = ()
         if transport is not None:
             with contextlib.suppress(Exception):
                 await transport.close()

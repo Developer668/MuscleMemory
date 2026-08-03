@@ -31,6 +31,7 @@ from muscle_memory.coordinator.models import (
     WorkflowStepState,
     canonical_json,
     isoformat_utc,
+    require_hash,
     sha256_text,
 )
 from muscle_memory.graph_memory.models import EvaluatedPolicyVersion
@@ -1024,6 +1025,25 @@ class CoordinatorStore:
                 ORDER BY results.episode_id
                 """,
                 (held_out_world_set_id,),
+            ).fetchall()
+        return tuple(self._held_out_result_from_row(row) for row in rows)
+
+    def held_out_evaluation_results_for_artifact(
+        self,
+        artifact_hash: str,
+    ) -> tuple[HeldOutEvaluationResult, ...]:
+        """Return only the forty results bound to one immutable paired run."""
+
+        require_hash(artifact_hash, "artifact_hash")
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT *
+                FROM held_out_episode_results
+                WHERE evaluation_artifact_hash = ?
+                ORDER BY episode_id
+                """,
+                (artifact_hash,),
             ).fetchall()
         return tuple(self._held_out_result_from_row(row) for row in rows)
 
@@ -2385,8 +2405,12 @@ class CoordinatorStore:
             or candidate.evaluation_split != "held_out"
             or baseline.checkpoint_hash != evaluation.baseline.policy_checksum
             or candidate.checkpoint_hash != evaluation.candidate.policy_checksum
-            or baseline.evaluation_evidence_hash != evaluation.baseline.evaluation_id
             or candidate.evaluation_evidence_hash != evaluation.candidate.evaluation_id
+            or evaluation.baseline.evaluation_id
+            not in {
+                baseline.evaluation_evidence_hash,
+                evaluation.candidate.evaluation_id,
+            }
         ):
             raise CoordinatorIntegrityError(
                 "evaluated checkpoints do not match trusted evaluation evidence"

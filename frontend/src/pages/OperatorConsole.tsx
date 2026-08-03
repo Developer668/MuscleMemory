@@ -36,7 +36,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BrandMark } from "../components/BrandMark";
-import { RealisticHomeScene } from "../operator/RealisticHomeScene";
 import { useOperatorData } from "../operator/useOperatorData";
 import type {
   CorrectionPoint,
@@ -128,28 +127,19 @@ function extractPosition(record: TelemetryRecord | null | undefined): Correction
   if (!record) return null;
   const x = numberValue(record.payload, [
     "position_x_m",
+    "simulator_pose.position_x_m",
     "position.x_m",
     "robot_position.x_m",
     "pose.x_m",
   ]);
   const y = numberValue(record.payload, [
     "position_y_m",
+    "simulator_pose.position_y_m",
     "position.y_m",
     "robot_position.y_m",
     "pose.y_m",
   ]);
   return x === null || y === null ? null : { x_m: x, y_m: y };
-}
-
-function extractYaw(record: TelemetryRecord | null | undefined): number | null {
-  if (!record) return null;
-  return numberValue(record.payload, [
-    "yaw_radians",
-    "yaw_rad",
-    "rotation.yaw_radians",
-    "robot_pose.yaw_radians",
-    "pose.yaw_radians",
-  ]);
 }
 
 function metricFromSensors(record: TelemetryRecord | null, paths: string[]): number | null {
@@ -197,8 +187,33 @@ function safeMediaUrl(value: unknown): string | null {
   return null;
 }
 
-function mediaUrl(record: TelemetryRecord | null, key: string): string | null {
+function directVideoUrl(
+  record: TelemetryRecord,
+  key: string,
+  preferStream: boolean,
+): string | null {
+  const frames = record.payload.video_frames;
+  if (!Array.isArray(frames)) return null;
+  const frame =
+    frames.find(
+      (item) => isRecord(item) && item.frame_id === record.frame_id,
+    ) || frames.at(-1);
+  if (!isRecord(frame) || !Array.isArray(frame.products)) return null;
+  const product = frame.products.find(
+    (item) => isRecord(item) && item.product === key,
+  );
+  if (!isRecord(product)) return null;
+  return safeMediaUrl(product[preferStream ? "stream_url" : "frame_url"]);
+}
+
+function mediaUrl(
+  record: TelemetryRecord | null,
+  key: string,
+  preferStream: boolean,
+): string | null {
   if (!record) return null;
+  const direct = directVideoUrl(record, key, preferStream);
+  if (direct) return direct;
   const stereo = record.sensors.find((sensor) => sensor.category === "Stereo vision and depth");
   return safeMediaUrl(
     nestedValue(stereo?.values, [
@@ -335,17 +350,27 @@ function TopBar({ data }: { data: ReturnType<typeof useOperatorData> }) {
 }
 
 function EpisodePicker({ data }: { data: ReturnType<typeof useOperatorData> }) {
+  const live = data.liveStatus;
+  const liveActive = Boolean(
+    live && ["queued", "starting", "running", "cancelling"].includes(live.phase),
+  );
+  const liveOnly = live && !data.episodes.some(
+    (episode) => episode.episode_id === live.episode_id,
+  );
   return (
     <section className="ops-episode-bar" aria-label="Episode selection">
-      <label>
+      <label className="ops-episode-selector">
         <Radio size={15} />
         <span>Episode</span>
         <select
           value={data.selectedEpisodeId}
           onChange={(event) => data.setSelectedEpisodeId(event.target.value)}
-          disabled={!data.episodes.length}
+          disabled={!data.episodes.length && !liveOnly}
         >
           {!data.episodes.length && <option value="">No operational episodes</option>}
+          {liveOnly && live && (
+            <option value={live.episode_id}>{live.episode_id} · {live.phase}</option>
+          )}
           {data.episodes.map((episode) => (
             <option key={episode.episode_id} value={episode.episode_id}>
               {episode.episode_id} · {episode.state}
@@ -353,6 +378,66 @@ function EpisodePicker({ data }: { data: ReturnType<typeof useOperatorData> }) {
           ))}
         </select>
       </label>
+      <div className="ops-live-controls" aria-label="Live simulator controls">
+        <label>
+          <span>Seed</span>
+          <select
+            value={data.liveSeed ?? ""}
+            onChange={(event) => data.setLiveSeed(Number(event.target.value))}
+            disabled={!data.liveOptions?.enabled || liveActive}
+          >
+            {!data.liveOptions?.seeds.length && <option value="">Unavailable</option>}
+            {data.liveOptions?.seeds.map((seed) => (
+              <option key={seed} value={seed}>{seed}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Policy</span>
+          <select
+            value={data.livePolicyId}
+            onChange={(event) => data.setLivePolicyId(event.target.value)}
+            disabled={!data.liveOptions?.enabled || liveActive}
+          >
+            {!data.liveOptions?.policies.length && <option value="">Unavailable</option>}
+            {data.liveOptions?.policies.map((policy) => (
+              <option key={policy.policy_id} value={policy.policy_id}>
+                {policy.policy_id} · {policy.evaluated_episode_count} evaluated
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="ops-live-start"
+          onClick={() => void data.startLiveEpisode()}
+          disabled={
+            !data.token ||
+            !data.liveOptions?.enabled ||
+            liveActive ||
+            Boolean(data.mutationBusy)
+          }
+          title={!data.token ? "Operator credential required" : "Start real simulator episode"}
+        >
+          <Play size={14} /> Start
+        </button>
+        <button
+          type="button"
+          className="ops-live-cancel"
+          onClick={() => void data.cancelLiveEpisode()}
+          disabled={!liveActive || live?.phase === "cancelling" || Boolean(data.mutationBusy)}
+          title="Cancel on the next 20 Hz tick"
+        >
+          <Square size={13} /> Cancel
+        </button>
+      </div>
+      <span
+        className="ops-live-state"
+        title={data.liveOptions?.unavailable_reason || live?.detail || "Live simulator state"}
+      >
+        <StatusDot state={live?.phase === "running" ? "live" : live?.phase === "failed" ? "error" : "idle"} />
+        {live ? `Worker ${stateLabel(live.phase)}` : data.liveOptions?.enabled ? "Worker idle" : "Live unavailable"}
+      </span>
       <span className="ops-stream-state">
         <StatusDot state={data.streamState} />
         {data.streamState === "live" ? "20 Hz stream connected" : `Stream ${data.streamState}`}
@@ -525,7 +610,12 @@ function SimulationView({
 
   const path = positions.map((point) => `${point.x_m},${point.y_m}`).join(" ");
   const correctionPath = points.map((point) => `${point.x_m},${point.y_m}`).join(" ");
-  const video = mediaUrl(record, "third_person");
+  const running = Boolean(
+    (data.liveStatus?.episode_id === data.selectedEpisodeId &&
+      ["queued", "starting", "running", "cancelling"].includes(data.liveStatus.phase)) ||
+    data.detail?.episode.state === "running",
+  );
+  const video = mediaUrl(record, "third_person", running);
 
   return (
     <section className="ops-simulation" aria-labelledby="simulation-title">
@@ -534,19 +624,18 @@ function SimulationView({
         <strong>{record ? `frame ${shortId(record.frame_id, 18)}` : "No frame joined"}</strong>
       </div>
       <div className="ops-simulation__stage">
-        <RealisticHomeScene
-          robotPosition={latestPosition}
-          robotYaw={extractYaw(record)}
-          path={positions}
-          correction={points}
-          correctionKind={kind}
-          running={data.detail?.episode.state === "running"}
-        />
-        {video && (
-          <figure className="ops-stage-live-feed">
-            <img src={video} alt="Live third-person simulator camera" />
-            <figcaption><Radio size={12} /> Simulator camera · {shortId(record?.frame_id, 14)}</figcaption>
-          </figure>
+        {video ? (
+          <img
+            className="ops-stage-direct-video"
+            src={video}
+            alt="Direct third-person MuJoCo simulator feed"
+          />
+        ) : (
+          <div className="ops-stage-empty">
+            <EyeOff size={24} />
+            <strong>Third-person video unavailable</strong>
+            <span>{data.liveOptions?.enabled ? "No direct frame is joined to this event." : "The live simulator is not admitted in this deployment."}</span>
+          </div>
         )}
         <svg
           ref={svgRef}
@@ -636,8 +725,9 @@ function VideoFeed({ feedKey, label, record, featured }: {
   label: string;
   record: TelemetryRecord | null;
   featured: boolean;
+  running: boolean;
 }) {
-  const url = mediaUrl(record, feedKey);
+  const url = mediaUrl(record, feedKey, running);
   const sectors = feedKey === "derived_depth" ? depthSectors(record) : [];
   const available = Boolean(url || sectors.length);
   return (
@@ -656,7 +746,13 @@ function VideoFeed({ feedKey, label, record, featured }: {
   );
 }
 
-function RobotPov({ record }: { record: TelemetryRecord | null }) {
+function RobotPov({
+  record,
+  running,
+}: {
+  record: TelemetryRecord | null;
+  running: boolean;
+}) {
   const speed = metricFromSensors(record, ["forward_speed_mps", "speed_mps", "forward_speed"]);
   const tilt = metricFromSensors(record, ["tray_tilt_degrees", "current_tray_tilt_degrees"]);
   const clearance = metricFromSensors(record, ["current_obstacle_clearance_m", "obstacle_clearance_m"]);
@@ -670,7 +766,14 @@ function RobotPov({ record }: { record: TelemetryRecord | null }) {
       </div>
       <div className="ops-pov-grid">
         {VIDEO_FEEDS.map(([key, label], index) => (
-          <VideoFeed key={key} feedKey={key} label={label} record={record} featured={index === 2} />
+          <VideoFeed
+            key={key}
+            feedKey={key}
+            label={label}
+            record={record}
+            featured={index === 2}
+            running={running}
+          />
         ))}
       </div>
       <div className="ops-hud" aria-label="Robot state">
@@ -889,6 +992,11 @@ export function OperatorConsole() {
 
   const selectedRecord = data.records[activeIndex] || data.latestRecord;
   const pathRecords = data.records.slice(0, Math.max(0, activeIndex) + 1);
+  const liveRunning = Boolean(
+    (data.liveStatus?.episode_id === data.selectedEpisodeId &&
+      ["queued", "starting", "running", "cancelling"].includes(data.liveStatus.phase)) ||
+    data.detail?.episode.state === "running",
+  );
 
   return (
     <main className="operator-app">
@@ -921,7 +1029,7 @@ export function OperatorConsole() {
           <PolicyEvidence data={data} />
         </div>
         <div className="ops-right-column">
-          <RobotPov record={selectedRecord} />
+          <RobotPov record={selectedRecord} running={liveRunning} />
           <HumanGates data={data} />
         </div>
       </div>

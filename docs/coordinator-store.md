@@ -15,6 +15,9 @@ RocketRide remains the fixed-pipeline executor.
   decisions are immutable audit facts.
 - Evaluated checkpoints are immutable records. A policy action appends an alias event; it never
   rewrites checkpoint data.
+- Each paired held-out artifact scopes its own forty episode results. Later candidates can be
+  compared with the same immutable baseline without rebinding the baseline checkpoint or mixing
+  results from separate runs.
 - Promotion requires the numeric held-out gate to pass and a distinct approved human decision.
   Rollback likewise requires a numeric decision and a distinct approved human decision.
 

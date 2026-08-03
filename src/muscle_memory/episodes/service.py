@@ -188,6 +188,10 @@ class EpisodeService:
                 receipts=receipts,
                 closure=closure,
             )
+            self._reconcile_unjournaled_receipts(
+                self._sessions[identity.episode_id],
+                records,
+            )
 
         for correction in self._journal.corrections():
             session = self._sessions.get(correction.episode_id)
@@ -212,6 +216,7 @@ class EpisodeService:
             self._approvals[correction_id] = approval
 
         self._retry_incomplete_graph_deliveries()
+        self._retry_incomplete_correction_deliveries()
 
     async def open_episode(self, identity: EpisodeIdentity) -> EpisodeIdentity:
         async with self._lock:
@@ -242,6 +247,15 @@ class EpisodeService:
             session = self._session(record.episode_id)
             self._require_open(session)
             records = self._telemetry_store.records_for(record.episode_id)
+            receipt_count = len(session.receipts)
+            if (
+                record.sequence < len(records)
+                and records[record.sequence] == record
+                and record.sequence >= receipt_count
+            ):
+                self._reconcile_unjournaled_receipts(session, records)
+                if record.sequence < len(session.receipts):
+                    return session.receipts[record.sequence]
             self._validate_append(session.identity, record, records)
             result = await self._telemetry_backend.append(record)
             persisted = self._telemetry_store.records_for(record.episode_id)
@@ -275,6 +289,7 @@ class EpisodeService:
             if not records:
                 raise EpisodeServiceError("an episode cannot close without telemetry")
             self._validate_record_set(session.identity, records)
+            self._reconcile_unjournaled_receipts(session, records)
             ended_at = closed_at or datetime.now(UTC)
             if ended_at.tzinfo is None or ended_at.utcoffset() is None:
                 raise ValueError("closed_at must be timezone-aware")
@@ -470,33 +485,7 @@ class EpisodeService:
             # Store the authenticated approval before any fallible provider write.
             self._journal.record_approval(approval)
             self._approvals[correction_id] = approval
-            graph_payload = canonical_json(
-                {
-                    "description": submission.description,
-                    "geometry": submission.geometry_json,
-                }
-            )
-            try:
-                graph_receipt = self._graph_memory.record_correction(
-                    CorrectionMemoryRecord(
-                        correction_id=submission.correction_id,
-                        failure_id=submission.failure_id,
-                        kind=submission.kind.value,
-                        description=graph_payload,
-                        approved=True,
-                        approved_by=approver.subject_id,
-                        approved_at=when,
-                        created_at=submission.created_at,
-                    )
-                )
-            except Exception as exc:
-                approval = replace(
-                    approval,
-                    graph_error_type=type(exc).__name__,
-                    graph_detail="approved correction was not persisted to graph memory",
-                )
-            else:
-                approval = replace(approval, graph_receipt=graph_receipt)
+            approval = self._deliver_correction(approval)
             self._journal.record_approval_delivery(approval)
             self._approvals[correction_id] = approval
             return approval
@@ -801,6 +790,73 @@ class EpisodeService:
             )
             self._journal.record_graph_delivery(closure.identity.episode_id, report)
             session.closure = replace(closure, graph=report)
+
+    def _retry_incomplete_correction_deliveries(self) -> None:
+        """Finish approvals interrupted between graph write and delivery journal."""
+
+        for correction_id, approval in tuple(self._approvals.items()):
+            if approval.graph_receipt is not None or approval.graph_error_type is not None:
+                continue
+            delivered = self._deliver_correction(approval)
+            self._journal.record_approval_delivery(delivered)
+            self._approvals[correction_id] = delivered
+
+    def _deliver_correction(self, approval: CorrectionApproval) -> CorrectionApproval:
+        submission = approval.submission
+        graph_payload = canonical_json(
+            {
+                "description": submission.description,
+                "geometry": submission.geometry_json,
+            }
+        )
+        try:
+            graph_receipt = self._graph_memory.record_correction(
+                CorrectionMemoryRecord(
+                    correction_id=submission.correction_id,
+                    failure_id=submission.failure_id,
+                    kind=submission.kind.value,
+                    description=graph_payload,
+                    approved=True,
+                    approved_by=approval.approved_by,
+                    approved_at=approval.approved_at,
+                    created_at=submission.created_at,
+                )
+            )
+        except Exception as exc:
+            return replace(
+                approval,
+                graph_error_type=type(exc).__name__,
+                graph_detail="approved correction was not persisted to graph memory",
+            )
+        return replace(approval, graph_receipt=graph_receipt)
+
+    def _reconcile_unjournaled_receipts(
+        self,
+        session: _EpisodeSession,
+        records: tuple[EpisodeTelemetryRecord, ...],
+    ) -> None:
+        """Fill a durable receipt prefix interrupted after telemetry persistence."""
+
+        recover = getattr(self._telemetry_backend, "recover_append_result", None)
+        if not callable(recover):
+            return
+        for record in records[len(session.receipts) :]:
+            result = recover(record)
+            expected_event_id = LaserDataTelemetryEnvelope.from_domain(record).event_id
+            if result.event_id != expected_event_id:
+                raise EpisodeServiceError(
+                    "recovered telemetry receipt does not match its durable event"
+                )
+            receipt = EpisodeAppendReceipt(
+                episode_id=record.episode_id,
+                sequence=record.sequence,
+                event_id=result.event_id,
+                delivery=result.delivery,
+                provider_state=result.provider_state,
+                pending_local_records=result.pending_local_records,
+            )
+            self._journal.record_receipt(receipt)
+            session.receipts.append(receipt)
 
 
 def telemetry_digest(records: tuple[EpisodeTelemetryRecord, ...]) -> str:

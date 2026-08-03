@@ -211,6 +211,7 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
     host.addEventListener("pointerleave", onPointerLeave);
 
     const setDrop = (object: THREE.Group, start: number, ground: number, progressValue: number) => {
+      object.visible = progressValue >= start;
       const fall = smooth((progressValue - start) / 0.085);
       const bounce = Math.abs(Math.sin(fall * Math.PI * 2.5)) * (1 - fall) * 0.34;
       object.position.y = THREE.MathUtils.lerp(5.2, ground, fall) + bounce;
@@ -260,7 +261,6 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
       camera.lookAt(cameraTarget);
 
       route.visible = p > 0.1 && p < 0.82;
-      (route.material as THREE.LineDashedMaterial).dashOffset = -elapsed * 0.35;
       destination.rotation.z += 0.006;
       destination.scale.setScalar(1 + Math.sin(elapsed * 3.2) * 0.08);
       dots.rotation.y = elapsed * 0.008;

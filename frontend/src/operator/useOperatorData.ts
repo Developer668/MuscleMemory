@@ -6,6 +6,8 @@ import type {
   CorrectionView,
   EpisodeDetail,
   EpisodeSummary,
+  LiveEpisodeOptions,
+  LiveEpisodeStatus,
   LiveStreamMessage,
   PendingApproval,
   PolicySummary,
@@ -49,6 +51,12 @@ export interface OperatorData {
   latestRecord: TelemetryRecord | null;
   approvals: PendingApproval[];
   policies: PolicySummary[];
+  liveOptions: LiveEpisodeOptions | null;
+  liveStatus: LiveEpisodeStatus | null;
+  liveSeed: number | null;
+  setLiveSeed: (seed: number) => void;
+  livePolicyId: string;
+  setLivePolicyId: (policyId: string) => void;
   baselinePolicyId: string;
   setBaselinePolicyId: (policyId: string) => void;
   candidatePolicyId: string;
@@ -64,6 +72,8 @@ export interface OperatorData {
   mutationBusy: string | null;
   mutationIssue: string | null;
   refresh: () => Promise<void>;
+  startLiveEpisode: () => Promise<void>;
+  cancelLiveEpisode: () => Promise<void>;
   decideApproval: (requirementId: string, verdict: "approve" | "reject") => Promise<void>;
   submitCorrection: (
     failureId: string,
@@ -80,6 +90,10 @@ export function useOperatorData(): OperatorData {
   const [records, setRecords] = useState<TelemetryRecord[]>([]);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [policies, setPolicies] = useState<PolicySummary[]>([]);
+  const [liveOptions, setLiveOptions] = useState<LiveEpisodeOptions | null>(null);
+  const [liveStatus, setLiveStatus] = useState<LiveEpisodeStatus | null>(null);
+  const [liveSeed, setLiveSeed] = useState<number | null>(null);
+  const [livePolicyId, setLivePolicyId] = useState("");
   const [baselinePolicyId, setBaselinePolicyId] = useState("");
   const [candidatePolicyId, setCandidatePolicyId] = useState("");
   const [eligibility, setEligibility] = useState<PromotionEligibility | null>(null);
@@ -94,12 +108,13 @@ export function useOperatorData(): OperatorData {
   const [mutationBusy, setMutationBusy] = useState<string | null>(null);
   const [mutationIssue, setMutationIssue] = useState<string | null>(null);
   const refresh = useCallback(async () => {
-    const [healthResult, episodeResult, approvalsResult, policiesResult] =
+    const [healthResult, episodeResult, approvalsResult, policiesResult, liveResult] =
       await Promise.allSettled([
         operatorApi.health(),
         operatorApi.episodes(),
         operatorApi.approvals(),
         operatorApi.policies(),
+        operatorApi.liveOptions(),
       ]);
 
     const failures: string[] = [];
@@ -135,6 +150,23 @@ export function useOperatorData(): OperatorData {
       failures.push(errorMessage(policiesResult.reason));
     }
 
+    if (liveResult.status === "fulfilled") {
+      const options = liveResult.value;
+      setLiveOptions(options);
+      setLiveSeed((current) =>
+        current !== null && options.seeds.includes(current)
+          ? current
+          : options.seeds[0] ?? null,
+      );
+      setLivePolicyId((current) =>
+        options.policies.some((policy) => policy.policy_id === current)
+          ? current
+          : options.policies[0]?.policy_id || "",
+      );
+    } else {
+      failures.push(errorMessage(liveResult.reason));
+    }
+
     setIssue(failures.length ? [...new Set(failures)].join(" · ") : null);
     setLoading(false);
   }, []);
@@ -162,13 +194,43 @@ export function useOperatorData(): OperatorData {
             : await operatorApi.replay(selectedEpisodeId);
         if (active) setRecords(page.records);
       } catch (error) {
-        if (active) setIssue(errorMessage(error));
+        const liveIsOpening =
+          liveStatus?.episode_id === selectedEpisodeId &&
+          ["queued", "starting"].includes(liveStatus.phase);
+        if (active && !liveIsOpening) setIssue(errorMessage(error));
       }
     })();
     return () => {
       active = false;
     };
-  }, [selectedEpisodeId]);
+  }, [liveStatus?.episode_id, liveStatus?.phase, selectedEpisodeId]);
+
+  useEffect(() => {
+    if (
+      !liveStatus ||
+      !["queued", "starting", "running", "cancelling"].includes(liveStatus.phase)
+    ) {
+      return;
+    }
+    let active = true;
+    const poll = async () => {
+      try {
+        const status = await operatorApi.liveEpisodeStatus(liveStatus.episode_id);
+        if (!active) return;
+        setLiveStatus(status);
+        if (["closed", "failed"].includes(status.phase)) await refresh();
+      } catch (error) {
+        if (active) setIssue(errorMessage(error));
+      }
+    };
+    const initial = window.setTimeout(() => void poll(), 150);
+    const timer = window.setInterval(() => void poll(), 500);
+    return () => {
+      active = false;
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [liveStatus, refresh]);
 
   useEffect(() => {
     if (!selectedEpisodeId) return;
@@ -278,6 +340,45 @@ export function useOperatorData(): OperatorData {
     [selectedEpisodeId, tokenValue],
   );
 
+  const startLiveEpisode = useCallback(async () => {
+    if (liveSeed === null || !livePolicyId) return;
+    setMutationBusy("live-start");
+    setMutationIssue(null);
+    try {
+      const started = await operatorApi.startLiveEpisode(
+        liveSeed,
+        livePolicyId,
+        tokenValue,
+      );
+      setLiveStatus(started);
+      setDetail(null);
+      setRecords([]);
+      setSelectedEpisodeId(started.episode_id);
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+      await refresh();
+      setSelectedEpisodeId(started.episode_id);
+    } catch (error) {
+      setMutationIssue(errorMessage(error));
+    } finally {
+      setMutationBusy(null);
+    }
+  }, [livePolicyId, liveSeed, refresh, tokenValue]);
+
+  const cancelLiveEpisode = useCallback(async () => {
+    if (!liveStatus) return;
+    setMutationBusy("live-cancel");
+    setMutationIssue(null);
+    try {
+      setLiveStatus(
+        await operatorApi.cancelLiveEpisode(liveStatus.episode_id, tokenValue),
+      );
+    } catch (error) {
+      setMutationIssue(errorMessage(error));
+    } finally {
+      setMutationBusy(null);
+    }
+  }, [liveStatus, tokenValue]);
+
   const latestRecord = records.at(-1) || null;
   const providers = useMemo(() => health?.providers || [], [health]);
 
@@ -292,6 +393,12 @@ export function useOperatorData(): OperatorData {
     latestRecord,
     approvals,
     policies,
+    liveOptions,
+    liveStatus,
+    liveSeed,
+    setLiveSeed,
+    livePolicyId,
+    setLivePolicyId,
     baselinePolicyId,
     setBaselinePolicyId,
     candidatePolicyId,
@@ -311,6 +418,8 @@ export function useOperatorData(): OperatorData {
     mutationBusy,
     mutationIssue,
     refresh,
+    startLiveEpisode,
+    cancelLiveEpisode,
     decideApproval,
     submitCorrection,
   };

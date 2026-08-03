@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -24,6 +25,8 @@ from muscle_memory.api.models import (
     WorkflowReviewRequest,
     WorkflowRun,
 )
+from muscle_memory.live.controller import LiveEpisodeOptions
+from muscle_memory.live.models import LiveEpisodeStatus, VideoFrameSet, VideoProduct
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,3 +165,27 @@ class LiveEventPublisher(Protocol):
         episode_id: str,
         status: dict[str, object],
     ) -> None: ...
+
+
+class LiveEpisodeControl(Protocol):
+    """Narrow transport boundary around an admission-gated live simulator."""
+
+    def options(self) -> LiveEpisodeOptions: ...
+
+    def start(self, *, seed: int, policy_id: str) -> LiveEpisodeStatus: ...
+
+    def status(self, episode_id: str) -> LiveEpisodeStatus: ...
+
+    def cancel(self, episode_id: str) -> LiveEpisodeStatus: ...
+
+    def iter_mjpeg(
+        self,
+        episode_id: str,
+        product: VideoProduct,
+        *,
+        after_frame_index: int = -1,
+    ) -> Iterator[bytes]: ...
+
+    def video_frame(self, episode_id: str, frame_index: int) -> VideoFrameSet | None: ...
+
+    def shutdown(self) -> None: ...

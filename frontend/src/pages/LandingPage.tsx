@@ -1,296 +1,288 @@
 import {
-  ArrowDownRight,
+  Activity,
+  ArrowDown,
   ArrowRight,
   Check,
   ChevronRight,
   CircleGauge,
   DatabaseZap,
-  Network,
+  Play,
+  Radio,
+  RotateCcw,
   ShieldCheck,
   Sparkles,
+  Target,
 } from "lucide-react";
-import { motion, useReducedMotion, useScroll, useTransform } from "motion/react";
+import {
+  motion,
+  useReducedMotion,
+  useScroll,
+  useTransform,
+} from "motion/react";
+import { useRef, useState } from "react";
 
 import { BrandMark } from "../components/BrandMark";
-import { HeroScene } from "../components/HeroScene";
-import { Reveal } from "../components/Reveal";
+import { type DemoScenario, LandingWorld } from "../components/LandingWorld";
 
-const memoryLayers = [
+const scenarios: Array<{
+  id: DemoScenario;
+  label: string;
+  shortLabel: string;
+  message: string;
+  success: string;
+  clearance: string;
+  speed: string;
+  risk: string;
+}> = [
   {
-    number: "01",
-    name: "Live experience",
-    product: "LaserData",
-    detail: "Every observation and action stays ordered, replayable, and joined to video by frame.",
-    icon: DatabaseZap,
-    tone: "orange",
+    id: "clear",
+    label: "Clear route",
+    shortLabel: "Clear",
+    message: "Route is clean. Medicine stays level.",
+    success: "92%",
+    clearance: "0.46 m",
+    speed: "0.62 m/s",
+    risk: "Nominal",
   },
   {
-    number: "02",
-    name: "Explicit experience",
-    product: "FalkorDB",
-    detail: "Failures become connected lessons across worlds, obstacles, corrections, and policies.",
-    icon: Network,
-    tone: "blue",
+    id: "laundry",
+    label: "Laundry basket",
+    shortLabel: "Basket",
+    message: "Basket remembered. Widening the turn.",
+    success: "84%",
+    clearance: "0.27 m",
+    speed: "0.31 m/s",
+    risk: "Watching",
   },
   {
-    number: "03",
-    name: "Behavioral memory",
-    product: "Policy checkpoints",
-    detail: "Evaluated behavior is immutable. New experience always earns a new version.",
-    icon: ShieldCheck,
-    tone: "green",
+    id: "low_friction",
+    label: "Low friction",
+    shortLabel: "Low grip",
+    message: "Low grip detected. Slowing before the turn.",
+    success: "81%",
+    clearance: "0.33 m",
+    speed: "0.24 m/s",
+    risk: "Mitigated",
   },
-] as const;
-
-const promotionMetrics = [
-  { value: "80%", label: "held-out success" },
-  { value: "0", label: "falls permitted" },
-  { value: "0.25 m", label: "median clearance" },
-  { value: "20 pts", label: "success lift" },
 ];
 
+function PixelMascot({ message, onCycle }: { message: string; onCycle: () => void }) {
+  return (
+    <div className="mm-mascot-wrap">
+      <div className="mm-mascot-bubble" role="status">
+        <span>MM-BIT / 01</span>
+        <strong>{message}</strong>
+      </div>
+      <button className="mm-mascot" type="button" onClick={onCycle} title="Change the world">
+        <span className="mm-mascot__antenna" />
+        <span className="mm-mascot__head">
+          <i className="mm-mascot__eye mm-mascot__eye--left" />
+          <i className="mm-mascot__eye mm-mascot__eye--right" />
+          <i className="mm-mascot__mouth" />
+        </span>
+        <span className="mm-mascot__body"><i /></span>
+        <span className="mm-mascot__arm mm-mascot__arm--left" />
+        <span className="mm-mascot__arm mm-mascot__arm--right" />
+        <span className="mm-mascot__leg mm-mascot__leg--left" />
+        <span className="mm-mascot__leg mm-mascot__leg--right" />
+      </button>
+    </div>
+  );
+}
+
 export function LandingPage() {
+  const storyRef = useRef<HTMLElement>(null);
   const reduceMotion = useReducedMotion();
-  const { scrollYProgress } = useScroll();
-  const lineScale = useTransform(scrollYProgress, [0, 1], [0, 1]);
+  const [scenario, setScenario] = useState<DemoScenario>("laundry");
+  const { scrollYProgress } = useScroll({
+    target: storyRef,
+    offset: ["start start", "end end"],
+  });
+
+  const introOpacity = useTransform(scrollYProgress, [0, 0.12, 0.19], [1, 1, 0]);
+  const introY = useTransform(scrollYProgress, [0, 0.19], [0, -46]);
+  const introVisibility = useTransform(scrollYProgress, (value) => value < 0.2 ? "visible" : "hidden");
+  const taskOpacity = useTransform(scrollYProgress, [0.15, 0.22, 0.38, 0.46], [0, 1, 1, 0]);
+  const taskY = useTransform(scrollYProgress, [0.15, 0.24, 0.44], [46, 0, -38]);
+  const taskVisibility = useTransform(scrollYProgress, (value) => value >= 0.14 && value < 0.48 ? "visible" : "hidden");
+  const povOpacity = useTransform(scrollYProgress, [0.44, 0.51, 0.72, 0.79], [0, 1, 1, 0]);
+  const povVisibility = useTransform(scrollYProgress, (value) => value >= 0.43 && value < 0.81 ? "visible" : "hidden");
+  const memoryOpacity = useTransform(scrollYProgress, [0.76, 0.84, 0.96], [0, 1, 1]);
+  const memoryVisibility = useTransform(scrollYProgress, (value) => value >= 0.75 ? "visible" : "hidden");
+  const progressScale = useTransform(scrollYProgress, [0, 1], [0, 1]);
+
+  const activeScenario = scenarios.find((item) => item.id === scenario) ?? scenarios[0];
+
+  const runDelivery = () => {
+    const story = storyRef.current;
+    if (!story) return;
+    const top = story.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: top + window.innerHeight * 1.15, behavior: reduceMotion ? "auto" : "smooth" });
+  };
+
+  const cycleScenario = () => {
+    const index = scenarios.findIndex((item) => item.id === scenario);
+    setScenario(scenarios[(index + 1) % scenarios.length].id);
+  };
 
   return (
-    <main id="top">
-      <motion.div
-        className="scroll-progress"
-        style={{ scaleX: reduceMotion ? 1 : lineScale }}
-        aria-hidden="true"
-      />
+    <main className="mm-landing" id="top">
+      <motion.div className="mm-progress" style={{ scaleX: progressScale }} aria-hidden="true" />
 
-      <header className="site-header">
-        <a className="brand" href="#top" aria-label="Muscle Memory home">
-          <BrandMark />
-          <span>Muscle Memory</span>
-        </a>
-        <nav className="site-nav" aria-label="Primary navigation">
-          <a href="#method">Method</a>
-          <a href="#memory">Memory</a>
-          <a href="#proof">Proof</a>
-        </nav>
-        <a className="header-action" href="/console">
-          Open console
-          <ChevronRight size={16} strokeWidth={1.8} />
-        </a>
-      </header>
+      <section className="mm-story" ref={storyRef} aria-label="MM-01 delivery story">
+        <div className="mm-story__sticky">
+          <LandingWorld progress={scrollYProgress} scenario={scenario} />
+          <div className="mm-world-shade" aria-hidden="true" />
+          <div className="mm-film-grain" aria-hidden="true" />
 
-      <section className="hero" aria-labelledby="hero-title">
-        <HeroScene />
-        <div className="hero__content">
-          <motion.p
-            className="eyebrow"
-            initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.15 }}
-          >
-            <span className="eyebrow__pulse" />
-            Adaptive household robotics
-          </motion.p>
-          <motion.h1
-            id="hero-title"
-            initial={reduceMotion ? false : { opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.82, delay: 0.25, ease: [0.2, 0.75, 0.2, 1] }}
-          >
-            Muscle
-            <br />
-            <span>Memory</span>
-          </motion.h1>
-          <motion.div
-            className="hero__support"
-            initial={reduceMotion ? false : { opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.75, delay: 0.43 }}
-          >
-            <p className="hero__tagline">One robot. Many worlds. Experience that compounds.</p>
-            <p className="hero__description">
-              MM-01 learns safe household delivery across changing, physics-valid homes while its
-              body, sensors, and walking controller stay fixed.
+          <header className="mm-header">
+            <a className="mm-brand" href="#top" aria-label="Muscle Memory home">
+              <BrandMark />
+              <strong>MuscleMemory</strong>
+            </a>
+            <div className="mm-header__status" aria-label="System status">
+              <span><i /> Experience online</span>
+              <span>MM-01</span>
+            </div>
+            <a className="mm-console-link" href="/console">
+              Live console
+              <ChevronRight size={16} />
+            </a>
+          </header>
+
+          <motion.div className="mm-chapter mm-chapter--intro" style={{ opacity: introOpacity, y: introY, visibility: introVisibility }}>
+            <p className="mm-kicker"><span>One robot</span><span>Many worlds</span></p>
+            <h1>Experience<br /><em>that moves.</em></h1>
+            <p className="mm-intro-copy">
+              A household robot that turns every delivery, near miss, and human correction into a safer next run.
             </p>
-            <div className="hero__actions">
-              <a className="button button--primary" href="#platform">
-                See the system
-                <ArrowDownRight size={18} strokeWidth={1.8} />
-              </a>
-              <a className="button button--quiet" href="#proof">
-                View the promotion standard
-                <ArrowRight size={18} strokeWidth={1.8} />
+            <div className="mm-intro-actions">
+              <button className="mm-run" type="button" onClick={runDelivery}>
+                <Play size={17} fill="currentColor" />
+                Run a delivery
+              </button>
+              <a className="mm-text-link" href="#memory-story">
+                See what it remembers <ArrowRight size={17} />
               </a>
             </div>
           </motion.div>
-        </div>
-        <div className="hero__identity" aria-label="Fixed robot identity">
-          <span className="identity-code">MM-01</span>
-          <span>Fixed body</span>
-          <span>100 Hz gait</span>
-          <span>5–10 Hz task policy</span>
-        </div>
-        <div className="hero__scroll-cue" aria-hidden="true">
-          <span>Scroll to compound</span>
-          <ArrowDownRight size={18} />
-        </div>
-      </section>
 
-      <section className="manifesto" id="platform">
-        <div className="manifesto__inner">
-          <Reveal className="section-kicker">
-            <span>01</span>
-            The platform
-          </Reveal>
-          <Reveal className="manifesto__statement" delay={0.08}>
-            <p>
-              The body stays fixed.
-              <br />
-              <em>The experience moves forward.</em>
-            </p>
-          </Reveal>
-          <Reveal className="manifesto__aside" delay={0.16}>
-            <CircleGauge size={22} strokeWidth={1.5} />
-            <p>
-              Muscle Memory separates locomotion from learning. MM-01 only learns where to move,
-              how quickly to turn, and when to stop.
-            </p>
-          </Reveal>
-        </div>
-      </section>
+          <motion.div className="mm-chapter mm-chapter--task" style={{ opacity: taskOpacity, y: taskY, visibility: taskVisibility }}>
+            <div className="mm-task-index">01 / THE TASK</div>
+            <h2>Medicine.<br />Living room.<br /><em>No drama.</em></h2>
+            <div className="mm-task-ticket">
+              <Target size={19} />
+              <div><span>Destination</span><strong>Resident / sofa</strong></div>
+              <div><span>Arrival</span><strong>&lt; 30 sec</strong></div>
+            </div>
+          </motion.div>
 
-      <section className="learning-loop" id="method" aria-labelledby="method-title">
-        <div className="section-heading">
-          <Reveal className="section-kicker section-kicker--dark">
-            <span>02</span>
-            The learning loop
-          </Reveal>
-          <Reveal delay={0.08}>
-            <h2 id="method-title">Experience becomes a safer next run.</h2>
-          </Reveal>
-          <Reveal className="section-heading__copy" delay={0.14}>
-            <p>
-              Each validated world adds evidence. Each failure adds context. Nothing is promoted
-              until it wins on worlds it has never seen.
-            </p>
-          </Reveal>
-        </div>
+          <motion.div className="mm-pov-layer" style={{ opacity: povOpacity, visibility: povVisibility }}>
+            <div className="mm-reticle" aria-hidden="true"><span /><span /><span /><span /></div>
+            <div className="mm-pov-label"><Radio size={14} /> MM-01 / STEREO COMPOSITE / DEMO</div>
+            <aside className="mm-evals" aria-label="Simulated task evaluation">
+              <div className="mm-evals__heading">
+                <span>Live evals</span>
+                <strong>EP-0048</strong>
+              </div>
+              <div className="mm-eval mm-eval--hero">
+                <span>Projected success</span>
+                <strong>{activeScenario.success}</strong>
+                <i style={{ "--value": activeScenario.success } as React.CSSProperties} />
+              </div>
+              <div className="mm-eval-grid">
+                <div><span>Clearance</span><strong>{activeScenario.clearance}</strong></div>
+                <div><span>Speed</span><strong>{activeScenario.speed}</strong></div>
+                <div><span>Tray tilt</span><strong>3.2°</strong></div>
+                <div><span>Risk</span><strong>{activeScenario.risk}</strong></div>
+              </div>
+              <div className="mm-policy-action">
+                <Activity size={15} />
+                <span>Policy action</span>
+                <strong>{scenario === "clear" ? "FORWARD" : "SLOW + TURN"}</strong>
+              </div>
+              <p>Interactive demonstration. Verified episode evidence lives in the console.</p>
+            </aside>
+          </motion.div>
 
-        <div className="loop-track">
-          <div className="loop-track__line" aria-hidden="true" />
-          {[
-            ["01", "Generate", "Seeded apartments with deterministic collision geometry."],
-            ["02", "Remember", "Telemetry, failure relationships, and human corrections."],
-            ["03", "Improve", "A new policy version measured against the same frozen standard."],
-          ].map(([number, title, detail], index) => (
-            <Reveal className="loop-step" delay={index * 0.1} key={title}>
-              <span className="loop-step__number">{number}</span>
-              <div className="loop-step__marker" aria-hidden="true" />
-              <h3>{title}</h3>
-              <p>{detail}</p>
-            </Reveal>
-          ))}
-        </div>
-      </section>
+          <motion.div className="mm-chapter mm-chapter--memory" id="memory-story" style={{ opacity: memoryOpacity, visibility: memoryVisibility }}>
+            <div className="mm-task-index">03 / THE MEMORY</div>
+            <h2>The home changes.<br /><em>The lesson stays.</em></h2>
+            <div className="mm-memory-stream">
+              <div><DatabaseZap size={18} /><span>LaserData</span><strong>20 Hz evidence</strong></div>
+              <div><CircleGauge size={18} /><span>Failure summary</span><strong>deterministic</strong></div>
+              <div><ShieldCheck size={18} /><span>Next policy</span><strong>human gated</strong></div>
+            </div>
+          </motion.div>
 
-      <section className="memory" id="memory" aria-labelledby="memory-title">
-        <div className="memory__header">
-          <Reveal className="section-kicker">
-            <span>03</span>
-            The memory stack
-          </Reveal>
-          <Reveal delay={0.08}>
-            <h2 id="memory-title">Three kinds of memory. One compounding system.</h2>
-          </Reveal>
-        </div>
-
-        <div className="memory__layers">
-          {memoryLayers.map((layer, index) => {
-            const Icon = layer.icon;
-            return (
-              <Reveal className={`memory-layer memory-layer--${layer.tone}`} delay={index * 0.08} key={layer.name}>
-                <div className="memory-layer__topline">
-                  <span>{layer.number}</span>
-                  <Icon size={21} strokeWidth={1.5} />
-                </div>
-                <p className="memory-layer__label">{layer.name}</p>
-                <h3>{layer.product}</h3>
-                <p className="memory-layer__detail">{layer.detail}</p>
-                <div className="memory-layer__signal" aria-hidden="true">
-                  {Array.from({ length: 12 }, (_, signalIndex) => (
-                    <span key={signalIndex} style={{ "--i": signalIndex } as React.CSSProperties} />
-                  ))}
-                </div>
-              </Reveal>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="proof" id="proof" aria-labelledby="proof-title">
-        <div className="proof__visual" aria-hidden="true">
-          <div className="proof__lattice" />
-          <div className="proof__scan" />
-          <div className="proof__gate proof__gate--one" />
-          <div className="proof__gate proof__gate--two" />
-          <div className="proof__core">
-            <ShieldCheck size={48} strokeWidth={1.2} />
+          <div className="mm-scenario-picker" role="group" aria-label="Delivery challenge">
+            <span>Change the world</span>
+            <div>
+              {scenarios.map((item) => (
+                <button
+                  key={item.id}
+                  className={item.id === scenario ? "is-active" : ""}
+                  type="button"
+                  onClick={() => setScenario(item.id)}
+                  aria-pressed={item.id === scenario}
+                >
+                  {item.shortLabel}
+                </button>
+              ))}
+            </div>
           </div>
-          <span className="proof__tag proof__tag--one">Frozen split</span>
-          <span className="proof__tag proof__tag--two">Paired worlds</span>
-          <span className="proof__tag proof__tag--three">Human approval</span>
-        </div>
-        <div className="proof__content">
-          <Reveal className="section-kicker section-kicker--dark">
-            <span>04</span>
-            Promotion standard
-          </Reveal>
-          <Reveal delay={0.08}>
-            <h2 id="proof-title">Improvement is measured, never implied.</h2>
-          </Reveal>
-          <Reveal delay={0.14}>
-            <p className="proof__intro">
-              Candidate policies face twenty held-out worlds. Passing numbers make a policy
-              eligible; a human still decides whether it moves forward.
-            </p>
-          </Reveal>
-          <div className="proof__metrics">
-            {promotionMetrics.map((metric, index) => (
-              <Reveal className="proof-metric" delay={0.18 + index * 0.06} key={metric.label}>
-                <strong>{metric.value}</strong>
-                <span>{metric.label}</span>
-              </Reveal>
-            ))}
+
+          <PixelMascot message={activeScenario.message} onCycle={cycleScenario} />
+
+          <div className="mm-story-rail" aria-hidden="true">
+            <span>ORIENT</span><i /><span>DELIVER</span><i /><span>SEE</span><i /><span>REMEMBER</span>
           </div>
-          <Reveal className="proof__checks" delay={0.32}>
-            <span><Check size={15} /> Same robot checksum</span>
-            <span><Check size={15} /> Same held-out seeds</span>
-            <span><Check size={15} /> No training-time teacher</span>
-          </Reveal>
+          <ArrowDown className="mm-down" size={18} aria-hidden="true" />
         </div>
       </section>
 
-      <section className="closing" aria-labelledby="closing-title">
-        <div className="closing__image" aria-hidden="true">
-          <img src="/assets/mm01-household-hero.webp" alt="" loading="lazy" />
+      <section className="mm-proof-strip" aria-label="Promotion standard">
+        <div className="mm-proof-strip__lead">
+          <span>Measured progress only</span>
+          <h2>A new behavior earns its name.</h2>
         </div>
-        <div className="closing__shade" />
-        <Reveal className="closing__content">
-          <span className="closing__icon"><Sparkles size={21} strokeWidth={1.5} /></span>
-          <h2 id="closing-title">A lifetime of experience, before the first delivery.</h2>
-          <a className="button button--light" href="/console">
-            Open operator console
-            <ArrowRight size={18} strokeWidth={1.8} />
-          </a>
-        </Reveal>
+        <div className="mm-proof-number"><strong>20</strong><span>frozen held-out worlds</span></div>
+        <div className="mm-proof-number"><strong>0</strong><span>falls permitted</span></div>
+        <div className="mm-proof-number"><strong>+20</strong><span>point success lift</span></div>
+        <a href="/console"><CircleGauge size={18} /> Inspect evidence <ArrowRight size={17} /></a>
       </section>
 
-      <footer className="site-footer">
-        <a className="brand brand--footer" href="#top">
-          <BrandMark />
-          <span>Muscle Memory</span>
-        </a>
-        <p>One robot. Many worlds. Experience that compounds.</p>
-        <p className="site-footer__meta">MM-01 · Safe household delivery</p>
+      <section className="mm-room-poster" aria-label="MM-01 living room simulation">
+        <div className="mm-room-poster__image" role="img" aria-label="Rendered living room from the MM-01 simulation" />
+        <div className="mm-room-poster__caption">
+          <span>World 07 / warm apartment</span>
+          <strong>Same robot.<br />Different room.</strong>
+          <p>Furniture can move. Friction can change. The body and walking controller do not.</p>
+        </div>
+      </section>
+
+      <section className="mm-finale" aria-labelledby="finale-title">
+        <div className="mm-finale__spark"><Sparkles size={22} /></div>
+        <p>One robot. Many worlds.</p>
+        <h2 id="finale-title">
+          Give a robot a task<br />and it completes a run.<br />Give it <em>memory</em><br />and every run compounds.
+        </h2>
+        <strong className="mm-finale__name">MuscleMemory</strong>
+        <div className="mm-finale__actions">
+          <a className="mm-run mm-run--dark" href="/console">Open live console <ArrowRight size={18} /></a>
+          <a className="mm-reset" href="#top"><RotateCcw size={17} /> Replay</a>
+        </div>
+        <div className="mm-finale__checks">
+          <span><Check size={14} /> Fixed MM-01</span>
+          <span><Check size={14} /> Evidence-backed learning</span>
+          <span><Check size={14} /> Human-gated promotion</span>
+        </div>
+      </section>
+
+      <footer className="mm-footer">
+        <a className="mm-brand" href="#top"><BrandMark /><strong>MuscleMemory</strong></a>
+        <span>Safe household delivery, remembered.</span>
+        <span>MM-01 / 2026</span>
       </footer>
     </main>
   );

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 
 from muscle_memory.backend.api_backend import MuscleMemoryApiBackend
 from muscle_memory.backend.approvals import CoordinatorApprovalLedger
@@ -22,7 +23,20 @@ from muscle_memory.backend.rocketride_callback import (
 )
 from muscle_memory.coordinator import CoordinatorStore
 from muscle_memory.episodes import EpisodeService
+from muscle_memory.live import (
+    BoundedVideoService,
+    EvaluatedPolicySelection,
+    LiveEpisodeController,
+    LiveEpisodeManager,
+    LiveWorldCatalog,
+)
+from muscle_memory.paths import REPOSITORY_ROOT
 from muscle_memory.robot.identity import verify_mm01_bundle
+
+
+def _repository_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else REPOSITORY_ROOT / path
 
 
 def build_api_backend(
@@ -84,7 +98,7 @@ def build_api_backend(
                 graph_memory=providers.graph_memory,
                 credential=CallbackCredential(reviewed_artifact.coordinator_token),
             )
-        return MuscleMemoryApiBackend(
+        backend = MuscleMemoryApiBackend(
             coordinator=coordinator,
             journal=journal,
             episode_runtime=episode_runtime,
@@ -92,6 +106,45 @@ def build_api_backend(
             approval_ledger=approval_ledger,
             rocketride_callback=rocketride_callback,
         )
+        if evaluation_admission is not None:
+            selection = EvaluatedPolicySelection.load(
+                checkpoint_path=_repository_path(
+                    config.environ["MM_HELDOUT_CANDIDATE_CHECKPOINT"]
+                ),
+                evaluation_path=_repository_path(
+                    config.environ["MM_HELDOUT_EVALUATION_ARTIFACT"]
+                ),
+                expected_evaluation_evidence_hash=evaluation_admission.artifact_hash,
+            )
+            if selection.policy.policy_id != evaluation_admission.candidate_policy_id:
+                raise RuntimeError(
+                    "live policy identity differs from the admitted held-out candidate"
+                )
+            evaluated = {
+                checkpoint.policy_id: checkpoint
+                for checkpoint in coordinator.evaluated_checkpoints()
+            }
+            admitted = evaluated[evaluation_admission.candidate_policy_id]
+            if admitted.checkpoint_hash != selection.policy.policy_hash:
+                raise RuntimeError(
+                    "live policy hash differs from the admitted evaluated checkpoint"
+                )
+            video = BoundedVideoService(
+                maximum_frame_sets=900,
+                maximum_bytes=256 << 20,
+            )
+            manager = LiveEpisodeManager(
+                lifecycle=episode_runtime,
+                video=video,
+                maximum_concurrent_episodes=1,
+            )
+            controller = LiveEpisodeController(
+                manager=manager,
+                worlds=LiveWorldCatalog.load(),
+                policies=(selection,),
+            )
+            setattr(backend, "live_episode_controller", controller)  # noqa: B010
+        return backend
     except BaseException:
         coordinator.close()
         raise

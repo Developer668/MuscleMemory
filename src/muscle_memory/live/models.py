@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import quote
 
 from muscle_memory.policy.observation import NavigationObservation
 from muscle_memory.robot.command import TaskCommand
@@ -26,6 +27,21 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _canonical_json_sha256(path: Path) -> str:
+    try:
+        decoded = json.loads(path.read_text(encoding="utf-8"))
+        encoded = json.dumps(
+            decoded,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise RuntimeError("selected evaluation evidence is not canonicalizable") from exc
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class SelectedTaskPolicy(Protocol):
@@ -47,10 +63,11 @@ class ValidatedTrainingWorldEnvelope(Protocol):
 def require_validated_training_world(envelope: object) -> TrainingWorld:
     """Accept only the concrete result emitted by the strict training validation gate."""
     envelope_type = type(envelope)
-    if (
-        envelope_type.__module__ != "muscle_memory.worlds.generation.models"
-        or envelope_type.__name__ != "ValidatedTrainingWorld"
-    ):
+    admitted_types = {
+        ("muscle_memory.worlds.generation.models", "ValidatedTrainingWorld"),
+        ("muscle_memory.live.catalog", "ValidatedRuntimeWorld"),
+    }
+    if (envelope_type.__module__, envelope_type.__name__) not in admitted_types:
         raise TypeError("live episodes require a validation-gated training world")
     world = getattr(envelope, "world", None)
     if not isinstance(world, TrainingWorld):
@@ -97,6 +114,7 @@ class EvaluatedPolicySelection:
     checkpoint_hash: str
     evaluation_path: Path
     evaluation_hash: str
+    evaluation_evidence_hash: str
     evaluated_episode_count: int
     promotable: bool
 
@@ -111,12 +129,18 @@ class EvaluatedPolicySelection:
             raise ValueError("checkpoint_hash must be a lowercase SHA-256 digest")
         if _SHA256_PATTERN.fullmatch(self.evaluation_hash) is None:
             raise ValueError("evaluation_hash must be a lowercase SHA-256 digest")
+        if _SHA256_PATTERN.fullmatch(self.evaluation_evidence_hash) is None:
+            raise ValueError(
+                "evaluation_evidence_hash must be a lowercase SHA-256 digest"
+            )
         if self.evaluated_episode_count <= 0:
             raise ValueError("selected policy requires completed evaluation episodes")
         if _sha256(self.checkpoint_path) != self.checkpoint_hash:
             raise ValueError("selected checkpoint bytes changed after policy loading")
         if _sha256(self.evaluation_path) != self.evaluation_hash:
             raise ValueError("selected evaluation evidence changed after policy loading")
+        if _canonical_json_sha256(self.evaluation_path) != self.evaluation_evidence_hash:
+            raise ValueError("selected evaluation evidence changed after policy admission")
 
     @classmethod
     def load(
@@ -124,6 +148,7 @@ class EvaluatedPolicySelection:
         *,
         checkpoint_path: Path,
         evaluation_path: Path,
+        expected_evaluation_evidence_hash: str | None = None,
     ) -> EvaluatedPolicySelection:
         """Load an immutable behavior policy only when held-out evidence binds to it."""
         from muscle_memory.policy.network import BehaviorClonedPolicy
@@ -160,12 +185,19 @@ class EvaluatedPolicySelection:
         promotable = decision.get("promotable")
         if not isinstance(promotable, bool):
             raise RuntimeError("selected policy promotion decision is malformed")
+        evidence_hash = _canonical_json_sha256(evaluation_path)
+        if expected_evaluation_evidence_hash is not None:
+            if _SHA256_PATTERN.fullmatch(expected_evaluation_evidence_hash) is None:
+                raise RuntimeError("admitted evaluation evidence hash is malformed")
+            if evidence_hash != expected_evaluation_evidence_hash:
+                raise RuntimeError("selected evaluation evidence was not admitted")
         return cls(
             policy=policy,
             checkpoint_path=checkpoint_path,
             checkpoint_hash=policy.policy_hash,
             evaluation_path=evaluation_path,
             evaluation_hash=_sha256(evaluation_path),
+            evaluation_evidence_hash=evidence_hash,
             evaluated_episode_count=len(candidate_results),
             promotable=promotable,
         )
@@ -208,7 +240,14 @@ class EncodedVideoProduct:
         if hashlib.sha256(self.data).hexdigest() != self.sha256:
             raise ValueError("encoded video product checksum mismatch")
 
-    def metadata(self) -> VideoProductMetadata:
+    def metadata(
+        self,
+        *,
+        episode_id: str,
+        frame_index: int,
+    ) -> VideoProductMetadata:
+        encoded_episode_id = quote(episode_id, safe="")
+        encoded_product = quote(self.product.value, safe="")
         return VideoProductMetadata(
             product=self.product,
             mime_type=self.mime_type,
@@ -216,6 +255,13 @@ class EncodedVideoProduct:
             height=self.height,
             byte_length=len(self.data),
             sha256=self.sha256,
+            stream_url=(
+                f"/api/v1/episodes/{encoded_episode_id}/video/{encoded_product}.mjpeg"
+            ),
+            frame_url=(
+                f"/api/v1/episodes/{encoded_episode_id}/video/{encoded_product}"
+                f"/frames/{frame_index}"
+            ),
         )
 
 
@@ -227,6 +273,18 @@ class VideoProductMetadata:
     height: int
     byte_length: int
     sha256: str
+    stream_url: str
+    frame_url: str
+
+    def __post_init__(self) -> None:
+        if not self.stream_url.startswith("/api/v1/episodes/"):
+            raise ValueError("video stream URL must use the direct API service")
+        if not self.stream_url.endswith(f"/{self.product.value}.mjpeg"):
+            raise ValueError("video stream URL does not match its product")
+        if not self.frame_url.startswith("/api/v1/episodes/"):
+            raise ValueError("video frame URL must use the direct API service")
+        if f"/video/{self.product.value}/frames/" not in self.frame_url:
+            raise ValueError("video frame URL does not match its product")
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,8 +316,18 @@ class VideoFrameSet:
     products: tuple[EncodedVideoProduct, ...]
 
     def __post_init__(self) -> None:
-        if tuple(item.metadata() for item in self.products) != self.metadata.products:
+        if len(self.products) != len(self.metadata.products):
             raise ValueError("video bytes do not match frame metadata")
+        for encoded, metadata in zip(self.products, self.metadata.products, strict=True):
+            if (
+                encoded.product is not metadata.product
+                or encoded.mime_type != metadata.mime_type
+                or encoded.width != metadata.width
+                or encoded.height != metadata.height
+                or len(encoded.data) != metadata.byte_length
+                or encoded.sha256 != metadata.sha256
+            ):
+                raise ValueError("video bytes do not match frame metadata")
 
     @property
     def byte_length(self) -> int:
@@ -342,6 +410,14 @@ class RewardProgressEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class SimulatorPoseEvent:
+    position_x_m: float
+    position_y_m: float
+    yaw_radians: float
+    signal_use: str = "Simulator ground truth"
+
+
+@dataclass(frozen=True, slots=True)
 class CompletionEvent:
     completed: bool
     reason: str | None
@@ -358,6 +434,7 @@ class LiveTelemetryPayload:
     policy_action: PolicyActionEvent
     collisions: CollisionEvent
     reward_progress: RewardProgressEvent
+    simulator_pose: SimulatorPoseEvent
     safety_markers: tuple[str, ...]
     completion: CompletionEvent
     video_frames: tuple[VideoFrameMetadata, ...]

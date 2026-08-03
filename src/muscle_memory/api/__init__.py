@@ -3,6 +3,7 @@
 from muscle_memory.api.app import ApiRuntime, create_app
 from muscle_memory.api.auth import (
     ALL_MUTATION_SCOPES,
+    EPISODE_WRITE_SCOPE,
     HashedBearerCredential,
     Sha256BearerAuthenticator,
     authenticator_from_env,
@@ -18,6 +19,7 @@ from muscle_memory.api.streaming import LiveTelemetryHub
 
 __all__ = [
     "ALL_MUTATION_SCOPES",
+    "EPISODE_WRITE_SCOPE",
     "ApiBackend",
     "ApiBackendError",
     "ApiRuntime",

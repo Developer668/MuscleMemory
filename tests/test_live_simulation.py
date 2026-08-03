@@ -110,7 +110,10 @@ def _video_frame(index: int) -> VideoFrameSet:
         scheduled_time_seconds=index / 30,
         captured_time_seconds=index / 30,
         telemetry_sequence=(index + 1) // 2,
-        products=tuple(item.metadata() for item in products),
+        products=tuple(
+            item.metadata(episode_id="episode-video", frame_index=index)
+            for item in products
+        ),
     )
     return VideoFrameSet(metadata=metadata, products=tuple(products))
 
@@ -249,6 +252,16 @@ def test_real_mujoco_live_episode_has_exact_rates_and_frame_joins() -> None:
             for frame in joined_metadata
             for product in frame["products"]
         )
+        assert all(
+            product["stream_url"].startswith(
+                "/api/v1/episodes/live-real-01/video/"
+            )
+            and product["frame_url"].startswith(
+                "/api/v1/episodes/live-real-01/video/"
+            )
+            for frame in joined_metadata
+            for product in frame["products"]
+        )
         assert all(record.frame_id for record in records)
         assert all(
             record.sensors.stereo_vision_and_depth.values["frame_id"] == record.frame_id
@@ -265,6 +278,7 @@ def test_real_mujoco_live_episode_has_exact_rates_and_frame_joins() -> None:
             "policy_action",
             "collisions",
             "reward_progress",
+            "simulator_pose",
             "completion",
             "video_frames",
         }

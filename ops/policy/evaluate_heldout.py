@@ -44,6 +44,9 @@ def _assert_evaluation_import_isolation() -> None:
 
 def _evaluate(
     policy: DirectGoalPolicy | BehaviorClonedPolicy,
+    *,
+    evaluation_scope: str,
+    role: str,
 ) -> tuple[PolicyEpisodeResult, ...]:
     worlds = load_heldout_worlds()
     results: list[PolicyEpisodeResult] = []
@@ -51,7 +54,7 @@ def _evaluate(
         result = run_policy_episode(
             world,
             policy,
-            episode_id=f"heldout-{policy.policy_id}-{index:02d}",
+            episode_id=f"heldout-{evaluation_scope}-{role}-{index:02d}",
         )
         results.append(result)
         print(
@@ -77,8 +80,17 @@ def main() -> int:
         raise FileExistsError(f"immutable held-out evidence already exists: {args.output}")
     _assert_evaluation_import_isolation()
     candidate_policy = BehaviorClonedPolicy.load(args.checkpoint)
-    baseline = _evaluate(DirectGoalPolicy())
-    candidate = _evaluate(candidate_policy)
+    evaluation_scope = candidate_policy.policy_hash[:16]
+    baseline = _evaluate(
+        DirectGoalPolicy(),
+        evaluation_scope=evaluation_scope,
+        role="baseline",
+    )
+    candidate = _evaluate(
+        candidate_policy,
+        evaluation_scope=evaluation_scope,
+        role="candidate",
+    )
     decision = evaluate_promotion(baseline, candidate)
     payload = {
         "schema_version": 1,

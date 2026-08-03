@@ -151,6 +151,88 @@ class ReplayPage(ApiModel):
     next_sequence: int | None = Field(default=None, ge=0)
 
 
+class LivePolicyOptionView(ApiModel):
+    policy_id: str = Field(min_length=1, max_length=128)
+    policy_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluated_episode_count: int = Field(gt=0)
+    promotable: bool
+
+
+class LiveEpisodeOptionsView(ApiModel):
+    enabled: bool
+    unavailable_reason: str | None = Field(default=None, max_length=500)
+    mode: Literal["training"] = "training"
+    catalog_id: str | None = Field(default=None, min_length=1, max_length=128)
+    catalog_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    seeds: tuple[int, ...]
+    policies: tuple[LivePolicyOptionView, ...]
+    video_products: tuple[
+        Literal[
+            "third_person",
+            "left_eye_rgb",
+            "right_eye_rgb",
+            "stereo_composite",
+            "derived_depth",
+            "simulator_debug_segmentation",
+        ],
+        ...,
+    ]
+    maximum_duration_seconds: float | None = Field(
+        default=None,
+        gt=0.0,
+        le=30.0,
+        allow_inf_nan=False,
+    )
+
+    @model_validator(mode="after")
+    def capability_shape(self) -> Self:
+        if self.enabled:
+            if (
+                self.unavailable_reason is not None
+                or self.catalog_id is None
+                or self.catalog_sha256 is None
+                or not self.seeds
+                or not self.policies
+                or len(self.video_products) != 6
+                or self.maximum_duration_seconds is None
+            ):
+                raise ValueError("enabled live episodes require complete admitted options")
+        elif self.unavailable_reason is None:
+            raise ValueError("disabled live episodes require an unavailable reason")
+        return self
+
+
+class LiveEpisodeStartRequest(ApiModel):
+    seed: int = Field(ge=0, le=(2**63) - 1)
+    policy_id: str = Field(min_length=1, max_length=128)
+
+
+class LiveEpisodeStatusView(ApiModel):
+    episode_id: str = Field(min_length=1, max_length=128)
+    phase: Literal["queued", "starting", "running", "cancelling", "closed", "failed"]
+    health: Literal["starting", "healthy", "degraded", "terminal", "failed"]
+    world_id: str = Field(min_length=1, max_length=128)
+    policy_id: str = Field(min_length=1, max_length=128)
+    policy_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    policy_promotable: bool
+    simulation_time_seconds: float = Field(ge=0.0, allow_inf_nan=False)
+    wall_elapsed_seconds: float = Field(ge=0.0, allow_inf_nan=False)
+    wall_clock_lag_seconds: float = Field(ge=0.0, allow_inf_nan=False)
+    telemetry_records: int = Field(ge=0)
+    video_frames: int = Field(ge=0)
+    dropped_video_frames: int = Field(ge=0)
+    last_frame_id: str | None = Field(default=None, min_length=1, max_length=256)
+    provider_state: str | None = Field(default=None, max_length=128)
+    completion_reason: str | None = Field(default=None, max_length=128)
+    success: bool | None = None
+    failed_reasons: tuple[str, ...]
+    graph_provider_complete: bool | None = None
+    telemetry_provider_complete: bool | None = None
+    error_type: str | None = Field(default=None, max_length=128)
+    detail: str | None = Field(default=None, max_length=500)
+    video_streams: dict[str, str]
+
+
 class ApprovalKind(StrEnum):
     UNCERTAIN_PHYSICAL_PROPERTIES = "uncertain_physical_properties"
     REWARD_CHANGE = "reward_change"
