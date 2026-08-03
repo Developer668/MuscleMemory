@@ -18,7 +18,7 @@
   "qualification_program_sha256": "61855a8bd72d9187b4ebab89b246162ff8e897de99066a134b5a5c07317a4dcc",
   "qualification_trials_sha256": "14ca6fbdf1ebd694ad7baf683fff574e35afba7ff42408ff74f9950968d298dd",
   "right_turn_error_degrees": 12.939440932651182,
-  "robot_checksum": "f5186d9b03a6c40be6ad119e74e4ab452afb79303070fd880d55df2c12ad48f8",
+  "robot_checksum": "a82d65cdef447a4c2871faf28574c31aebc7e2425771c44d871714bcc4fcfe52",
   "standstill_drift_metres": 0.03058056415626402,
   "standstill_duration_seconds": 60.0,
   "stop_speed_metres_per_second": 0.04772446004133359,

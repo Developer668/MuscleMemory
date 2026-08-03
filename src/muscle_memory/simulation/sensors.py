@@ -53,6 +53,16 @@ class StereoFrameBundle:
     simulator_debug_segmentation: npt.NDArray[np.int32]
 
 
+@dataclass(frozen=True, slots=True)
+class PolicyStereoFrame:
+    """Only the synchronized stereo products reachable by the task policy."""
+
+    frame_id: str
+    left_eye_rgb: npt.NDArray[np.uint8]
+    right_eye_rgb: npt.NDArray[np.uint8]
+    derived_depth_sectors: npt.NDArray[np.float64]
+
+
 class StereoDepthEstimator:
     """Derive navigation sectors from rectified stereo RGB using OpenCV SGBM."""
 
@@ -259,23 +269,12 @@ class EpisodeSensorExtractor:
 
         Simulator depth is deliberately kept separate from stereo-derived depth.
         """
-        if not frame_id:
-            raise ValueError("frame_id must not be empty")
-        if not MINIMUM_DEPTH_SECTORS <= depth_sector_count <= MAXIMUM_DEPTH_SECTORS:
-            raise ValueError("stereo-derived depth must contain 32 to 64 sectors")
-
+        policy_frame = self.capture_policy_stereo(
+            renderer,
+            frame_id,
+            depth_sector_count=depth_sector_count,
+        )
         left_camera = _virtual_camera(self._data, LEFT_EYE_LOCAL_POSITION)
-        right_camera = _virtual_camera(self._data, RIGHT_EYE_LOCAL_POSITION)
-        left_rgb = self._rgb(renderer, left_camera)
-        right_rgb = self._rgb(renderer, right_camera)
-        estimator = self._depth_estimators.setdefault(
-            depth_sector_count, StereoDepthEstimator(depth_sector_count)
-        )
-        derived_depth_sectors = estimator.estimate(
-            left_rgb,
-            right_rgb,
-            vertical_fov_degrees=float(self._model.vis.global_.fovy),
-        )
 
         renderer.enable_depth_rendering()
         try:
@@ -293,12 +292,45 @@ class EpisodeSensorExtractor:
 
         return StereoFrameBundle(
             frame_id=frame_id,
-            left_eye_rgb=left_rgb,
-            right_eye_rgb=right_rgb,
-            stereo_composite=np.concatenate((left_rgb, right_rgb), axis=1),
-            derived_depth_sectors=derived_depth_sectors,
+            left_eye_rgb=policy_frame.left_eye_rgb,
+            right_eye_rgb=policy_frame.right_eye_rgb,
+            stereo_composite=np.concatenate(
+                (policy_frame.left_eye_rgb, policy_frame.right_eye_rgb), axis=1
+            ),
+            derived_depth_sectors=policy_frame.derived_depth_sectors,
             simulator_debug_depth=debug_depth,
             simulator_debug_segmentation=debug_segmentation,
+        )
+
+    def capture_policy_stereo(
+        self,
+        renderer: mujoco.Renderer,
+        frame_id: str,
+        *,
+        depth_sector_count: int = DEFAULT_DEPTH_SECTORS,
+    ) -> PolicyStereoFrame:
+        """Capture only RGB and stereo-derived depth available to the task policy."""
+        if not frame_id:
+            raise ValueError("frame_id must not be empty")
+        if not MINIMUM_DEPTH_SECTORS <= depth_sector_count <= MAXIMUM_DEPTH_SECTORS:
+            raise ValueError("stereo-derived depth must contain 32 to 64 sectors")
+        left_camera = _virtual_camera(self._data, LEFT_EYE_LOCAL_POSITION)
+        right_camera = _virtual_camera(self._data, RIGHT_EYE_LOCAL_POSITION)
+        left_rgb = self._rgb(renderer, left_camera)
+        right_rgb = self._rgb(renderer, right_camera)
+        estimator = self._depth_estimators.setdefault(
+            depth_sector_count, StereoDepthEstimator(depth_sector_count)
+        )
+        derived_depth_sectors = estimator.estimate(
+            left_rgb,
+            right_rgb,
+            vertical_fov_degrees=float(self._model.vis.global_.fovy),
+        )
+        return PolicyStereoFrame(
+            frame_id=frame_id,
+            left_eye_rgb=left_rgb,
+            right_eye_rgb=right_rgb,
+            derived_depth_sectors=derived_depth_sectors,
         )
 
     def snapshot(

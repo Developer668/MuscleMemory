@@ -51,7 +51,7 @@ def test_qualified_mm01_bundle_matches_physical_evidence() -> None:
     assert result.qualified is True
     assert result.robot_id == "MM-01"
     assert result.controller_id == "gait-controller-v1"
-    assert result.file_count == 14
+    assert result.file_count == 15
     assert result.selected_checkpoint.endswith("000181043200")
     assert result.blockers == ()
 

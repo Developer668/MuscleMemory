@@ -25,7 +25,7 @@
     "000202342400"
   ],
   "base_candidate_aggregate_sha256": "fe0c6b7c40fec749b8b40e149fbfde99796ceb8491cd5419b1f6f24f96e58f29",
-  "robot_checksum": "f5186d9b03a6c40be6ad119e74e4ab452afb79303070fd880d55df2c12ad48f8",
+  "robot_checksum": "a82d65cdef447a4c2871faf28574c31aebc7e2425771c44d871714bcc4fcfe52",
   "files": [
     {
       "path": "config/robot/mm01-candidate.json",
@@ -45,7 +45,7 @@
     {
       "path": "evidence/controller/gait-v1/qualification-evidence.json",
       "size_bytes": 1201,
-      "sha256": "8d3578668788d50626d4d332d281dc5f1847620a4c1e28326a9623dab79b978b"
+      "sha256": "e1318c7df088401c2d6e320a54662501fa6811fb1f0e1e82e9d30426e2daaee6"
     },
     {
       "path": "evidence/controller/gait-v1/qualification-trials.json",
@@ -84,8 +84,8 @@
     },
     {
       "path": "src/muscle_memory/robot/identity.py",
-      "size_bytes": 39773,
-      "sha256": "bd07f559b36364e2b30d0a10d805e8af2c52dfae1c93232efe29e5a55942809c"
+      "size_bytes": 39980,
+      "sha256": "3d8ffccb6480886f085d1ab32af22eabc0e4f1d46cdf69126bf55b87d46da9c7"
     },
     {
       "path": "src/muscle_memory/simulation/controller.py",
@@ -96,7 +96,12 @@
       "path": "src/muscle_memory/simulation/runtime.py",
       "size_bytes": 4755,
       "sha256": "c7cb76d99bfb621b5b04ebf59df9225c3f73ea71f170fb2f4ca5b972a72f4547"
+    },
+    {
+      "path": "src/muscle_memory/simulation/sensors.py",
+      "size_bytes": 18912,
+      "sha256": "8beedd2a5d1ddd2a32733a84030cefe3cb1ce4048f7d2b3e3e73866ac000b140"
     }
   ],
-  "aggregate_sha256": "67cbb8cb19aa555c27fa10780176ad39ba02e12196f6e1d076d3ef04759f9f2a"
+  "aggregate_sha256": "80a596381479dc598b5f9d007a209ea5cb5820017e5802cecdc0665ea8b1391b"
 }

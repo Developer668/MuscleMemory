@@ -83,7 +83,7 @@ The selected checkpoint's measured native results were:
 | Deterministic repeat delta | 0.0 |
 
 The final robot checksum is
-`f5186d9b03a6c40be6ad119e74e4ab452afb79303070fd880d55df2c12ad48f8`. It covers the unchanged
+`a82d65cdef447a4c2871faf28574c31aebc7e2425771c44d871714bcc4fcfe52`. It covers the unchanged
 candidate robot, selected controller, controller runtime, rate and stop supervisor, three-output
 command adapter, and sensor profile. `mm-verify-robot` independently rechecks the model,
 physical thresholds, raw-trial and program hashes, training source pins, completed-run contract,

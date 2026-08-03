@@ -38,6 +38,7 @@ MM01_SENSOR_PROFILE = REPOSITORY_ROOT / "config" / "robot" / "mm01-sensor-profil
 MM01_CONTROLLER_SOURCE = REPOSITORY_ROOT / "src" / "muscle_memory" / "simulation" / "controller.py"
 MM01_RUNTIME_SOURCE = REPOSITORY_ROOT / "src" / "muscle_memory" / "simulation" / "runtime.py"
 MM01_COMMAND_SOURCE = REPOSITORY_ROOT / "src" / "muscle_memory" / "robot" / "command.py"
+MM01_SENSOR_SOURCE = REPOSITORY_ROOT / "src" / "muscle_memory" / "simulation" / "sensors.py"
 MM01_IDENTITY_SOURCE = Path(__file__).resolve()
 MM01_QUALIFICATION_PROGRAM = REPOSITORY_ROOT / "ops" / "controller" / "native_qualify.py"
 MM01_QUALIFICATION_CONTRACT = REPOSITORY_ROOT / "ops" / "controller" / "contract.py"
@@ -429,6 +430,7 @@ def robot_bundle_checksum(
             _rooted(MM01_COMMAND_SOURCE, repository_root)
         ),
         "sensor_profile": _file_sha256(_rooted(MM01_SENSOR_PROFILE, repository_root)),
+        "sensor_runtime": _file_sha256(_rooted(MM01_SENSOR_SOURCE, repository_root)),
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("ascii")
     return sha256(canonical).hexdigest()
@@ -443,6 +445,7 @@ def discover_mm01_files(repository_root: Path = REPOSITORY_ROOT) -> tuple[Path, 
         MM01_CONTROLLER_SOURCE,
         MM01_RUNTIME_SOURCE,
         MM01_COMMAND_SOURCE,
+        MM01_SENSOR_SOURCE,
         MM01_IDENTITY_SOURCE,
         MM01_QUALIFICATION_PROGRAM,
         MM01_QUALIFICATION_CONTRACT,
