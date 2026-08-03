@@ -146,13 +146,13 @@ The demo must finish even if live asset generation or live training times out.
 
 ### Build, test, and run commands
 
-_TBD — populate when the toolchain lands._
+Python is pinned by `.python-version`; `uv` owns the environment and lockfile.
 
-```
-setup:  TBD
-test:   TBD
-lint:   TBD
-run:    TBD
+```text
+setup:  uv sync --frozen --group dev
+test:   uv run pytest
+lint:   uv run ruff check . && uv run mypy src
+run:    uv run mm-smoke
 ```
 
 ---

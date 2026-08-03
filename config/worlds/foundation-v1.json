@@ -1,0 +1,65 @@
+{
+  "generation_version": 1,
+  "template": {
+    "template_id": "bounded-apartment-8x6-v1",
+    "width_m": 8.0,
+    "depth_m": 6.0
+  },
+  "grid_resolution_m": 0.2,
+  "robot_radius_m": 0.28,
+  "minimum_clearance_m": 0.25,
+  "object_separation_m": 0.05,
+  "object_boundary_clearance_m": 0.05,
+  "minimum_start_goal_distance_m": 4.0,
+  "object_count": {
+    "minimum": 5,
+    "maximum": 9
+  },
+  "objects": {
+    "chair": {
+      "approved_colliders": ["box"],
+      "length_m": {"minimum": 0.45, "maximum": 0.75},
+      "width_m": {"minimum": 0.45, "maximum": 0.75},
+      "height_m": {"minimum": 0.70, "maximum": 1.20},
+      "mass_kg": {"minimum": 3.0, "maximum": 20.0},
+      "sliding_friction": {"minimum": 0.30, "maximum": 1.00},
+      "restitution": {"minimum": 0.0, "maximum": 0.20}
+    },
+    "box": {
+      "approved_colliders": ["box"],
+      "length_m": {"minimum": 0.30, "maximum": 0.90},
+      "width_m": {"minimum": 0.30, "maximum": 0.90},
+      "height_m": {"minimum": 0.20, "maximum": 0.80},
+      "mass_kg": {"minimum": 0.5, "maximum": 15.0},
+      "sliding_friction": {"minimum": 0.25, "maximum": 1.00},
+      "restitution": {"minimum": 0.0, "maximum": 0.25}
+    },
+    "table": {
+      "approved_colliders": ["box"],
+      "length_m": {"minimum": 0.80, "maximum": 1.80},
+      "width_m": {"minimum": 0.60, "maximum": 1.20},
+      "height_m": {"minimum": 0.65, "maximum": 1.00},
+      "mass_kg": {"minimum": 8.0, "maximum": 60.0},
+      "sliding_friction": {"minimum": 0.30, "maximum": 1.00},
+      "restitution": {"minimum": 0.0, "maximum": 0.15}
+    },
+    "stool": {
+      "approved_colliders": ["cylinder"],
+      "length_m": {"minimum": 0.35, "maximum": 0.60},
+      "width_m": {"minimum": 0.35, "maximum": 0.60},
+      "height_m": {"minimum": 0.35, "maximum": 0.75},
+      "mass_kg": {"minimum": 1.5, "maximum": 12.0},
+      "sliding_friction": {"minimum": 0.30, "maximum": 1.00},
+      "restitution": {"minimum": 0.0, "maximum": 0.20}
+    },
+    "laundry_basket": {
+      "approved_colliders": ["box", "capsule"],
+      "length_m": {"minimum": 0.45, "maximum": 0.80},
+      "width_m": {"minimum": 0.35, "maximum": 0.65},
+      "height_m": {"minimum": 0.40, "maximum": 0.80},
+      "mass_kg": {"minimum": 0.8, "maximum": 12.0},
+      "sliding_friction": {"minimum": 0.25, "maximum": 0.90},
+      "restitution": {"minimum": 0.0, "maximum": 0.20}
+    }
+  }
+}

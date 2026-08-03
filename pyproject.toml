@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "muscle-memory"
+version = "0.1.0"
+description = "Adaptive simulation and training for the fixed MM-01 household robot"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+authors = [{ name = "Muscle Memory contributors" }]
+dependencies = [
+  "mujoco==3.6.0",
+  "numpy==2.3.1",
+  "onnxruntime==1.28.0",
+  "pillow>=11.3,<13",
+  "pydantic>=2.11,<3",
+]
+
+[project.scripts]
+mm-smoke = "muscle_memory.cli:smoke_main"
+mm-verify-robot = "muscle_memory.cli:verify_robot_main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.17,<2",
+  "pytest>=8.4,<10",
+  "pytest-cov>=6.2,<8",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/muscle_memory"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "slow: real-time or extended simulation qualification",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["third_party"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["muscle_memory"]
