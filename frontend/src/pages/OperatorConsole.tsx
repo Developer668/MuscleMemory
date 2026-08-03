@@ -400,9 +400,12 @@ function EpisodePicker({ data }: { data: ReturnType<typeof useOperatorData> }) {
             disabled={!data.liveOptions?.enabled || liveActive}
           >
             {!data.liveOptions?.policies.length && <option value="">Unavailable</option>}
+            {data.liveOptions?.policies.length && !data.livePolicyId && (
+              <option value="">Select policy</option>
+            )}
             {data.liveOptions?.policies.map((policy) => (
               <option key={policy.policy_id} value={policy.policy_id}>
-                {policy.policy_id} · {policy.evaluated_episode_count} evaluated
+                {policy.policy_id} · {policy.deployment_status === "stable_deployed" ? "stable" : "candidate test"} · {policy.evaluated_episode_count} evaluated
               </option>
             ))}
           </select>
@@ -414,6 +417,7 @@ function EpisodePicker({ data }: { data: ReturnType<typeof useOperatorData> }) {
           disabled={
             !data.token ||
             !data.liveOptions?.enabled ||
+            !data.livePolicyId ||
             liveActive ||
             Boolean(data.mutationBusy)
           }

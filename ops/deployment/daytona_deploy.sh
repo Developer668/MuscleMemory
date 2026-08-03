@@ -44,7 +44,19 @@ if [ "$REQUIRE_SPONSORS" != "0" ] && [ "$REQUIRE_SPONSORS" != "1" ]; then
 fi
 
 INFO_FILE=$(mktemp)
-trap 'rm -f "$INFO_FILE"' EXIT HUP INT TERM
+PROCESS_STARTED=0
+cleanup() {
+  status=$?
+  rm -f "$INFO_FILE"
+  if [ "$status" -ne 0 ] && [ "$PROCESS_STARTED" -eq 1 ]; then
+    daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 60 -- \
+      uv run --frozen --no-sync python -m ops.deployment.daytona_process --stop \
+      >/dev/null 2>&1 || true
+  fi
+  return "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
 daytona info "$SANDBOX" --format json >"$INFO_FILE"
 python3 -c '
 import json, sys
@@ -79,22 +91,29 @@ daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 120 -- \
   uv run --frozen --no-sync mm-verify-robot
 daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 60 -- \
   uv run --frozen --no-sync python -m ops.deployment.daytona_process --port "$PORT"
+PROCESS_STARTED=1
 
 if [ "$REQUIRE_SPONSORS" = "1" ]; then
   daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 120 -- \
     uv run --frozen --no-sync python -m ops.sponsors.verify_laserdata
+  daytona exec "$SANDBOX" --cwd "$REPOSITORY_DIR" --timeout 180 -- \
+    uv run --frozen --no-sync python -m ops.sponsors.verify_rocketride
 fi
 
-PREVIEW_URL=$(daytona preview-url "$SANDBOX" --port "$PORT" --expires "$PREVIEW_EXPIRES")
-HEALTH_URL=${PREVIEW_URL%/}/api/v1/health
+DISCOVERY_URL=$(daytona preview-url "$SANDBOX" --port "$PORT" --expires "$PREVIEW_EXPIRES")
+PUBLIC_ORIGIN=${DISCOVERY_URL%%\?*}
+case "$PUBLIC_ORIGIN" in
+  https://*) ;;
+  *) printf '%s\n' "Daytona did not return an HTTPS public origin" >&2; exit 1 ;;
+esac
+HEALTH_URL=${PUBLIC_ORIGIN%/}/api/v1/health
 if [ "$REQUIRE_SPONSORS" = "1" ]; then
   python3 -m ops.deployment.smoke \
     --url "$HEALTH_URL" \
     --timeout 180 \
     --require-provider LaserData \
-    --require-provider FalkorDB \
-    --require-provider guild.ai \
-    --require-provider rocketride.ai
+    --require-provider FalkorDB
+  printf '%s\n' "Live LaserData and RocketRide probes passed; Guild review evidence remains workflow-scoped."
 else
   python3 -m ops.deployment.smoke --url "$HEALTH_URL" --timeout 180
   printf '%s\n' "Runtime-only smoke passed; sponsor providers were not required."
@@ -102,4 +121,4 @@ fi
 
 printf '%s\n' "Daytona sandbox: $SANDBOX"
 printf '%s\n' "Revision: $RESOLVED_REVISION"
-printf '%s\n' "Preview: $PREVIEW_URL"
+printf '%s\n' "Public origin: $PUBLIC_ORIGIN"

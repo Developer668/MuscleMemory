@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "development_only_not_held_out",
-  "selection_status": "locked_for_blinded_heldout_evaluation",
+  "selection_status": "rejected_before_heldout",
   "seed_search_start": 600000000,
   "seed_search_rule": "first validated worlds with an expert path at most 8.2 m whose direct route requires avoidance",
   "candidate_policy_id": "delivery-v2-sensor-fusion",

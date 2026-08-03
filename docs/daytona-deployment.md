@@ -34,14 +34,20 @@ through the Daytona environment at sandbox creation; never commit a real value o
 a deploy-script argument. The accepted names are listed in `.env.example` and
 `config/services/http-api.env.example`. A public deployment also needs a non-empty
 `MM_API_AUTH_CREDENTIALS_JSON` containing only token digests, never plaintext tokens.
+The four `MM_HELDOUT_*` values are all-or-none: the canonical paired artifact,
+its canonical SHA-256, the candidate checkpoint, and a timezone-aware evaluation
+timestamp. A partial set stops the runner before the API starts. `MM_STABLE_POLICY_ALIAS`
+defaults to `stable`.
 
 ## Deploy one revision
 
 The deploy command requires an explicit full commit SHA. It refuses a stopped sandbox, a
 non-public preview, enabled auto-stop, or a missing `/data` volume. It clones or updates the
 repository, runs a frozen Python production sync, installs the locked frontend dependencies,
-builds `frontend/dist`, verifies the permanent robot bundle, restarts the API, obtains a
-one-hour signed preview URL, and exercises `/api/v1/health` through Daytona's public proxy.
+builds `frontend/dist`, verifies the permanent robot bundle, restarts the API, discovers the
+public sandbox proxy, strips its temporary discovery query, and exercises `/api/v1/health`
+through the persistent unsigned HTTPS origin. If a post-start check fails, the supervisor
+stops the failed replacement process instead of leaving an unverified revision running.
 
 ```bash
 ./ops/deployment/daytona_deploy.sh <commit-sha>
@@ -58,11 +64,17 @@ MM_DAYTONA_REQUIRE_SPONSORS=1 \
   ./ops/deployment/daytona_deploy.sh <commit-sha>
 ```
 
-The strict path performs a live LaserData append/readback and requires LaserData, FalkorDB,
-Guild.ai, and RocketRide to report `healthy` or `end_to_end_verified`. It fails closed when any
-provider is merely configured, cached, simulated, degraded, or unconfigured. Guild publishing
-and RocketRide task-token verification remain separate provider-specific evidence commands in
-`docs/sponsor-orchestration.md`; the API health response does not replace them.
+The strict path performs a live LaserData append/readback, a real RocketRide task/callback
+probe using `ROCKETRIDE_VERIFY_ENVELOPE_FILE`, and the public health smoke for LaserData and
+FalkorDB. Guild and RocketRide intentionally begin a cold process as `configured`; generic
+health cannot honestly promote them merely because credentials exist. Guild proof is therefore
+the durable three-role review on the exact workflow, and RocketRide proof is the task result
+returned through the authenticated public callback. Both remain workflow-scoped evidence as
+described in `docs/sponsor-orchestration.md`.
+
+The live options endpoint labels a checkpoint `stable_deployed` only when its policy ID equals
+the current durable stable alias. Any other admitted checkpoint is `candidate_live_test` and is
+never selected as the production default; an operator must choose it explicitly.
 
 The runner itself is foreground-safe and can also be invoked over SSH:
 

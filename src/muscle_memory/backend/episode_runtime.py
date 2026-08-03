@@ -52,8 +52,10 @@ class OperationalEpisodeRuntime:
         self.service = service
         self._expected_robot_checksum = expected_robot_checksum
         self._publisher: LiveEventPublisher | None = None
-        self._last_consumer_error: str | None = None
-        self._dashboard_deliveries = 0
+        self._last_telemetry_consumer_error: str | None = None
+        self._last_status_consumer_error: str | None = None
+        self._telemetry_dashboard_deliveries = 0
+        self._status_dashboard_deliveries = 0
         self._durable_event_count = 0
         self._last_closure: EpisodeClosure | None = None
 
@@ -91,10 +93,10 @@ class OperationalEpisodeRuntime:
                         delivery=self._delivery_state(receipt),
                     )
                 )
-                self._last_consumer_error = None
-                self._dashboard_deliveries += 1
+                self._last_telemetry_consumer_error = None
+                self._telemetry_dashboard_deliveries += 1
             except Exception as exc:
-                self._last_consumer_error = type(exc).__name__
+                self._last_telemetry_consumer_error = type(exc).__name__
         return receipt
 
     async def close_episode(
@@ -120,23 +122,31 @@ class OperationalEpisodeRuntime:
     def consumer_snapshots(self) -> tuple[RuntimeConsumerSnapshot, ...]:
         live_state = (
             ProviderOperationalState.DEGRADED
-            if self._last_consumer_error is not None
+            if (
+                self._last_telemetry_consumer_error is not None
+                or self._last_status_consumer_error is not None
+            )
             else (
                 ProviderOperationalState.HEALTHY
-                if self._dashboard_deliveries > 0
+                if self._telemetry_dashboard_deliveries > 0
                 else ProviderOperationalState.CONFIGURED
             )
         )
         live_detail = (
-            "bounded API fanout failed on the latest durable event"
-            if self._last_consumer_error is not None
+            "bounded telemetry fanout failed on the latest durable event"
+            if self._last_telemetry_consumer_error is not None
             else (
-                "live status or telemetry fanout has completed successfully"
-                if self._dashboard_deliveries > 0
+                "bounded status fanout failed; telemetry evidence remains independent"
+                if self._last_status_consumer_error is not None
                 else (
-                    "API publisher is bound; no live fanout evidence exists yet"
-                    if self._publisher is not None
-                    else "API publisher is not bound yet"
+                    "live telemetry fanout has completed successfully; "
+                    f"status deliveries={self._status_dashboard_deliveries}"
+                    if self._telemetry_dashboard_deliveries > 0
+                    else (
+                        "API publisher is bound; no telemetry fanout evidence exists yet"
+                        if self._publisher is not None
+                        else "API publisher is not bound yet; no fanout evidence exists"
+                    )
                 )
             )
         )
@@ -213,10 +223,10 @@ class OperationalEpisodeRuntime:
             return
         try:
             await publisher.publish_status(episode_id, status)
-            self._last_consumer_error = None
-            self._dashboard_deliveries += 1
+            self._last_status_consumer_error = None
+            self._status_dashboard_deliveries += 1
         except Exception as exc:
-            self._last_consumer_error = type(exc).__name__
+            self._last_status_consumer_error = type(exc).__name__
 
     @staticmethod
     def _delivery_state(receipt: EpisodeAppendReceipt) -> ProviderOperationalState:

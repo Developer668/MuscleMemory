@@ -53,6 +53,18 @@ and RocketRide adapters receive no approval-ledger write capability.
 World validation is fail-closed. Unless the first tool returns `{"world_valid": true}`, no
 downstream command runs, and that failed result cannot be resumed.
 
+Plan registration alone does not expose approval controls. The coordinator exposes requirements
+only after all three durable Guild reviews recommend `proceed` and the complete server-reproduced
+evidence bundle is present. Promotion or rollback additionally requires a numeric decision
+recomputed from the admitted paired artifact and bound to the current stable alias.
+
+The callback authenticates before reading its bounded request body. Validation, telemetry
+summary, graph query, curriculum selection, and alias application run as synchronous owned
+operations. A previously completed simulation episode, training job, or paired evaluation is
+accepted only through the explicit `admitted_async_job_completion` contract carrying its job
+identity, completion timestamp, and immutable artifact hash. This lets RocketRide execute the
+reviewed orchestration without pretending cached worker output was produced during the callback.
+
 ## Provider states
 
 Every adapter exposes a provider, mode, health state, timestamp, and detail. These labels are

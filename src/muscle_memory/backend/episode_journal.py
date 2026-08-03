@@ -137,6 +137,13 @@ class CoordinatorEpisodeJournal:
             _encode(_RECEIPT_ADAPTER, receipt),
         )
 
+    def record_receipt_delivery(self, receipt: EpisodeAppendReceipt) -> None:
+        self._store.record_training_episode_receipt_delivery(
+            receipt.episode_id,
+            receipt.sequence,
+            _encode(_RECEIPT_ADAPTER, receipt),
+        )
+
     def record_closure(self, closure: EpisodeClosure) -> None:
         if closure.identity.world_split is not WorldSplit.TRAINING:
             raise CoordinatorStateError(

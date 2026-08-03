@@ -31,6 +31,8 @@ class EpisodeJournal(Protocol):
 
     def record_receipt(self, receipt: EpisodeAppendReceipt) -> None: ...
 
+    def record_receipt_delivery(self, receipt: EpisodeAppendReceipt) -> None: ...
+
     def record_closure(self, closure: EpisodeClosure) -> None: ...
 
     def record_graph_delivery(
@@ -70,6 +72,9 @@ class VolatileEpisodeJournal:
         del identity
 
     def record_receipt(self, receipt: EpisodeAppendReceipt) -> None:
+        del receipt
+
+    def record_receipt_delivery(self, receipt: EpisodeAppendReceipt) -> None:
         del receipt
 
     def record_closure(self, closure: EpisodeClosure) -> None:

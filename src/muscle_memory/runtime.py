@@ -107,6 +107,10 @@ def build_api_backend(
             providers=providers,
             approval_ledger=approval_ledger,
             rocketride_callback=rocketride_callback,
+            stable_policy_alias=(
+                config.environ.get("MM_STABLE_POLICY_ALIAS", "stable").strip()
+                or "stable"
+            ),
         )
         if evaluation_admission is not None:
             selection = EvaluatedPolicySelection.load(
@@ -144,6 +148,10 @@ def build_api_backend(
                 manager=manager,
                 worlds=live_world_catalog,
                 policies=(selection,),
+                stable_policy_id=coordinator.current_policy(
+                    config.environ.get("MM_STABLE_POLICY_ALIAS", "stable").strip()
+                    or "stable"
+                ),
             )
             setattr(backend, "live_episode_controller", controller)  # noqa: B010
         return backend

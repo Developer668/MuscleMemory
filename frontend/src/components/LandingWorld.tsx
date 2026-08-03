@@ -3,6 +3,7 @@ import type { MotionValue } from "motion/react";
 import * as THREE from "three";
 
 import { makeRobot } from "../operator/RealisticHomeScene";
+import { attachImportedFurnishings } from "./ImportedFurnishings";
 import { buildTwoStoryHouse, STORY_HEIGHT } from "./TwoStoryHouse";
 
 export type DemoScenario = "clear" | "laundry" | "low_friction";
@@ -116,6 +117,7 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
 
     const house = buildTwoStoryHouse();
     scene.add(house.root);
+    const cancelFurnitureLoading = attachImportedFurnishings(house);
 
     const robot = makeRobot();
     robot.position.set(-4.9, 0.08, 3.82);
@@ -295,6 +297,7 @@ export function LandingWorld({ progress, scenario }: LandingWorldProps) {
     render();
 
     return () => {
+      cancelFurnitureLoading();
       window.cancelAnimationFrame(frame);
       observer.disconnect();
       host.removeEventListener("pointermove", onPointerMove);

@@ -11,13 +11,29 @@ from typing import cast
 import numpy as np
 import pytest
 
+from muscle_memory.evaluation.development import assert_development_gate
 from muscle_memory.evaluation.heldout import load_heldout_worlds
 from muscle_memory.evaluation.promotion import evaluate_promotion
 from muscle_memory.evaluation.runner import PolicyEpisodeResult
+from muscle_memory.paths import (
+    POLICY_V1_CHECKPOINT,
+    POLICY_V2_CHECKPOINT,
+    POLICY_V2_DEVELOPMENT_EVIDENCE,
+    POLICY_V2_TRAINING_EVIDENCE,
+)
 from muscle_memory.policy.actions import POLICY_ACTION_COMMANDS, PolicyAction
 from muscle_memory.policy.baseline import DirectGoalPolicy
-from muscle_memory.policy.network import POLICY_OUTPUT_COUNT, BehaviorClonedPolicy
-from muscle_memory.policy.observation import NAVIGATION_OBSERVATION_SIZE, navigation_observation
+from muscle_memory.policy.network import (
+    POLICY_OUTPUT_COUNT,
+    SENSOR_FUSION_INFERENCE_STRATEGY,
+    BehaviorClonedPolicy,
+    policy_file_sha256,
+)
+from muscle_memory.policy.observation import (
+    NAVIGATION_OBSERVATION_SIZE,
+    NavigationObservation,
+    navigation_observation,
+)
 from muscle_memory.robot.command import TaskCommand
 from muscle_memory.robot.identity import verify_mm01_bundle
 from muscle_memory.simulation.metrics import EpisodeMetricsTracker
@@ -141,6 +157,81 @@ def test_checkpoint_loads_and_is_bound_to_current_robot(tmp_path: Path) -> None:
     _write_checkpoint(checkpoint, robot_checksum="0" * 64)
     with pytest.raises(RuntimeError, match="different robot"):
         BehaviorClonedPolicy.load(checkpoint)
+
+
+def test_v1_and_v2_checkpoint_identities_are_distinct_and_evidence_bound() -> None:
+    v1 = BehaviorClonedPolicy.load(POLICY_V1_CHECKPOINT)
+    v2 = BehaviorClonedPolicy.load(POLICY_V2_CHECKPOINT)
+    training = json.loads(POLICY_V2_TRAINING_EVIDENCE.read_text(encoding="utf-8"))
+    development = json.loads(
+        POLICY_V2_DEVELOPMENT_EVIDENCE.read_text(encoding="utf-8")
+    )
+    lock = json.loads(
+        (POLICY_V2_DEVELOPMENT_EVIDENCE.parent / "lock.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert v1.policy_id == "delivery-v1-bc"
+    assert v2.policy_id == "delivery-v2-sensor-fusion-hysteresis"
+    assert v2.inference_strategy == SENSOR_FUSION_INFERENCE_STRATEGY
+    assert v1.policy_hash == policy_file_sha256(POLICY_V1_CHECKPOINT)
+    assert v2.policy_hash == policy_file_sha256(POLICY_V2_CHECKPOINT)
+    assert v1.policy_hash != v2.policy_hash
+    assert training["policy_sha256"] == v2.policy_hash
+    assert development["candidate_policy_sha256"] == v2.policy_hash
+    assert development["selection_status"] == "rejected_before_heldout"
+    assert not development["promotion_preview"]["promotable"]
+    assert lock["checkpoint_sha256"] == v2.policy_hash
+    assert lock["heldout_access"] == "denied_by_development_gate"
+
+
+def test_sensor_fusion_episode_state_resets_on_initial_stop_observation() -> None:
+    policy = BehaviorClonedPolicy.load(POLICY_V2_CHECKPOINT)
+    initial_values = np.ones(NAVIGATION_OBSERVATION_SIZE, dtype=np.float32)
+    initial_values[-3:] = (0.0, 0.0, 1.0)
+    running_values = initial_values.copy()
+    running_values[-1] = 0.0
+    initial = NavigationObservation(initial_values, 5.0, 0.8)
+    running = NavigationObservation(running_values, 5.0, 0.8)
+
+    first = policy.command(initial)
+    second = policy.command(running)
+    reset = policy.command(initial)
+
+    assert first.turning_rate_rad_s == pytest.approx(0.15)
+    assert second.turning_rate_rad_s == pytest.approx(0.3)
+    assert reset == first
+
+
+def test_failed_development_gate_blocks_heldout_evaluation(tmp_path: Path) -> None:
+    policy = BehaviorClonedPolicy.load(POLICY_V2_CHECKPOINT)
+    evidence = tmp_path / "development.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "candidate_policy_sha256": policy.policy_hash,
+                "selection_status": "rejected_before_heldout",
+                "promotion_preview": {"promotable": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="held-out access denied"):
+        assert_development_gate(evidence, policy.policy_hash)
+
+
+def test_training_refuses_to_replace_an_immutable_checkpoint(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "existing.npz"
+    checkpoint.write_bytes(b"existing")
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        train_behavior_clone(
+            dataset_path=tmp_path / "missing-dataset.npz",
+            output_path=checkpoint,
+            evidence_path=tmp_path / "training.json",
+        )
 
 
 def test_evaluation_imports_cannot_reach_teacher_or_world_generator() -> None:

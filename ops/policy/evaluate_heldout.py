@@ -9,12 +9,14 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from muscle_memory.evaluation.development import assert_development_gate
 from muscle_memory.evaluation.heldout import load_heldout_worlds
 from muscle_memory.evaluation.promotion import evaluate_promotion
 from muscle_memory.evaluation.runner import PolicyEpisodeResult, run_policy_episode
 from muscle_memory.paths import (
     HELDOUT_WORLDS_BUNDLE,
     POLICY_V2_CHECKPOINT,
+    POLICY_V2_DEVELOPMENT_EVIDENCE,
     POLICY_V2_HELDOUT_EVIDENCE,
 )
 from muscle_memory.policy.baseline import DirectGoalPolicy
@@ -71,6 +73,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--checkpoint", type=Path, default=POLICY_V2_CHECKPOINT)
+    parser.add_argument(
+        "--development-evidence",
+        type=Path,
+        default=POLICY_V2_DEVELOPMENT_EVIDENCE,
+    )
     return parser
 
 
@@ -80,6 +87,7 @@ def main() -> int:
         raise FileExistsError(f"immutable held-out evidence already exists: {args.output}")
     _assert_evaluation_import_isolation()
     candidate_policy = BehaviorClonedPolicy.load(args.checkpoint)
+    assert_development_gate(args.development_evidence, candidate_policy.policy_hash)
     evaluation_scope = candidate_policy.policy_hash[:16]
     baseline = _evaluate(
         DirectGoalPolicy(),

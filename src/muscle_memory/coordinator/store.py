@@ -152,6 +152,18 @@ class CoordinatorStore:
                     PRIMARY KEY (episode_id, sequence)
                 );
 
+                CREATE TABLE IF NOT EXISTS training_episode_receipt_deliveries (
+                    episode_id TEXT NOT NULL,
+                    telemetry_sequence INTEGER NOT NULL CHECK (telemetry_sequence >= 0),
+                    attempt_sequence INTEGER NOT NULL CHECK (attempt_sequence >= 0),
+                    receipt_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    PRIMARY KEY (episode_id, telemetry_sequence, attempt_sequence),
+                    UNIQUE (episode_id, telemetry_sequence, content_hash),
+                    FOREIGN KEY (episode_id, telemetry_sequence)
+                        REFERENCES training_episode_receipts(episode_id, sequence)
+                );
+
                 CREATE TABLE IF NOT EXISTS training_episode_closures (
                     episode_id TEXT PRIMARY KEY REFERENCES training_episode_sessions(episode_id),
                     closure_json TEXT NOT NULL,
@@ -185,6 +197,16 @@ class CoordinatorStore:
                         REFERENCES training_correction_approvals(correction_id),
                     delivery_json TEXT NOT NULL,
                     content_hash TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS training_correction_graph_delivery_attempts (
+                    correction_id TEXT NOT NULL
+                        REFERENCES training_correction_approvals(correction_id),
+                    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                    delivery_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    PRIMARY KEY (correction_id, sequence),
+                    UNIQUE (correction_id, content_hash)
                 );
 
                 CREATE TABLE IF NOT EXISTS training_correction_rejections (
@@ -586,12 +608,82 @@ class CoordinatorStore:
         with self._lock:
             rows = self._connection.execute(
                 """
-                SELECT receipt_json FROM training_episode_receipts
-                WHERE episode_id = ? ORDER BY sequence
+                SELECT COALESCE(
+                    (
+                        SELECT deliveries.receipt_json
+                        FROM training_episode_receipt_deliveries AS deliveries
+                        WHERE deliveries.episode_id = receipts.episode_id
+                          AND deliveries.telemetry_sequence = receipts.sequence
+                        ORDER BY deliveries.attempt_sequence DESC
+                        LIMIT 1
+                    ),
+                    receipts.receipt_json
+                ) AS receipt_json
+                FROM training_episode_receipts AS receipts
+                WHERE receipts.episode_id = ?
+                ORDER BY receipts.sequence
                 """,
                 (episode_id,),
             ).fetchall()
         return tuple(str(row["receipt_json"]) for row in rows)
+
+    def record_training_episode_receipt_delivery(
+        self,
+        episode_id: str,
+        telemetry_sequence: int,
+        receipt_json: str,
+    ) -> int:
+        """Append a provider-delivery upgrade without rewriting the base receipt."""
+
+        if telemetry_sequence < 0:
+            raise ValueError("telemetry receipt sequence must be non-negative")
+        content_hash = self._canonical_payload_hash(receipt_json)
+        with self._transaction() as connection:
+            base = connection.execute(
+                """
+                SELECT receipt_json FROM training_episode_receipts
+                WHERE episode_id = ? AND sequence = ?
+                """,
+                (episode_id, telemetry_sequence),
+            ).fetchone()
+            if base is None:
+                raise CoordinatorStateError(
+                    "provider receipt delivery requires a durable base receipt"
+                )
+            existing = connection.execute(
+                """
+                SELECT attempt_sequence FROM training_episode_receipt_deliveries
+                WHERE episode_id = ? AND telemetry_sequence = ? AND content_hash = ?
+                """,
+                (episode_id, telemetry_sequence, content_hash),
+            ).fetchone()
+            if existing is not None:
+                return int(existing["attempt_sequence"])
+            latest = connection.execute(
+                """
+                SELECT attempt_sequence FROM training_episode_receipt_deliveries
+                WHERE episode_id = ? AND telemetry_sequence = ?
+                ORDER BY attempt_sequence DESC LIMIT 1
+                """,
+                (episode_id, telemetry_sequence),
+            ).fetchone()
+            attempt_sequence = 0 if latest is None else int(latest["attempt_sequence"]) + 1
+            connection.execute(
+                """
+                INSERT INTO training_episode_receipt_deliveries (
+                    episode_id, telemetry_sequence, attempt_sequence,
+                    receipt_json, content_hash
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    episode_id,
+                    telemetry_sequence,
+                    attempt_sequence,
+                    receipt_json,
+                    content_hash,
+                ),
+            )
+        return attempt_sequence
 
     def record_training_episode_closure(
         self,
@@ -754,7 +846,7 @@ class CoordinatorStore:
         self,
         correction_id: str,
         delivery_json: str,
-    ) -> None:
+    ) -> int:
         content_hash = self._canonical_payload_hash(delivery_json)
         with self._transaction() as connection:
             row = connection.execute(
@@ -768,25 +860,58 @@ class CoordinatorStore:
                 raise CoordinatorStateError(
                     "correction graph delivery requires a durable approval"
                 )
-            self._insert_immutable_payload(
-                connection,
-                table="training_correction_graph_deliveries",
-                identity_column="correction_id",
-                identity=correction_id,
-                payload_column="delivery_json",
-                payload_json=delivery_json,
-                content_hash=content_hash,
+            legacy = connection.execute(
+                """
+                SELECT content_hash FROM training_correction_graph_deliveries
+                WHERE correction_id = ?
+                """,
+                (correction_id,),
+            ).fetchone()
+            if legacy is not None and str(legacy["content_hash"]) == content_hash:
+                return 0
+            existing = connection.execute(
+                """
+                SELECT sequence FROM training_correction_graph_delivery_attempts
+                WHERE correction_id = ? AND content_hash = ?
+                """,
+                (correction_id, content_hash),
+            ).fetchone()
+            if existing is not None:
+                return int(existing["sequence"])
+            latest = connection.execute(
+                """
+                SELECT sequence FROM training_correction_graph_delivery_attempts
+                WHERE correction_id = ? ORDER BY sequence DESC LIMIT 1
+                """,
+                (correction_id,),
+            ).fetchone()
+            sequence = 0 if latest is None else int(latest["sequence"]) + 1
+            connection.execute(
+                """
+                INSERT INTO training_correction_graph_delivery_attempts (
+                    correction_id, sequence, delivery_json, content_hash
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (correction_id, sequence, delivery_json, content_hash),
             )
+        return sequence
 
     def training_correction_graph_deliveries(self) -> tuple[str, ...]:
         with self._lock:
-            rows = self._connection.execute(
+            legacy = self._connection.execute(
                 """
                 SELECT delivery_json FROM training_correction_graph_deliveries
                 ORDER BY correction_id
                 """
             ).fetchall()
-        return tuple(str(row["delivery_json"]) for row in rows)
+            attempts = self._connection.execute(
+                """
+                SELECT delivery_json
+                FROM training_correction_graph_delivery_attempts
+                ORDER BY correction_id, sequence
+                """
+            ).fetchall()
+        return tuple(str(row["delivery_json"]) for row in (*legacy, *attempts))
 
     def record_training_correction_rejection(
         self,
@@ -1329,6 +1454,14 @@ class CoordinatorStore:
                 "SELECT review_json FROM workflow_reviews ORDER BY run_id"
             ).fetchall()
         return tuple(str(row["review_json"]) for row in rows)
+
+    def workflow_review(self, run_id: str) -> str | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT review_json FROM workflow_reviews WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        return None if row is None else str(row["review_json"])
 
     def record_workflow_run_snapshot(self, run_id: str, run_json: str) -> None:
         content_hash = self._canonical_payload_hash(run_json)

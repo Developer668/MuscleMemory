@@ -161,7 +161,7 @@ export function useOperatorData(): OperatorData {
       setLivePolicyId((current) =>
         options.policies.some((policy) => policy.policy_id === current)
           ? current
-          : options.policies[0]?.policy_id || "",
+          : options.default_policy_id || "",
       );
     } else {
       failures.push(errorMessage(liveResult.reason));

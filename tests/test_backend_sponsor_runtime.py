@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import TypeAdapter
 
 from muscle_memory.api import Sha256BearerAuthenticator, create_app
 from muscle_memory.backend.rocketride_callback import MAX_CALLBACK_BODY_BYTES
@@ -16,8 +17,16 @@ from muscle_memory.orchestration.contracts import (
     FIXED_PIPELINE,
     ContractViolationError,
     ExecutionPlan,
+    GuildReview,
+    GuildReviewSet,
+    GuildRole,
+    HealthState,
     PipelineCommand,
     PipelineStep,
+    ProviderMode,
+    ProviderName,
+    ProviderStatus,
+    ReviewRecommendation,
     canonical_json,
 )
 from muscle_memory.orchestration.evidence import (
@@ -25,6 +34,7 @@ from muscle_memory.orchestration.evidence import (
     validate_evidence_plan_binding,
 )
 from muscle_memory.runtime import build_api_backend
+from muscle_memory.orchestration.service import ReviewedExecution
 
 CALLBACK_TOKEN = "callback-runtime-token-0123456789abcdef"
 
@@ -181,6 +191,35 @@ def _register_evidence(backend: object, plan: ExecutionPlan) -> None:
         )
     coordinator.register_workflow(plan, created_at=now)
     coordinator.record_workflow_guild_evidence(plan.run_id, bundle)
+    provider = ProviderStatus(
+        provider=ProviderName.GUILD,
+        mode=ProviderMode.LIVE,
+        health=HealthState.HEALTHY,
+        detail="three synthetic contract reviews completed",
+        checked_at=now,
+    )
+    reviewed = ReviewedExecution(
+        plan=plan,
+        guild_reviews=GuildReviewSet(
+            plan_digest=plan.digest,
+            reviews=tuple(
+                GuildReview(
+                    role=role,
+                    plan_digest=plan.digest,
+                    recommendation=ReviewRecommendation.PROCEED,
+                    summary="synthetic exact-role contract review",
+                )
+                for role in GuildRole
+            ),
+            provider_status=provider,
+        ),
+    )
+    coordinator.record_workflow_review(
+        plan.run_id,
+        canonical_json(
+            TypeAdapter(ReviewedExecution).dump_python(reviewed, mode="json")
+        ),
+    )
 
 
 def _envelope(plan: ExecutionPlan, step: PipelineStep) -> str:

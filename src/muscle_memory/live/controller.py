@@ -39,6 +39,8 @@ class LivePolicyOption:
     policy_hash: str
     evaluated_episode_count: int
     promotable: bool
+    deployment_status: str = "candidate_live_test"
+    is_default: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +51,7 @@ class LiveEpisodeOptions:
     policies: tuple[LivePolicyOption, ...]
     video_products: tuple[str, ...]
     maximum_duration_seconds: float
+    default_policy_id: str | None = None
     mode: str = "training"
 
 
@@ -61,6 +64,7 @@ class LiveEpisodeController:
         manager: LiveEpisodeManager,
         worlds: LiveWorldCatalog,
         policies: tuple[EvaluatedPolicySelection, ...],
+        stable_policy_id: str | None = None,
         config: LiveEpisodeConfig | None = None,
     ) -> None:
         if not policies:
@@ -71,6 +75,9 @@ class LiveEpisodeController:
         self._manager = manager
         self._worlds = worlds
         self._policies = selections
+        self._stable_policy_id = (
+            stable_policy_id if stable_policy_id in selections else None
+        )
         self._config = config or LiveEpisodeConfig()
 
     def options(self) -> LiveEpisodeOptions:
@@ -80,6 +87,12 @@ class LiveEpisodeController:
                 policy_hash=selection.policy.policy_hash,
                 evaluated_episode_count=selection.evaluated_episode_count,
                 promotable=selection.promotable,
+                deployment_status=(
+                    "stable_deployed"
+                    if selection.policy.policy_id == self._stable_policy_id
+                    else "candidate_live_test"
+                ),
+                is_default=selection.policy.policy_id == self._stable_policy_id,
             )
             for selection in sorted(
                 self._policies.values(),
@@ -93,6 +106,7 @@ class LiveEpisodeController:
             policies=policies,
             video_products=tuple(product.value for product in VideoProduct),
             maximum_duration_seconds=self._config.maximum_duration_seconds,
+            default_policy_id=self._stable_policy_id,
         )
 
     def start(self, *, seed: int, policy_id: str) -> LiveEpisodeStatus:

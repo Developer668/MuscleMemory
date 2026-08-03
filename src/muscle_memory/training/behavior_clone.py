@@ -174,6 +174,10 @@ def train_behavior_clone(
     config: BehaviorCloneConfig = DEFAULT_BEHAVIOR_CLONE_CONFIG,
 ) -> TrainingResult:
     """Train and serialize one immutable candidate from a world-grouped split."""
+    if output_path.exists():
+        raise FileExistsError(f"immutable task-policy checkpoint already exists: {output_path}")
+    if evidence_path.exists():
+        raise FileExistsError(f"immutable training evidence already exists: {evidence_path}")
     robot = verify_mm01_bundle()
     dataset_sha256 = _sha256_file(dataset_path)
     with np.load(dataset_path, allow_pickle=False) as dataset:
@@ -358,10 +362,6 @@ def train_behavior_clone(
         SENSOR_FUSION_INFERENCE_STRATEGY,
     ):
         raise ValueError("unsupported inference strategy")
-    if output_path.exists():
-        raise FileExistsError(f"immutable task-policy checkpoint already exists: {output_path}")
-    if evidence_path.exists():
-        raise FileExistsError(f"immutable training evidence already exists: {evidence_path}")
     schema_version = (
         SENSOR_FUSION_CHECKPOINT_SCHEMA_VERSION
         if config.inference_strategy == SENSOR_FUSION_INFERENCE_STRATEGY

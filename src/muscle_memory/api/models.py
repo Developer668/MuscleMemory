@@ -156,6 +156,10 @@ class LivePolicyOptionView(ApiModel):
     policy_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     evaluated_episode_count: int = Field(gt=0)
     promotable: bool
+    deployment_status: Literal["stable_deployed", "candidate_live_test"] = (
+        "candidate_live_test"
+    )
+    is_default: bool = False
 
 
 class LiveEpisodeOptionsView(ApiModel):
@@ -166,6 +170,7 @@ class LiveEpisodeOptionsView(ApiModel):
     catalog_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     seeds: tuple[int, ...]
     policies: tuple[LivePolicyOptionView, ...]
+    default_policy_id: str | None = Field(default=None, min_length=1, max_length=128)
     video_products: tuple[
         Literal[
             "third_person",

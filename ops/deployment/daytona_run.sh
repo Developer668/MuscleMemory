@@ -9,6 +9,16 @@ if [ ! -d "$DATA_DIR" ] || [ ! -w "$DATA_DIR" ]; then
   exit 1
 fi
 
+HELDOUT_CONFIG_COUNT=0
+[ -n "${MM_HELDOUT_EVALUATION_ARTIFACT:-}" ] && HELDOUT_CONFIG_COUNT=$((HELDOUT_CONFIG_COUNT + 1))
+[ -n "${MM_HELDOUT_EVALUATION_ARTIFACT_SHA256:-}" ] && HELDOUT_CONFIG_COUNT=$((HELDOUT_CONFIG_COUNT + 1))
+[ -n "${MM_HELDOUT_CANDIDATE_CHECKPOINT:-}" ] && HELDOUT_CONFIG_COUNT=$((HELDOUT_CONFIG_COUNT + 1))
+[ -n "${MM_HELDOUT_EVALUATED_AT:-}" ] && HELDOUT_CONFIG_COUNT=$((HELDOUT_CONFIG_COUNT + 1))
+if [ "$HELDOUT_CONFIG_COUNT" -ne 0 ] && [ "$HELDOUT_CONFIG_COUNT" -ne 4 ]; then
+  printf '%s\n' "all four MM_HELDOUT_* values are required together" >&2
+  exit 1
+fi
+
 mkdir -p \
   "$DATA_DIR/assets/approvals" \
   "$DATA_DIR/assets/cache" \

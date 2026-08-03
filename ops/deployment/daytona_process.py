@@ -122,11 +122,20 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--repository", type=Path, default=Path.cwd())
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--stop",
+        action="store_true",
+        help="stop the verified process identity without starting a replacement",
+    )
     return parser
 
 
 def main() -> int:
     args = _parser().parse_args()
+    if args.stop:
+        stop_process(args.data_dir.resolve() / "run" / "api.pid.json")
+        print("Daytona API stopped")
+        return 0
     if not 1 <= args.port <= 65535:
         raise SystemExit("--port must be between 1 and 65535")
     pid = start_process(args.repository.resolve(), args.data_dir.resolve(), port=args.port)

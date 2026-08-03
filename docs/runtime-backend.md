@@ -30,6 +30,10 @@ health endpoint can diagnose it.
   health and curriculum continues from the local cache instead of omitting facts.
 - Guild reviews and RocketRide run snapshots are content-addressed and recovered
   after restart. A run can resume only from its exact reviewed plan.
+- Approval rows are created with the immutable plan but remain hidden and cannot
+  be decided until all three exact-plan Guild reviews recommend `proceed`, the
+  complete evidence bundle is admitted, and a final policy action has a durable
+  numeric decision derived from the paired artifact and current stable alias.
 - Guild role evidence is strict, content-addressed, and anchored to a coordinator
   provider-evidence record. Those references are created only after the server
   reproduces the seeded world, recurring training failures plus reconciled graph
@@ -40,7 +44,13 @@ health endpoint can diagnose it.
 - RocketRide calls the authenticated
   `/webhook/muscle-memory-fixed-step` route. Callback results are an append-only
   fixed-pipeline prefix, so an exact retry survives restart while changed or
-  out-of-order requests fail closed.
+  out-of-order requests fail closed. Authentication is checked before the HTTP
+  body is consumed. Every result carries an execution contract: synchronous
+  domain operations are invoked in the callback, while episode, training, and
+  paired-evaluation work completed by bounded workers is identified explicitly
+  as an admitted asynchronous job completion with its source identity, completion
+  time, and immutable output hash. It is never described as newly trained or
+  evaluated during callback handling.
 - Plan admission requires one world identity across validation and execution, one
   episode identity across run, summary, graph query, and curriculum selection,
   and one candidate identity across training, evaluation, and final action.
@@ -48,6 +58,9 @@ health endpoint can diagnose it.
   identities, checkpoint hashes, evaluation hashes, and exactly recomputed gate
   metrics match the coordinator-anchored Guild evaluation artifact. The same
   binding is rechecked when the alias action is applied.
+- `GET /api/v1/policies/promotion-eligibility` recomputes its response from the
+  candidate's admitted forty-result paired artifact. A historical baseline keeps
+  its original evaluation binding when later candidates are admitted.
 - The qualified MM-01 checksum is checked both when opening an episode and when
   replaying the journal during startup.
 
@@ -66,6 +79,12 @@ labeled `self-hosted`, `cloud`, or `unconfigured`; self-hosted development evide
 is never presented as sponsor-cloud verification. `end_to_end_verified` requires a
 recorded provider-side operation and evidence identifier.
 
+Provider recovery remains append-only. A LaserData outbox flush appends a delivery
+upgrade for each base telemetry receipt and refreshes the in-memory closure report.
+Failed approved-correction graph attempts are retained and retried; a later success
+is another attempt, not an edit. Status fanout cannot clear or mask telemetry-fanout
+failure evidence, and a fresh zero-episode graph consumer remains `configured`.
+
 ## Verification
 
 ```bash
@@ -79,7 +98,8 @@ simulation does not change that state.
 The RocketRide callback origin and bearer token are supplied through
 `ROCKETRIDE_MM_COORDINATOR_URL` and `ROCKETRIDE_MM_COORDINATOR_TOKEN`. The URL is
 an origin because the reviewed pipe resolves the fixed webhook name; the shipped
-backend owns the resulting route. A live step succeeds only when its domain fact
-already exists, its plan and approval evidence match, and the callback returns a
-validated content-addressed result. Cached checkpoints are identified as existing
-artifacts and are never described as a newly completed training run.
+backend owns the resulting route. A live step succeeds only when an executable
+durable Guild review exists, its plan and approval evidence match, its owned
+operation or admitted worker-completion contract validates, and the callback
+returns a content-addressed result. Cached checkpoints are identified as prior
+worker outputs and are never described as a newly completed training run.

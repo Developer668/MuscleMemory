@@ -386,6 +386,7 @@ def _build_router() -> APIRouter:
                 ),
                 seeds=(),
                 policies=(),
+                default_policy_id=None,
                 video_products=(),
             )
         options = control.options()
@@ -400,9 +401,12 @@ def _build_router() -> APIRouter:
                     policy_hash=policy.policy_hash,
                     evaluated_episode_count=policy.evaluated_episode_count,
                     promotable=policy.promotable,
+                    deployment_status=policy.deployment_status,  # type: ignore[arg-type]
+                    is_default=policy.is_default,
                 )
                 for policy in options.policies
             ),
+            default_policy_id=options.default_policy_id,
             video_products=options.video_products,  # type: ignore[arg-type]
             maximum_duration_seconds=options.maximum_duration_seconds,
         )
@@ -791,6 +795,21 @@ def create_app(
 
     @app.post(CALLBACK_PATH, include_in_schema=False)
     async def rocketride_callback(request: Request) -> JSONResponse:
+        authenticate = getattr(backend, "authenticate_rocketride_callback", None)
+        if not callable(authenticate):
+            return JSONResponse(
+                status_code=503,
+                content={"error": "rocketride_callback_unconfigured"},
+            )
+        try:
+            authenticate(request.headers.get("authorization", ""))
+        except CallbackUnauthorizedError:
+            return JSONResponse(status_code=401, content={"error": "unauthorized"})
+        except ApiBackendError:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "rocketride_callback_unconfigured"},
+            )
         if request.headers.get("content-type", "").split(";", 1)[0] != "application/json":
             return JSONResponse(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,

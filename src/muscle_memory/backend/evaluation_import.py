@@ -37,11 +37,11 @@ _RESULTS = TypeAdapter(tuple[PolicyEpisodeResult, ...])
 _REQUIRED_ARTIFACT_FIELDS = {
     "schema_version",
     "heldout_bundle_sha256",
-    "candidate_checkpoint_sha256",
     "baseline_results",
     "candidate_results",
     "promotion_decision",
 }
+_OPTIONAL_ARTIFACT_FIELDS = {"candidate_checkpoint_sha256"}
 
 
 class HeldOutEvaluationAdmissionError(ValueError):
@@ -83,7 +83,13 @@ def admit_held_out_evaluation(
         raise HeldOutEvaluationAdmissionError(
             "held-out artifact does not match the independently configured canonical hash"
         )
-    if set(payload) != _REQUIRED_ARTIFACT_FIELDS or payload.get("schema_version") != 1:
+    if (
+        not _REQUIRED_ARTIFACT_FIELDS.issubset(payload)
+        or not set(payload).issubset(
+            _REQUIRED_ARTIFACT_FIELDS | _OPTIONAL_ARTIFACT_FIELDS
+        )
+        or payload.get("schema_version") != 1
+    ):
         raise HeldOutEvaluationAdmissionError(
             "held-out artifact has unsupported, missing, or unexpected fields"
         )
@@ -117,12 +123,20 @@ def admit_held_out_evaluation(
         raise HeldOutEvaluationAdmissionError(
             "candidate checkpoint could not be independently verified"
         ) from exc
+    actual_checkpoint_hash = _sha256_file(candidate_checkpoint_path)
     declared_checkpoint_hash = payload.get("candidate_checkpoint_sha256")
     if (
-        declared_checkpoint_hash != _sha256_file(candidate_checkpoint_path)
+        (
+            declared_checkpoint_hash is not None
+            and declared_checkpoint_hash != actual_checkpoint_hash
+        )
         or candidate_results[0].policy_id != candidate_policy.policy_id
         or candidate_results[0].policy_hash != candidate_policy.policy_hash
-        or declared_checkpoint_hash != candidate_policy.policy_hash
+        or actual_checkpoint_hash != candidate_policy.policy_hash
+        or any(
+            result.policy_hash != actual_checkpoint_hash
+            for result in candidate_results
+        )
     ):
         raise HeldOutEvaluationAdmissionError(
             "candidate checkpoint identity does not match the held-out artifact"

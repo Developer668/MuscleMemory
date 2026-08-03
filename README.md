@@ -291,6 +291,20 @@ Evaluate V0 and V1 on identical seeds and compare: success rate, collisions per 
 
 Taking different actions on identical input is **not** proof of learning. Muscle Memory proves learning through improved performance across unseen worlds.
 
+### Current policy evidence
+
+No learned checkpoint is promoted yet. `delivery-v1` was rejected by its paired
+held-out evaluation: it matched V0 at 45% success while producing a 25%
+collision-episode rate and five falls. That result remains immutable rollback
+evidence.
+
+`delivery-v2-sensor-fusion-hysteresis` improved over V0 on its final disjoint
+development audit (66.7% versus 25% success, 8.3% collision episodes, and median
+clearance of 0.315 m), but it still recorded two falls and missed the 80% success
+gate. It is therefore rejected before held-out access. The held-out CLI verifies
+the development decision and checkpoint hash before loading the frozen split, so
+this candidate cannot be tuned or promoted from those worlds.
+
 ---
 
 ## Stable version definition

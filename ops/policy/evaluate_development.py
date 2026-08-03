@@ -87,7 +87,11 @@ def main() -> int:
     payload = {
         "schema_version": 1,
         "purpose": "development_only_not_held_out",
-        "selection_status": "locked_for_blinded_heldout_evaluation",
+        "selection_status": (
+            "eligible_for_blinded_heldout_evaluation"
+            if decision.promotable
+            else "rejected_before_heldout"
+        ),
         "seed_search_start": args.seed_start,
         "seed_search_rule": (
             "first validated worlds with an expert path at most 8.2 m "
@@ -106,7 +110,7 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(asdict(decision), indent=2), flush=True)
-    return 0
+    return 0 if decision.promotable else 2
 
 
 if __name__ == "__main__":

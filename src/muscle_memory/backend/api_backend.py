@@ -12,6 +12,7 @@ from muscle_memory.api.adapters import (
     asset_provider_view,
     orchestration_provider_view,
     pipeline_run_view,
+    promotion_eligibility_view,
     reviewed_execution_view,
     telemetry_view,
 )
@@ -60,6 +61,11 @@ from muscle_memory.backend.episode_runtime import OperationalEpisodeRuntime
 from muscle_memory.backend.evidence_admission import (
     TrustedWorkflowEvidenceAdmitter,
     WorkflowEvidenceAdmissionError,
+)
+from muscle_memory.backend.policy_decisions import (
+    PolicyDecisionEvidenceError,
+    admitted_promotion_evidence,
+    record_reviewed_numeric_decision,
 )
 from muscle_memory.backend.providers import ProviderBundle
 from muscle_memory.backend.rocketride_callback import FixedStepDispatcher
@@ -116,6 +122,7 @@ class MuscleMemoryApiBackend:
         providers: ProviderBundle,
         approval_ledger: CoordinatorApprovalLedger,
         rocketride_callback: FixedStepDispatcher | None = None,
+        stable_policy_alias: str = "stable",
     ) -> None:
         self.coordinator = coordinator
         self.journal = journal
@@ -123,6 +130,7 @@ class MuscleMemoryApiBackend:
         self.providers = providers
         self.approval_ledger = approval_ledger
         self.rocketride_callback = rocketride_callback
+        self.stable_policy_alias = stable_policy_alias
         self.orchestrator = SponsorOrchestrator(providers.guild, providers.rocketride)
         self.evidence_admitter = TrustedWorkflowEvidenceAdmitter(
             coordinator=coordinator,
@@ -165,6 +173,15 @@ class MuscleMemoryApiBackend:
             )
         return self.rocketride_callback.dispatch(encoded_envelope, authorization)
 
+    def authenticate_rocketride_callback(self, authorization: str) -> None:
+        if self.rocketride_callback is None:
+            raise ApiBackendError(
+                503,
+                "rocketride_callback_unconfigured",
+                "RocketRide callback configuration is unavailable",
+            )
+        self.rocketride_callback.authenticate(authorization)
+
     async def startup(self) -> None:
         if self._closed:
             raise RuntimeError("backend resources have already been closed")
@@ -173,6 +190,7 @@ class MuscleMemoryApiBackend:
         # A health probe also replays any append-only cache prefix to a recovered FalkorDB.
         self.providers.graph_memory.health()
         await self.providers.laserdata.initialize()
+        await self.episode_runtime.service.reconcile_provider_state()
         self._started = True
 
     async def shutdown(self) -> None:
@@ -196,10 +214,13 @@ class MuscleMemoryApiBackend:
         for index, consumer in enumerate(consumers_list):
             if consumer.provider != "LaserData consumer: post-episode-graph-handoff":
                 continue
-            if graph.state not in {
+            if (
+                consumer.state is not ProviderOperationalState.CONFIGURED
+                and graph.state not in {
                 ProviderOperationalState.HEALTHY,
                 ProviderOperationalState.END_TO_END_VERIFIED,
-            }:
+                }
+            ):
                 consumers_list[index] = consumer.model_copy(
                     update={
                         "state": ProviderOperationalState.CACHED,
@@ -335,6 +356,7 @@ class MuscleMemoryApiBackend:
                 created_at=created_at,
             )
             for requirement, created_at in self.coordinator.pending_approval_requirements()
+            if self._approval_is_executable(requirement.run_id, requirement.step)
         )
         approved = {item.submission.correction_id for item in self.journal.approvals()}
         rejected = set(self._correction_rejections())
@@ -359,6 +381,7 @@ class MuscleMemoryApiBackend:
         pending = {
             requirement.requirement_id: requirement
             for requirement, _ in self.coordinator.pending_approval_requirements()
+            if self._approval_is_executable(requirement.run_id, requirement.step)
         }
         requirement = pending.get(requirement_id)
         if requirement is None:
@@ -421,6 +444,8 @@ class MuscleMemoryApiBackend:
             )
         prior_review = self._reviewed.get(plan.run_id)
         if prior_review is not None:
+            if prior_review.guild_reviews.executable:
+                self._ensure_numeric_decision(prior_review)
             return reviewed_execution_view(prior_review)
         try:
             reviewed = await self.orchestrator.review(plan)
@@ -430,6 +455,15 @@ class MuscleMemoryApiBackend:
                 "guild_unavailable",
                 "Guild specialist review is unavailable",
             ) from exc
+        if reviewed.guild_reviews.executable:
+            try:
+                self._ensure_numeric_decision(reviewed)
+            except (CoordinatorIntegrityError, PolicyDecisionEvidenceError, ValueError) as exc:
+                raise ApiBackendError(
+                    422,
+                    "workflow_numeric_evidence_invalid",
+                    "reviewed policy action does not match admitted paired evidence",
+                ) from exc
         self.coordinator.record_workflow_review(
             plan.run_id,
             _canonical_adapter_json(_REVIEW_ADAPTER, reviewed),
@@ -678,13 +712,21 @@ class MuscleMemoryApiBackend:
         policies = {item.policy_id: item for item in self.coordinator.evaluated_checkpoints()}
         if baseline_policy_id not in policies or candidate_policy_id not in policies:
             raise ApiBackendError(404, "policy_not_found", "evaluated policy was not found")
-        return PromotionEligibility(
-            baseline_policy_id=baseline_policy_id,
-            candidate_policy_id=candidate_policy_id,
-            held_out_episode_count=0,
-            checks={"exact_paired_held_out_evidence_available": False},
-            numerically_eligible=False,
-            evidence_hash=None,
+        try:
+            admitted = admitted_promotion_evidence(
+                self.coordinator,
+                baseline_policy_id=baseline_policy_id,
+                candidate_policy_id=candidate_policy_id,
+            )
+        except PolicyDecisionEvidenceError as exc:
+            raise ApiBackendError(
+                409,
+                "paired_evaluation_evidence_unavailable",
+                "exact admitted paired evaluation evidence is unavailable",
+            ) from exc
+        return promotion_eligibility_view(
+            admitted.decision,
+            evidence_hash=admitted.artifact_hash,
         )
 
     async def asset_statuses(self) -> tuple[AssetStatus, ...]:
@@ -712,6 +754,24 @@ class MuscleMemoryApiBackend:
                 "unavailable until deterministic physical properties are supplied"
             ),
         )
+
+    def _ensure_numeric_decision(self, reviewed: ReviewedExecution) -> None:
+        record_reviewed_numeric_decision(
+            self.coordinator,
+            reviewed.plan,
+            stable_alias=self.stable_policy_alias,
+            decided_at=datetime.now(UTC),
+        )
+
+    def _approval_is_executable(self, run_id: str, step: PipelineStep) -> bool:
+        reviewed = self._reviewed.get(run_id)
+        if reviewed is None or not reviewed.guild_reviews.executable:
+            return False
+        if self.coordinator.workflow_guild_evidence(run_id) is None:
+            return False
+        if step is PipelineStep.PROMOTE_OR_ROLL_BACK:
+            return self.coordinator.numeric_policy_decision_for_run(run_id) is not None
+        return True
 
     def _identity(self, episode_id: str):  # type: ignore[no-untyped-def]
         return next(

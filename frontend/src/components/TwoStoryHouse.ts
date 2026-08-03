@@ -6,6 +6,7 @@ export const STORY_HEIGHT = 3.12;
 
 export type TwoStoryHouseModel = {
   root: THREE.Group;
+  groundFloor: THREE.Group;
   upperFloor: THREE.Group;
 };
 
@@ -186,6 +187,7 @@ function makeDiningChair(upholstery: THREE.Material): THREE.Group {
 
 function makeSofa(): THREE.Group {
   const sofa = new THREE.Group();
+  sofa.name = "procedural-sofa";
   const fabric = new THREE.MeshStandardMaterial({
     map: fabricTexture("#536961", "rgba(255,255,255,.06)"),
     color: "#667d74",
@@ -353,12 +355,15 @@ function addLivingRoom(parent: THREE.Group): void {
   const resident = makeResident();
   resident.position.set(3.55, 0.03, -3.42);
   parent.add(resident);
-  addBox(parent, [1.55, 0.11, 0.84], [3.55, 0.5, -1.6], surface("#724b34", 0.5));
+  const coffeeTable = new THREE.Group();
+  coffeeTable.name = "procedural-coffee-table";
+  addBox(coffeeTable, [1.55, 0.11, 0.84], [3.55, 0.5, -1.6], surface("#724b34", 0.5));
   for (const x of [2.96, 4.14]) {
     for (const z of [-1.9, -1.3]) {
-      parent.add(item(new THREE.CylinderGeometry(0.028, 0.04, 0.45, 10), surface("#282b2a", 0.28, 0.7), [x, 0.24, z]));
+      coffeeTable.add(item(new THREE.CylinderGeometry(0.028, 0.04, 0.45, 10), surface("#282b2a", 0.28, 0.7), [x, 0.24, z]));
     }
   }
+  parent.add(coffeeTable);
   addBox(parent, [2.35, 0.52, 0.44], [3.55, 0.26, 0.05], surface("#6a4b38", 0.58));
   addBox(parent, [1.62, 0.9, 0.08], [3.55, 1.25, -0.18], surface("#171b1b", 0.12, 0.38));
   addBox(parent, [1.5, 0.04, 0.03], [3.55, 0.78, -0.11], surface("#2b2f2f", 0.22, 0.65));
@@ -374,18 +379,21 @@ function addLivingRoom(parent: THREE.Group): void {
 
 function addDining(parent: THREE.Group): void {
   const oak = surface("#76503a", 0.52);
-  addBox(parent, [2.8, 0.14, 1.28], [0.05, 0.78, 2.73], oak);
+  const diningTable = new THREE.Group();
+  diningTable.name = "procedural-dining-table";
+  addBox(diningTable, [2.8, 0.14, 1.28], [0.05, 0.78, 2.73], oak);
   for (const x of [-1.05, 1.15]) {
-    for (const z of [2.3, 3.16]) parent.add(item(new THREE.CylinderGeometry(0.05, 0.07, 0.72, 12), surface("#393332", 0.38, 0.55), [x, 0.38, z]));
+    for (const z of [2.3, 3.16]) diningTable.add(item(new THREE.CylinderGeometry(0.05, 0.07, 0.72, 12), surface("#393332", 0.38, 0.55), [x, 0.38, z]));
   }
+  parent.add(diningTable);
   const upholstery = surface("#a7795e", 0.9);
   const placements: Array<[number, number, number]> = [
-    [-1.55, 2.43, Math.PI / 2],
-    [-1.55, 3.05, Math.PI / 2],
-    [1.65, 2.43, -Math.PI / 2],
-    [1.65, 3.05, -Math.PI / 2],
-    [0.05, 1.82, 0],
-    [0.05, 3.65, Math.PI],
+    [-1.58, 2.39, Math.PI / 2 + 0.08],
+    [-1.5, 3.12, Math.PI / 2 - 0.05],
+    [1.72, 2.34, -Math.PI / 2 - 0.12],
+    [1.62, 3.08, -Math.PI / 2 + 0.04],
+    [-0.12, 1.7, -0.11],
+    [0.18, 3.76, Math.PI + 0.07],
   ];
   for (const [x, z, rotation] of placements) {
     const chair = makeDiningChair(upholstery);
@@ -424,12 +432,85 @@ function addFoyerAndStudy(parent: THREE.Group): void {
   chair.position.set(4.78, 0, 2.78);
   chair.rotation.y = Math.PI;
   parent.add(chair);
-  addBox(parent, [1.76, 2.15, 0.32], [6.02, 1.08, 1.65], surface("#604837", 0.62));
-  for (let shelf = 0; shelf < 4; shelf += 1) addBox(parent, [1.62, 0.06, 0.36], [6.02, 0.34 + shelf * 0.52, 1.45], surface("#302a26", 0.48));
+  const bookshelf = new THREE.Group();
+  bookshelf.name = "procedural-study-bookshelf";
+  addBox(bookshelf, [1.76, 2.15, 0.32], [6.02, 1.08, 1.65], surface("#604837", 0.62));
+  for (let shelf = 0; shelf < 4; shelf += 1) addBox(bookshelf, [1.62, 0.06, 0.36], [6.02, 0.34 + shelf * 0.52, 1.45], surface("#302a26", 0.48));
   for (let book = 0; book < 12; book += 1) {
     const shelf = book % 3;
     const x = 5.38 + (book % 4) * 0.28;
-    addBox(parent, [0.18, 0.3 + (book % 2) * 0.08, 0.19], [x, 0.55 + shelf * 0.52, 1.39], surface(["#a05d4c", "#506b69", "#c29a5d"][book % 3], 0.84));
+    addBox(bookshelf, [0.18, 0.3 + (book % 2) * 0.08, 0.19], [x, 0.55 + shelf * 0.52, 1.39], surface(["#a05d4c", "#506b69", "#c29a5d"][book % 3], 0.84));
+  }
+  parent.add(bookshelf);
+}
+
+function addBookStack(
+  parent: THREE.Group,
+  position: [number, number, number],
+  rotation = 0,
+  count = 3,
+): void {
+  const colors = ["#b95f4c", "#426b6b", "#d1a24f", "#6a5574"];
+  for (let index = 0; index < count; index += 1) {
+    addBox(
+      parent,
+      [0.38 - index * 0.025, 0.045, 0.26],
+      [position[0] + index * 0.015, position[1] + index * 0.052, position[2]],
+      surface(colors[index % colors.length], 0.86),
+      [0, rotation + index * 0.09, 0],
+    );
+  }
+}
+
+function addLivedInClutter(ground: THREE.Group, upper: THREE.Group): void {
+  const cardboard = surface("#ad7548", 0.92);
+  const ceramic = surface("#e9e2d5", 0.38);
+  const clothBlue = surface("#496f83", 0.96);
+  const clothCoral = surface("#b96f5b", 0.96);
+
+  // Entryway overflow: parcels, a slouched tote, and yesterday's mail.
+  addBox(ground, [0.62, 0.42, 0.48], [-4.05, 0.21, 3.88], cardboard, [0, -0.14, 0]);
+  addBox(ground, [0.44, 0.28, 0.36], [-4.48, 0.14, 3.6], cardboard, [0, 0.2, 0]);
+  const tote = item(new THREE.SphereGeometry(0.29, 18, 12), clothCoral, [-5.85, 0.23, 3.42], [0, 0.35, 0]);
+  tote.scale.set(0.72, 0.92, 0.42);
+  ground.add(tote);
+  addBookStack(ground, [-5.47, 0.61, 2.74], 0.12, 3);
+
+  // A used living room: blanket, mug, magazines, and a toy left in the route's periphery.
+  addBox(ground, [0.78, 0.035, 0.54], [2.66, 0.83, -3.44], clothCoral, [0.18, 0.12, -0.18]);
+  ground.add(item(new THREE.CylinderGeometry(0.09, 0.075, 0.13, 20), ceramic, [3.12, 0.63, -1.52]));
+  addBookStack(ground, [3.88, 0.59, -1.61], -0.18, 2);
+  const toy = new THREE.Group();
+  addBox(toy, [0.28, 0.16, 0.18], [0, 0.14, 0], surface("#d6a542", 0.74));
+  for (const x of [-0.11, 0.11]) {
+    for (const z of [-0.07, 0.07]) toy.add(item(new THREE.CylinderGeometry(0.045, 0.045, 0.04, 12), surface("#303535", 0.56), [x, 0.07, z], [Math.PI / 2, 0, 0]));
+  }
+  toy.position.set(2.1, 0, -0.47);
+  toy.rotation.y = -0.35;
+  ground.add(toy);
+
+  // Kitchen and dining surfaces are in use, not showroom-clean.
+  addBox(ground, [0.52, 0.035, 0.32], [-2.62, 1.0, -1.82], surface("#8d5a3d", 0.66), [0, 0.1, 0]);
+  for (let index = 0; index < 4; index += 1) {
+    ground.add(item(new THREE.SphereGeometry(0.075 + index * 0.006, 16, 12), surface(["#d8894b", "#b74d3d", "#d3b34d"][index % 3], 0.78), [-2.8 + index * 0.13, 1.08, -1.82 + (index % 2) * 0.06]));
+  }
+  addBookStack(ground, [-0.36, 0.93, 2.7], 0.24, 2);
+  ground.add(item(new THREE.CylinderGeometry(0.13, 0.11, 0.12, 20), ceramic, [0.48, 0.93, 2.78]));
+
+  // Upstairs has laundry, rumpled clothes, bedside reading, and scattered blocks.
+  const laundry = item(new THREE.SphereGeometry(0.34, 18, 12), clothBlue, [2.45, STORY_HEIGHT + 0.2, 0.02]);
+  laundry.scale.set(1.1, 0.52, 0.82);
+  upper.add(laundry);
+  for (let index = 0; index < 6; index += 1) {
+    const color = ["#d5a53e", "#a65c4e", "#4f7770", "#d7d2c5"][index % 4];
+    const block = addBox(upper, [0.16, 0.16, 0.16], [-1.42 + (index % 3) * 0.24, STORY_HEIGHT + 0.1, 2.05 + Math.floor(index / 3) * 0.22], surface(color, 0.8));
+    block.rotation.y = index * 0.31;
+  }
+  addBookStack(upper, [2.04, STORY_HEIGHT + 0.54, -3.5], -0.1, 3);
+  addBox(upper, [0.92, 0.035, 0.66], [-2.35, STORY_HEIGHT + 0.77, -2.1], clothBlue, [-0.16, 0.08, 0.13]);
+  addBox(upper, [0.68, 0.035, 0.42], [-4.52, STORY_HEIGHT + 0.74, 3.82], clothCoral, [0, 0.06, 0]);
+  for (let index = 0; index < 3; index += 1) {
+    upper.add(item(new THREE.CylinderGeometry(0.035, 0.04, 0.18 + index * 0.05, 14), surface(["#d8b45a", "#668c82", "#bd7160"][index], 0.58), [-5.84 + index * 0.16, STORY_HEIGHT + 0.82, 3.88]));
   }
 }
 
@@ -487,10 +568,14 @@ function addUpperRooms(upper: THREE.Group): void {
   }
   const masterRug = new THREE.MeshStandardMaterial({ map: fabricTexture("#7a8882", "rgba(255,255,255,.06)"), roughness: 0.96 });
   addBox(upper, [3.7, 0.025, 2.95], [3.7, STORY_HEIGHT + 0.03, -2.22], masterRug);
-  addBox(upper, [1.8, 2.2, 0.58], [5.62, STORY_HEIGHT + 1.1, -0.2], surface("#786553", 0.7));
-  addBox(upper, [1.6, 1.85, 0.05], [5.62, STORY_HEIGHT + 1.18, -0.52], new THREE.MeshPhysicalMaterial({ color: "#bacfd5", roughness: 0.08, metalness: 0.2, clearcoat: 1 }));
+  const wardrobe = new THREE.Group();
+  wardrobe.name = "procedural-master-wardrobe";
+  addBox(wardrobe, [1.8, 2.2, 0.58], [5.62, STORY_HEIGHT + 1.1, -0.2], surface("#786553", 0.7));
+  addBox(wardrobe, [1.6, 1.85, 0.05], [5.62, STORY_HEIGHT + 1.18, -0.52], new THREE.MeshPhysicalMaterial({ color: "#bacfd5", roughness: 0.08, metalness: 0.2, clearcoat: 1 }));
+  upper.add(wardrobe);
 
   const secondBed = makeBed(2.2, 2.05, "#a8bec3");
+  secondBed.name = "procedural-second-bed";
   secondBed.position.set(-2.25, STORY_HEIGHT, -2.7);
   upper.add(secondBed);
   addBox(upper, [1.72, 0.1, 0.65], [-5.18, STORY_HEIGHT + 0.77, -1.16], surface("#76513a", 0.54));
@@ -585,6 +670,7 @@ export function buildTwoStoryHouse(): TwoStoryHouseModel {
   addStairs(ground);
   addUpperArchitecture(upperFloor);
   addUpperRooms(upperFloor);
+  addLivedInClutter(ground, upperFloor);
 
   const firstLight = new THREE.RectAreaLight("#ffd6a0", 5.5, 4.5, 3.2);
   firstLight.position.set(2.8, 2.72, -1.8);
@@ -599,5 +685,5 @@ export function buildTwoStoryHouse(): TwoStoryHouseModel {
   upperLight.rotation.x = -Math.PI / 2;
   upperFloor.add(upperLight);
 
-  return { root, upperFloor };
+  return { root, groundFloor: ground, upperFloor };
 }

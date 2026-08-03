@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, cast
 
+from pydantic import TypeAdapter, ValidationError
+
 from muscle_memory.coordinator import CoordinatorStore
 from muscle_memory.coordinator.models import PolicyAction
 from muscle_memory.episodes import EpisodeClosure, EpisodeService
@@ -33,11 +35,13 @@ from muscle_memory.orchestration.evidence import (
     EvaluationPolicyEvidence,
     GuildEvidenceBundle,
 )
+from muscle_memory.orchestration.service import ReviewedExecution
 
 CALLBACK_PATH = "/webhook/muscle-memory-fixed-step"
 MAX_CALLBACK_BODY_BYTES = 1_100_000
 _HEX_256 = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+_REVIEWED_EXECUTION = TypeAdapter(ReviewedExecution)
 
 
 class CallbackContractError(ValueError):
@@ -202,15 +206,14 @@ class FixedStepDispatcher:
             raise RuntimeError("RocketRide handlers do not match the fixed pipeline")
 
     def dispatch(self, encoded: str, authorization: str) -> dict[str, object]:
-        expected = f"Bearer {self._credential.bearer_token}"
-        if not hmac.compare_digest(authorization, expected):
-            raise CallbackUnauthorizedError("RocketRide callback authentication failed")
+        self.authenticate(authorization)
         envelope = StepEnvelope.parse(encoded)
         request_sha256 = sha256_text(encoded)
         with self._lock:
             plan = self._coordinator.workflow_plan(envelope.run_id)
             if plan is None or plan.digest != envelope.plan_digest:
                 raise CallbackContractError("callback references an unknown execution plan")
+            self._require_executable_review(plan)
             command = plan.commands[FIXED_PIPELINE.index(envelope.step)]
             if command.payload != envelope.payload:
                 raise CallbackContractError("callback payload does not match the immutable plan")
@@ -231,6 +234,15 @@ class FixedStepDispatcher:
                 )
             try:
                 output = dict(self._handlers[envelope.step](plan, envelope.payload))
+                output.setdefault(
+                    "operation_execution",
+                    self._synchronous_operation_execution(
+                        plan,
+                        envelope.step,
+                        request_sha256=request_sha256,
+                    ),
+                )
+                self._validate_operation_execution(output["operation_execution"])
                 output_json = canonical_json(output)
             except (CallbackContractError, CallbackApprovalError, CallbackSequenceError):
                 raise
@@ -257,6 +269,13 @@ class FixedStepDispatcher:
             )
             return result
 
+    def authenticate(self, authorization: str) -> None:
+        """Authenticate a callback before its request body is consumed."""
+
+        expected = f"Bearer {self._credential.bearer_token}"
+        if not hmac.compare_digest(authorization, expected):
+            raise CallbackUnauthorizedError("RocketRide callback authentication failed")
+
     def _verify_approval(self, plan: ExecutionPlan, envelope: StepEnvelope) -> None:
         requirement = next(
             (
@@ -279,6 +298,19 @@ class FixedStepDispatcher:
         expected = self._approval_payload(requirement, decision.decision_id, decision)
         if evidence != ApprovalEvidence(**expected):
             raise CallbackApprovalError("approval evidence does not match the coordinator ledger")
+
+    def _require_executable_review(self, plan: ExecutionPlan) -> None:
+        encoded = self._coordinator.workflow_review(plan.run_id)
+        if encoded is None:
+            raise CallbackContractError("callback requires a durable Guild review")
+        try:
+            reviewed = _REVIEWED_EXECUTION.validate_json(encoded)
+        except ValidationError as exc:
+            raise CallbackContractError("durable Guild review is invalid") from exc
+        if reviewed.plan != plan or not reviewed.guild_reviews.executable:
+            raise CallbackContractError(
+                "all three exact-plan Guild reviews must recommend proceed"
+            )
 
     @staticmethod
     def _approval_payload(
@@ -331,6 +363,12 @@ class FixedStepDispatcher:
             "success": closure.result.success,
             "failed_reasons": list(closure.result.failed_reasons),
             "telemetry_digest": closure.telemetry_digest,
+            "operation_execution": self._async_job_completion(
+                job_kind="simulation_episode",
+                source_id=closure.identity.episode_id,
+                completion_artifact_sha256=closure.telemetry_digest,
+                completed_at=closure.closed_at.isoformat(),
+            ),
         }
 
     def _summarize_telemetry(
@@ -407,6 +445,12 @@ class FixedStepDispatcher:
             "checkpoint_hash": checkpoint.checkpoint_hash,
             "immutable_checkpoint_confirmed": True,
             "reward_change_requested": payload.get("reward_change_requested"),
+            "operation_execution": self._async_job_completion(
+                job_kind="candidate_training",
+                source_id=checkpoint.policy_id,
+                completion_artifact_sha256=checkpoint.checkpoint_hash,
+                completed_at=checkpoint.evaluated_at.isoformat(),
+            ),
         }
 
     def _evaluate_candidate_policy(
@@ -417,7 +461,11 @@ class FixedStepDispatcher:
         evidence = self._required_evidence(plan).evaluation.evaluation_evidence
         baseline = self._checkpoint(str(payload.get("baseline_policy_id", "")))
         candidate = self._checkpoint(str(payload.get("candidate_policy_id", "")))
-        self._verify_checkpoint(baseline, evidence.baseline)
+        self._verify_checkpoint(
+            baseline,
+            evidence.baseline,
+            require_current_artifact_binding=False,
+        )
         self._verify_checkpoint(candidate, evidence.candidate)
         return {
             "heldout_world_set_id": evidence.heldout_world_set_id,
@@ -427,6 +475,12 @@ class FixedStepDispatcher:
             "candidate_policy_id": candidate.policy_id,
             "candidate_evidence_hash": candidate.evaluation_evidence_hash,
             "candidate_metrics": json.loads(candidate.metrics_json),
+            "operation_execution": self._async_job_completion(
+                job_kind="paired_policy_evaluation",
+                source_id=candidate.policy_id,
+                completion_artifact_sha256=candidate.evaluation_evidence_hash,
+                completed_at=candidate.evaluated_at.isoformat(),
+            ),
         }
 
     def _promote_or_roll_back(
@@ -498,12 +552,17 @@ class FixedStepDispatcher:
     def _verify_checkpoint(
         checkpoint: EvaluatedPolicyVersion,
         evidence: EvaluationPolicyEvidence | CandidateEvaluationEvidence,
+        *,
+        require_current_artifact_binding: bool = True,
     ) -> None:
         if (
             checkpoint.evaluation_split != "held_out"
             or checkpoint.policy_id != evidence.policy_id
             or checkpoint.checkpoint_hash != evidence.policy_checksum
-            or checkpoint.evaluation_evidence_hash != evidence.evaluation_id
+            or (
+                require_current_artifact_binding
+                and checkpoint.evaluation_evidence_hash != evidence.evaluation_id
+            )
         ):
             raise CallbackContractError("evaluated checkpoint does not match trusted evidence")
         metrics = json.loads(checkpoint.metrics_json)
@@ -525,6 +584,82 @@ class FixedStepDispatcher:
             metrics.get(key) != value for key, value in expected.items()
         ):
             raise CallbackContractError("checkpoint metrics do not match trusted evidence")
+
+    @staticmethod
+    def _synchronous_operation_execution(
+        plan: ExecutionPlan,
+        step: PipelineStep,
+        *,
+        request_sha256: str,
+    ) -> dict[str, object]:
+        return {
+            "contract_version": 1,
+            "execution_mode": "synchronous_domain_operation",
+            "invocation_id": sha256_text(
+                f"{plan.digest}:{step.value}:{request_sha256}:operation"
+            ),
+            "provider": "rocketride.ai",
+            "step": step.value,
+        }
+
+    @staticmethod
+    def _async_job_completion(
+        *,
+        job_kind: str,
+        source_id: str,
+        completion_artifact_sha256: str,
+        completed_at: str,
+    ) -> dict[str, object]:
+        if _HEX_256.fullmatch(completion_artifact_sha256) is None:
+            raise CallbackContractError("async job completion hash is invalid")
+        return {
+            "completion_artifact_sha256": completion_artifact_sha256,
+            "completed_at": completed_at,
+            "contract_version": 1,
+            "execution_mode": "admitted_async_job_completion",
+            "job_id": sha256_text(
+                f"{job_kind}:{source_id}:{completion_artifact_sha256}"
+            ),
+            "job_kind": job_kind,
+            "provider": "muscle-memory-worker",
+            "source_id": source_id,
+        }
+
+    @staticmethod
+    def _validate_operation_execution(value: object) -> None:
+        if not isinstance(value, dict) or value.get("contract_version") != 1:
+            raise CallbackContractError("operation execution contract is missing")
+        mode = value.get("execution_mode")
+        if mode == "synchronous_domain_operation":
+            required = {
+                "contract_version",
+                "execution_mode",
+                "invocation_id",
+                "provider",
+                "step",
+            }
+            digest = value.get("invocation_id")
+        elif mode == "admitted_async_job_completion":
+            required = {
+                "completion_artifact_sha256",
+                "completed_at",
+                "contract_version",
+                "execution_mode",
+                "job_id",
+                "job_kind",
+                "provider",
+                "source_id",
+            }
+            digest = value.get("job_id")
+            completion = value.get("completion_artifact_sha256")
+            if not isinstance(completion, str) or _HEX_256.fullmatch(completion) is None:
+                raise CallbackContractError("async job completion artifact is invalid")
+        else:
+            raise CallbackContractError("operation execution mode is invalid")
+        if set(value) != required:
+            raise CallbackContractError("operation execution contract has unexpected fields")
+        if not isinstance(digest, str) or _HEX_256.fullmatch(digest) is None:
+            raise CallbackContractError("operation execution identity is invalid")
 
 
 __all__ = [

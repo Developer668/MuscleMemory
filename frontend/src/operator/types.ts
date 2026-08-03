@@ -104,6 +104,8 @@ export interface LivePolicyOption {
   policy_hash: string;
   evaluated_episode_count: number;
   promotable: boolean;
+  deployment_status: "stable_deployed" | "candidate_live_test";
+  is_default: boolean;
 }
 
 export interface LiveEpisodeOptions {
@@ -114,6 +116,7 @@ export interface LiveEpisodeOptions {
   catalog_sha256: string | null;
   seeds: number[];
   policies: LivePolicyOption[];
+  default_policy_id: string | null;
   video_products: VideoProduct[];
   maximum_duration_seconds: number | null;
 }
