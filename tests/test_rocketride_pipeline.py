@@ -373,3 +373,49 @@ def test_live_verifier_reports_unconfigured_without_calling_sdk() -> None:
     assert evidence["verified"] is False
     assert evidence["state"] == "unconfigured"
     assert "ROCKETRIDE_URI" in evidence["missing"]
+
+
+def test_live_verifier_preserves_callback_contract_errors(tmp_path: Path) -> None:
+    envelope_path = tmp_path / "envelope.json"
+    envelope_path.write_text(
+        _encoded("validate_world", _payloads()["validate_world"]),
+        encoding="utf-8",
+    )
+
+    class RejectingClient(_FakeRocketRideClient):
+        async def send(
+            self,
+            token: str,
+            payload: str,
+            *,
+            objinfo: Mapping[str, object],
+            mimetype: str,
+        ) -> Mapping[str, object]:
+            del token, payload, objinfo, mimetype
+            return {
+                "text": [
+                    '{"error":"contract_violation",'
+                    '"detail":"callback references an unknown execution plan"}'
+                ],
+                "result_types": {"text": "text"},
+            }
+
+    config = LiveVerificationConfig(
+        uri="https://cloud.rocketride.ai",
+        api_key="provider-secret",
+        coordinator_url="https://coordinator.example.test",
+        coordinator_token=CALLBACK_TOKEN,
+        envelope_path=envelope_path,
+    )
+    events: list[object] = []
+
+    def factory(**kwargs: object) -> RejectingClient:
+        return RejectingClient(events, **kwargs)
+
+    exit_code, evidence = asyncio.run(
+        verify_live_provider(config, client_factory=factory)
+    )
+
+    assert exit_code == 1
+    assert evidence["state"] == "unhealthy"
+    assert "unknown execution plan" in evidence["detail"]

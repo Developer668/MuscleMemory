@@ -53,6 +53,13 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: xvfb-run --auto-servernum uv run pytest
 
+      - name: Run simulation and API contract smoke checks
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          uv run mm-smoke
+          uv run python -m ops.api.validate_openapi
+
       - name: Install Node.js
         uses: actions/setup-node@v5
         with:
@@ -69,6 +76,14 @@ jobs:
         run: |
           npm run lint
           npm run build
+
+      - name: Install Chromium for browser smoke tests
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Exercise public and operator browser flows
+        working-directory: frontend
+        run: npm run test:e2e
 
   deploy:
     name: Deploy Daytona production

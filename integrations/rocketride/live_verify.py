@@ -128,7 +128,17 @@ def _validated_component_ids(value: object) -> tuple[str, ...]:
 
 
 def _extract_result(response: object) -> str:
+    def callback_error(value: object) -> None:
+        if not isinstance(value, Mapping) or "error" not in value:
+            return
+        error = value.get("error")
+        detail = value.get("detail")
+        message = detail if isinstance(detail, str) and detail.strip() else error
+        if isinstance(message, str) and message.strip():
+            raise ContractError(f"RocketRide callback rejected request: {message}")
+
     if isinstance(response, Mapping):
+        callback_error(response)
         required = {
             "contract_version",
             "output",
@@ -148,11 +158,13 @@ def _extract_result(response: object) -> str:
             if isinstance(candidate, list) and len(candidate) == 1:
                 candidate = candidate[0]
             if isinstance(candidate, Mapping):
+                callback_error(candidate)
                 return canonical_json(dict(candidate))
             if isinstance(candidate, str):
                 for decoded in _decode_json_values(candidate):
                     if isinstance(decoded, dict) and set(decoded) == required:
                         return canonical_json(decoded)
+                    callback_error(decoded)
     raise ContractError("RocketRide response does not contain one typed callback result")
 
 
@@ -279,6 +291,12 @@ async def verify_live_provider(
             "detail": "real RocketRide task returned a validated coordinator result",
         }
     except Exception as exc:
+        message = " ".join(str(exc).split())
+        if len(message) > 512:
+            message = f"{message[:509]}..."
+        detail = f"live verification failed ({type(exc).__name__})"
+        if message:
+            detail = f"{detail}: {message}"
         return 1, {
             "provider": "rocketride.ai",
             "mode": "live",
@@ -286,7 +304,7 @@ async def verify_live_provider(
             "verified": False,
             "task_token_sha256": sha256_text(token) if token else None,
             "pipeline_sha256": cast(dict[str, Any], bundle["pipeline"])["pipeline_sha256"],
-            "detail": f"live verification failed ({type(exc).__name__})",
+            "detail": detail,
             "pipeline_validation_received": validation is not None,
         }
 

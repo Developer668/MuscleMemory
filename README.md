@@ -221,6 +221,14 @@ The website has two connected surfaces:
   shows how experience changes behavior.
 - **Operator console:** live simulation, third-person view, robot POV, policy selection, world
   selection, episode progress, approvals, replay, and provider health.
+- **Episode Review:** a searchable operational ledger with persisted operator notes, reversible
+  note archiving, and a versioned JSON export of the selected episode evidence.
+- **Training history:** each bounded task-policy job writes an atomic manifest beside its immutable
+  artifacts. A restart reports interrupted work as `failed/process_restart` instead of losing it.
+
+The console's **Run demo loop** is an explicit synthetic preview for environments without an
+admitted live catalog and evaluated checkpoint. It is labeled as synthetic, can be exited back to
+live data, and is never used as provider-backed episode evidence.
 
 The console keeps all eight sensor categories visible. Its bottom timeline combines LaserData
 events, completion progress, safety markers, retrieved FalkorDB lessons, the current RocketRide
@@ -331,10 +339,15 @@ or persistent browser storage.
 uv sync --frozen --group dev
 uv run mm-verify-robot
 uv run mm-smoke
+uv run python -m ops.api.validate_openapi
 uv run ruff check .
 uv run mypy src
 uv run pytest
-cd frontend && npm run lint && npm run build
+cd frontend
+npm run lint
+npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
 
 `mm-verify-robot` fails closed if the frozen robot identity, controller, qualification evidence,

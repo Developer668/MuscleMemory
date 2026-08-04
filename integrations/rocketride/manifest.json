@@ -1,12 +1,12 @@
 {
   "algorithm": "sha256",
   "artifacts": {
-    "README.md": "7d738a658310ca7412b063a54d733f1c21f9b0640484293f8e5ed5fade9c8448",
+    "README.md": "7e6d8c8a463a19420dfde55e50004bbf4a2b0afb2931ea4cdb954839351118a2",
     "__init__.py": "1a5f1d5376853176aed7dcb117c76f788aa23c0b95462d7657be83325cd02fec",
     "callback.py": "c7c2e25a47c644073f0dd42fc96f138659bb5c52e62f0b5cca6f915a23cf2ee0",
     "envelope.schema.json": "ed9a63232973a964237eed3e2ad27e5575bf41f6d6bd4ceb20ad1da7da747860",
     "fixed-step.pipe": "6c607071a597c6254967481592a02097060e0893d57631bbb15dcc9359c7bfae",
-    "live_verify.py": "c9b2735ceb98d2d2fb9248686abddd0df52cdfad3eef2c87c4377b55d79f91e3",
+    "live_verify.py": "e3347368a428fd827fd56d98943ab3a91d7a9c35755f81ffcc6c62a4318cf6d4",
     "protocol.py": "ef7e2f73e131914c9c22ae2230f7d77d129b21ea21a676b2f5b207f3356cd5c1",
     "result.schema.json": "7905a4ce1ef8c7862754102b6e33f656611d8d674d66e8be64c0ccd77d35fa67",
     "runtime.py": "32fa00c02370aea19bdf2a32268533891662a9a8c158ac6c99b6be8536a65511",

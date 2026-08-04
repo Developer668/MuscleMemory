@@ -169,3 +169,7 @@ reviewed `.pipe` with `use`, sends the supplied real command, validates the type
 result, and terminates the task. Successful evidence includes the task-token checksum, pipeline hash,
 request hash, result hash, output hash, and provider state. Missing SDK/configuration exits
 nonzero and is labeled explicitly; it never emits fabricated provider proof.
+
+The envelope must reference a plan that already exists in the durable coordinator review ledger.
+An arbitrary well-formed envelope is rejected by the callback with `unknown execution plan`,
+which is an expected safety gate rather than provider proof.

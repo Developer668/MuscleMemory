@@ -1,0 +1,45 @@
+.mm-legal {
+  min-height: 100dvh;
+  color: #18201b;
+  background: #f0eee7;
+  font-family: "Manrope Variable", sans-serif;
+}
+
+.mm-legal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 76px;
+  padding: 0 clamp(20px, 6vw, 96px);
+  border-bottom: 1px solid rgba(24, 32, 27, 0.18);
+}
+
+.mm-legal__brand,
+.mm-legal__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.mm-legal__brand .brand-mark { width: 28px; height: 28px; }
+.mm-legal__back { color: #526158; }
+.mm-legal__back:hover { color: #d35e43; }
+.mm-legal__article { max-width: 900px; padding: clamp(72px, 10vw, 140px) 24px 120px; margin: 0 auto; }
+.mm-legal__article .mm-section-label { margin-bottom: 32px; color: #6b786e; }
+.mm-legal__article h1 { max-width: 780px; margin: 0; font-family: "Newsreader", serif; font-size: clamp(58px, 8vw, 112px); font-weight: 500; line-height: 0.84; letter-spacing: -0.055em; }
+.mm-legal__lede { max-width: 620px; margin: 34px 0 100px; color: #59665c; font-size: 15px; line-height: 1.65; }
+.mm-legal__article section { padding: 28px 0 32px; border-top: 1px solid rgba(24, 32, 27, 0.2); }
+.mm-legal__article h2 { margin: 0 0 14px; font-family: "Newsreader", serif; font-size: 33px; font-weight: 500; }
+.mm-legal__article section p { max-width: 680px; margin: 0; color: #59665c; font-size: 14px; line-height: 1.7; }
+
+@media (max-width: 560px) {
+  .mm-legal__header { min-height: 64px; }
+  .mm-legal__brand { font-size: 11px; }
+  .mm-legal__back { font-size: 10px; }
+  .mm-legal__article { padding: 58px 20px 80px; }
+  .mm-legal__lede { margin-bottom: 62px; font-size: 13px; }
+  .mm-legal__article h2 { font-size: 28px; }
+  .mm-legal__article section p { font-size: 13px; }
+}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from typing import Literal, cast
+from uuid import uuid4
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -33,6 +34,9 @@ from muscle_memory.api.models import (
     EpisodeDetail,
     EpisodeKind,
     EpisodeList,
+    EpisodeReviewNoteCreateRequest,
+    EpisodeReviewNoteList,
+    EpisodeReviewNoteUpdateRequest,
     EpisodeState,
     EpisodeSummary,
     MemoryGraphEdge,
@@ -58,6 +62,9 @@ from muscle_memory.api.models import (
     CorrectionKind as ApiCorrectionKind,
 )
 from muscle_memory.api.models import (
+    EpisodeReviewNote as ApiEpisodeReviewNote,
+)
+from muscle_memory.api.models import (
     HumanVerdict as ApiHumanVerdict,
 )
 from muscle_memory.backend.approvals import CoordinatorApprovalLedger
@@ -75,7 +82,13 @@ from muscle_memory.backend.policy_decisions import (
 from muscle_memory.backend.providers import ProviderBundle
 from muscle_memory.backend.rocketride_callback import FixedStepDispatcher
 from muscle_memory.coordinator import CoordinatorStore
-from muscle_memory.coordinator.models import CoordinatorIntegrityError, canonical_json
+from muscle_memory.coordinator.models import (
+    CoordinatorIntegrityError,
+    canonical_json,
+)
+from muscle_memory.coordinator.models import (
+    EpisodeReviewNote as CoordinatorEpisodeReviewNote,
+)
 from muscle_memory.episodes import (
     AuthenticatedHuman,
     CorrectionApproval,
@@ -586,6 +599,82 @@ class MuscleMemoryApiBackend:
             correction_ids=corrections,
         )
 
+    async def list_episode_notes(
+        self,
+        episode_id: str,
+        *,
+        include_archived: bool,
+    ) -> EpisodeReviewNoteList | None:
+        if self._identity(episode_id) is None:
+            return None
+        notes = self.coordinator.episode_review_notes(
+            episode_id,
+            include_archived=include_archived,
+        )
+        return EpisodeReviewNoteList(
+            episode_id=episode_id,
+            items=tuple(self._review_note_view(note) for note in notes),
+        )
+
+    async def create_episode_note(
+        self,
+        episode_id: str,
+        request: EpisodeReviewNoteCreateRequest,
+        principal: AuthenticatedPrincipal,
+    ) -> ApiEpisodeReviewNote:
+        if self._identity(episode_id) is None:
+            raise ApiBackendError(404, "episode_not_found", "episode was not found")
+        try:
+            note = self.coordinator.create_episode_review_note(
+                note_id=f"note-{uuid4().hex}",
+                episode_id=episode_id,
+                author_subject=principal.subject,
+                body=request.body,
+                tags=tuple(request.tags),
+                created_at=datetime.now(UTC),
+            )
+        except (CoordinatorIntegrityError, KeyError, ValueError) as exc:
+            raise ApiBackendError(
+                422,
+                "episode_note_invalid",
+                "the review note could not be persisted",
+            ) from exc
+        return self._review_note_view(note)
+
+    async def update_episode_note(
+        self,
+        episode_id: str,
+        note_id: str,
+        request: EpisodeReviewNoteUpdateRequest,
+        principal: AuthenticatedPrincipal,
+    ) -> ApiEpisodeReviewNote | None:
+        del principal
+        if self._identity(episode_id) is None:
+            return None
+        if not any(
+            note.note_id == note_id
+            for note in self.coordinator.episode_review_notes(
+                episode_id,
+                include_archived=True,
+            )
+        ):
+            return None
+        try:
+            note = self.coordinator.update_episode_review_note(
+                note_id,
+                body=request.body,
+                tags=None if request.tags is None else tuple(request.tags),
+                archived=request.archived,
+                updated_at=datetime.now(UTC),
+            )
+        except (CoordinatorIntegrityError, KeyError, ValueError) as exc:
+            raise ApiBackendError(
+                422,
+                "episode_note_invalid",
+                "the review note could not be updated",
+            ) from exc
+        return None if note is None else self._review_note_view(note)
+
     async def telemetry(
         self,
         episode_id: str,
@@ -1065,6 +1154,19 @@ class MuscleMemoryApiBackend:
         if step is PipelineStep.PROMOTE_OR_ROLL_BACK:
             return self.coordinator.numeric_policy_decision_for_run(run_id) is not None
         return True
+
+    @staticmethod
+    def _review_note_view(note: CoordinatorEpisodeReviewNote) -> ApiEpisodeReviewNote:
+        return ApiEpisodeReviewNote(
+            note_id=note.note_id,
+            episode_id=note.episode_id,
+            author_subject=note.author_subject,
+            body=note.body,
+            tags=note.tags,
+            created_at=note.created_at,
+            updated_at=note.updated_at,
+            archived=note.archived,
+        )
 
     def _identity(self, episode_id: str):  # type: ignore[no-untyped-def]
         return next(

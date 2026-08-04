@@ -61,6 +61,10 @@ from muscle_memory.api.models import (
     DecisionRequest,
     EpisodeDetail,
     EpisodeList,
+    EpisodeReviewNote,
+    EpisodeReviewNoteCreateRequest,
+    EpisodeReviewNoteList,
+    EpisodeReviewNoteUpdateRequest,
     LiveEpisodeOptionsView,
     LiveEpisodeStartRequest,
     LiveEpisodeStatusView,
@@ -437,6 +441,67 @@ def _build_router() -> APIRouter:
         result = await _runtime_from_request(request).backend.episode(episode_id)
         if result is None:
             raise _not_found("episode", episode_id)
+        return result
+
+    @router.get(
+        "/episodes/{episode_id}/notes",
+        response_model=EpisodeReviewNoteList,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="Read operator review notes for one operational episode",
+    )
+    async def episode_notes(
+        request: Request,
+        episode_id: Annotated[str, Path(min_length=1, max_length=128)],
+        include_archived: Annotated[bool, Query()] = False,
+    ) -> EpisodeReviewNoteList:
+        result = await _runtime_from_request(request).backend.list_episode_notes(
+            episode_id,
+            include_archived=include_archived,
+        )
+        if result is None:
+            raise _not_found("episode", episode_id)
+        return result
+
+    @router.post(
+        "/episodes/{episode_id}/notes",
+        response_model=EpisodeReviewNote,
+        status_code=status.HTTP_201_CREATED,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="Persist an authenticated operator review note",
+    )
+    async def create_episode_note(
+        request: Request,
+        episode_id: Annotated[str, Path(min_length=1, max_length=128)],
+        body: EpisodeReviewNoteCreateRequest,
+        principal: RequireEpisodePrincipal,
+    ) -> EpisodeReviewNote:
+        return await _runtime_from_request(request).backend.create_episode_note(
+            episode_id,
+            body,
+            principal,
+        )
+
+    @router.patch(
+        "/episodes/{episode_id}/notes/{note_id}",
+        response_model=EpisodeReviewNote,
+        responses=COMMON_ERROR_RESPONSES,
+        summary="Update or archive an authenticated operator review note",
+    )
+    async def update_episode_note(
+        request: Request,
+        episode_id: Annotated[str, Path(min_length=1, max_length=128)],
+        note_id: Annotated[str, Path(pattern=r"^note-[0-9a-f]{32}$")],
+        body: EpisodeReviewNoteUpdateRequest,
+        principal: RequireEpisodePrincipal,
+    ) -> EpisodeReviewNote:
+        result = await _runtime_from_request(request).backend.update_episode_note(
+            episode_id,
+            note_id,
+            body,
+            principal,
+        )
+        if result is None:
+            raise _not_found("episode_note", note_id)
         return result
 
     @router.get(

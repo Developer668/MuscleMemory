@@ -108,6 +108,7 @@ export function LandingPage() {
             <p className="mm-intro-copy">Generate grounded physical data, turn real interactions into reusable experience, and train RL policies with evidence they can trust.</p>
             <div className="mm-intro-actions">
               <button className="mm-run" type="button" onClick={runDelivery}><Play size={17} fill="currentColor" />Start the run</button>
+              <a className="mm-intro-secondary" href="#system">See the evidence loop <ArrowRight size={15} /></a>
               <span className="mm-scroll-hint">Scroll to follow MM-01 <ArrowDown size={15} /></span>
             </div>
           </motion.section>
@@ -225,6 +226,49 @@ export function LandingPage() {
         <h2>Give every run<br /><em>somewhere to go.</em></h2>
         <a className="mm-run" href="/console">Explore the live system <ArrowRight size={18} /></a>
       </section>
+
+      <section className="mm-system" id="system" aria-labelledby="system-title">
+        <div className="mm-system__lead">
+          <p className="mm-section-label">The system beneath the scene</p>
+          <h2 id="system-title">A physical-data loop<br /><em>with hard edges.</em></h2>
+          <p>Every boundary is visible in the operator console. The robot stays fixed; the evidence gets better.</p>
+        </div>
+        <div className="mm-system__grid">
+          <article><span>01 / World admission</span><Gauge size={21} /><h3>Validate before motion.</h3><p>Seeded worlds pass connectivity, clearance, collider, and physical-limit checks before an episode can start.</p></article>
+          <article><span>02 / Experience</span><DatabaseZap size={21} /><h3>Keep the run inspectable.</h3><p>LaserData joins telemetry and video through frame IDs while FalkorDB retains explicit lessons outside the control path.</p></article>
+          <article><span>03 / Promotion</span><ShieldCheck size={21} /><h3>Measure before changing behavior.</h3><p>Held-out worlds, immutable checkpoints, and human approval stand between a candidate and the stable alias.</p></article>
+        </div>
+      </section>
+
+      <section className="mm-use-cases" aria-labelledby="use-cases-title">
+        <div><p className="mm-section-label">Where teams start</p><h2 id="use-cases-title">Make the next run<br /><em>more useful.</em></h2></div>
+        <div className="mm-use-cases__list">
+          <article><span>Safety teams</span><strong>Trace a failure to the world, sensor frame, action, and correction.</strong><a href="/console">Open episode review <ArrowRight size={15} /></a></article>
+          <article><span>Policy teams</span><strong>Compare a candidate on frozen worlds before a human decides its fate.</strong><a href="/console">Inspect promotion gates <ArrowRight size={15} /></a></article>
+          <article><span>Simulation teams</span><strong>Change the training world while preserving MM-01's body and controller.</strong><a href="#how-it-works">See how it works <ArrowRight size={15} /></a></article>
+        </div>
+      </section>
+
+      <section className="mm-trust" id="how-it-works" aria-labelledby="trust-title">
+        <div className="mm-trust__heading"><p className="mm-section-label">Built for scrutiny</p><h2 id="trust-title">The useful answer is<br /><em>the verifiable one.</em></h2></div>
+        <div className="mm-trust__facts"><div><Check size={17} /><strong>Fixed identity</strong><p>Every episode carries the verified MM-01 checksum.</p></div><div><Check size={17} /><strong>Policy boundary</strong><p>The learned policy emits speed, turn, and stop; locomotion stays frozen.</p></div><div><Check size={17} /><strong>Human gates</strong><p>Physical properties, rewards, curriculum, and promotion block on approval.</p></div></div>
+      </section>
+
+      <section className="mm-faq" aria-labelledby="faq-title">
+        <div><p className="mm-section-label">Questions teams ask first</p><h2 id="faq-title">No black boxes<br /><em>in the handoff.</em></h2></div>
+        <div className="mm-faq__list">
+          <details><summary>Does a learned policy change the robot?</summary><p>No. MM-01's body, sensors, and frozen walking controller are fixed. The task policy only chooses high-level forward speed, turning rate, and stop probability.</p></details>
+          <details><summary>Can I tell a demo from a live run?</summary><p>Yes. The console labels the explicit synthetic preview and offers a direct return to live data. Live episodes stay unavailable until an evaluated checkpoint and world catalog are admitted.</p></details>
+          <details><summary>What proves that a candidate improved?</summary><p>A measured comparison on frozen held-out worlds. Different actions on identical input are not treated as evidence of learning, and promotion remains a human decision.</p></details>
+          <details><summary>Where does the evidence go?</summary><p>Append-only LaserData telemetry and explicit FalkorDB memory are separate from the robot control path. The Review workspace keeps operator notes beside, not inside, immutable episode facts.</p></details>
+        </div>
+      </section>
+
+      <footer className="mm-footer">
+        <a className="mm-brand" href="#top" aria-label="Muscle Memory home"><BrandMark /><strong>Muscle Memory</strong></a>
+        <span>Physical intelligence, with a paper trail.</span>
+        <nav aria-label="Footer navigation"><a href="#system">System</a><a href="#how-it-works">Trust</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/console">Console</a></nav>
+      </footer>
     </main>
   );
 }

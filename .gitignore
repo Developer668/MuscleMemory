@@ -27,6 +27,8 @@ coverage.xml
 dist/
 htmlcov/
 node_modules/
+frontend/playwright-report/
+frontend/test-results/
 /landing-task-top.png
 /snyk
 tmp/

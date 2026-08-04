@@ -23,6 +23,7 @@ MINIMUM_SEED = 0
 MAXIMUM_SEED = (2**31) - 1
 DEFAULT_JOB_TIMEOUT_SECONDS = 15 * 60
 TRAINING_ROOT_ENV = "MM_TASK_POLICY_TRAINING_ROOT"
+JOB_MANIFEST_NAME = "job.json"
 FIXED_EXPERT_DATASET_SHA256 = (
     "d3c7aa08ae467f0bf17eca13c116037ab2049e0da7d1ff95b2deb489252e20ef"
 )
@@ -168,6 +169,7 @@ class TaskPolicyTrainingManager:
         self._active_job_id: str | None = None
         self._lock = RLock()
         self._closed = False
+        self._restore_jobs()
 
     @classmethod
     def from_env(
@@ -218,6 +220,13 @@ class TaskPolicyTrainingManager:
             job_root.mkdir(mode=0o700, exist_ok=False)
             self._jobs[job_id] = job
             self._active_job_id = job_id
+            try:
+                self._persist_job(job)
+            except BaseException:
+                self._jobs.pop(job_id, None)
+                self._active_job_id = None
+                job_root.rmdir()
+                raise
             thread = Thread(
                 target=self._run,
                 args=(job_id, job_root),
@@ -248,6 +257,104 @@ class TaskPolicyTrainingManager:
         for thread in threads:
             thread.join()
 
+    def _restore_jobs(self) -> None:
+        """Recover job history and quarantine work interrupted by a process restart."""
+
+        for job_root in sorted(self._output_root.glob("task-policy-*")):
+            manifest = job_root / JOB_MANIFEST_NAME
+            if not job_root.is_dir() or not manifest.is_file():
+                continue
+            try:
+                payload = json.loads(manifest.read_text(encoding="utf-8"))
+                job = self._job_from_manifest(payload)
+            except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"training job manifest is invalid: {manifest}") from exc
+            if job.job_id != job_root.name:
+                raise RuntimeError("training job manifest identity does not match its directory")
+            if job.state in {
+                TaskPolicyTrainingState.QUEUED,
+                TaskPolicyTrainingState.RUNNING,
+            }:
+                job = replace(
+                    job,
+                    state=TaskPolicyTrainingState.FAILED,
+                    completed_at=datetime.now(UTC),
+                    error_type="process_restart",
+                )
+                self._jobs[job.job_id] = job
+                self._persist_job(job)
+            else:
+                self._jobs[job.job_id] = job
+
+    def _persist_job(self, job: TaskPolicyTrainingJob) -> None:
+        job_root = self._output_root / job.job_id
+        manifest = job_root / JOB_MANIFEST_NAME
+        temporary = job_root / f".{JOB_MANIFEST_NAME}.tmp"
+        payload = self._manifest_value(job)
+        try:
+            with temporary.open("w", encoding="utf-8") as stream:
+                json.dump(payload, stream, ensure_ascii=True, allow_nan=False, sort_keys=True)
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, manifest)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
+    @staticmethod
+    def _manifest_value(job: TaskPolicyTrainingJob) -> dict[str, object]:
+        payload = job.as_json_value()
+        for key in ("created_at", "started_at", "completed_at"):
+            value = payload[key]
+            if isinstance(value, datetime):
+                payload[key] = value.isoformat()
+        if job.metrics is not None:
+            payload["metrics"] = asdict(job.metrics)
+        return payload
+
+    @staticmethod
+    def _job_from_manifest(payload: object) -> TaskPolicyTrainingJob:
+        if not isinstance(payload, dict):
+            raise ValueError("training job manifest must be an object")
+        metrics_payload = payload.get("metrics")
+        metrics = None
+        if metrics_payload is not None:
+            if not isinstance(metrics_payload, dict):
+                raise ValueError("training job metrics must be an object")
+            metrics = TaskPolicyTrainingMetrics(**metrics_payload)
+        return TaskPolicyTrainingJob(
+            job_id=str(payload["job_id"]),
+            policy_id=str(payload["policy_id"]),
+            state=TaskPolicyTrainingState(str(payload["state"])),
+            epochs=int(payload["epochs"]),
+            seed=int(payload["seed"]),
+            dataset_sha256=str(payload["dataset_sha256"]),
+            created_at=datetime.fromisoformat(str(payload["created_at"])),
+            started_at=(
+                None
+                if payload.get("started_at") is None
+                else datetime.fromisoformat(str(payload["started_at"]))
+            ),
+            completed_at=(
+                None
+                if payload.get("completed_at") is None
+                else datetime.fromisoformat(str(payload["completed_at"]))
+            ),
+            checkpoint_sha256=(
+                None
+                if payload.get("checkpoint_sha256") is None
+                else str(payload["checkpoint_sha256"])
+            ),
+            evidence_sha256=(
+                None
+                if payload.get("evidence_sha256") is None
+                else str(payload["evidence_sha256"])
+            ),
+            metrics=metrics,
+            error_type=(None if payload.get("error_type") is None else str(payload["error_type"])),
+        )
+
     def _run(self, job_id: str, job_root: Path) -> None:
         checkpoint_path = job_root / "checkpoint.npz"
         evidence_path = job_root / "training.json"
@@ -258,6 +365,7 @@ class TaskPolicyTrainingManager:
                 started_at=datetime.now(UTC),
             )
             self._jobs[job_id] = job
+            self._persist_job(job)
         try:
             self._training_function(
                 dataset_path=self._dataset_path,
@@ -281,6 +389,7 @@ class TaskPolicyTrainingManager:
                     completed_at=datetime.now(UTC),
                     error_type=type(exc).__name__,
                 )
+                self._persist_job(self._jobs[job_id])
             return
         with self._lock:
             self._jobs[job_id] = replace(
@@ -291,6 +400,7 @@ class TaskPolicyTrainingManager:
                 evidence_sha256=evidence_sha256,
                 metrics=metrics,
             )
+            self._persist_job(self._jobs[job_id])
 
     def _verify_outputs(
         self,
@@ -324,6 +434,7 @@ class TaskPolicyTrainingManager:
 
 
 __all__ = [
+    "JOB_MANIFEST_NAME",
     "MAXIMUM_EPOCHS",
     "MAXIMUM_SEED",
     "MINIMUM_EPOCHS",

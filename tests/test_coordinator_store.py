@@ -292,6 +292,39 @@ def test_episode_registration_is_idempotent_and_training_api_hides_held_out_ids(
     store.close()
 
 
+def test_episode_review_notes_persist_without_mutating_episode_history(tmp_path: Path) -> None:
+    path = tmp_path / "coordinator.sqlite3"
+    note_id = "note-" + "1" * 32
+    with CoordinatorStore(path) as store:
+        store.register_training_episode(training_episode())
+        note = store.create_episode_review_note(
+            note_id=note_id,
+            episode_id="episode-training-1",
+            author_subject="human-operator",
+            body="Inspect the clearance trace before curriculum review.",
+            tags=("clearance", "curriculum"),
+            created_at=NOW,
+        )
+        assert store.episode_review_notes("episode-training-1") == (note,)
+        updated = store.update_episode_review_note(
+            note_id,
+            archived=True,
+            updated_at=NOW + timedelta(minutes=1),
+        )
+        assert updated is not None and updated.archived is True
+        assert store.episode_review_notes("episode-training-1") == ()
+
+    with CoordinatorStore(path) as reopened:
+        archived = reopened.episode_review_notes(
+            "episode-training-1",
+            include_archived=True,
+        )
+        assert archived[0].body.startswith("Inspect the clearance")
+        assert [event.state for event in reopened.episode_history("episode-training-1")] == [
+            EpisodeState.CREATED
+        ]
+
+
 def test_episode_lifecycle_and_provider_evidence_survive_reopen(tmp_path: Path) -> None:
     path = tmp_path / "coordinator.sqlite3"
     evidence = ProviderEvidenceReference(

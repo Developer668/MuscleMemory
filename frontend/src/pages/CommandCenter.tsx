@@ -1,5 +1,6 @@
 import {
   Activity,
+  Archive,
   AlertTriangle,
   ArrowDown,
   ArrowLeft,
@@ -11,12 +12,15 @@ import {
   ChevronDown,
   Circle,
   Cloud,
+  ClipboardList,
   Database,
   Eye,
   EyeOff,
+  FileDown,
   GitBranch,
   KeyRound,
   Lock,
+  MessageSquarePlus,
   Network,
   Play,
   Radio,
@@ -31,12 +35,13 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { BrandMark } from "../components/BrandMark";
 import { RealisticHomeScene } from "../operator/RealisticHomeScene";
 import type {
   CorrectionPoint,
+  EpisodeSummary,
   MemoryGraphNode as MemoryGraphNodeData,
   ProviderHealth,
   SensorReading,
@@ -47,11 +52,12 @@ import type {
 import { useOperatorData, type OperatorData } from "../operator/useOperatorData";
 import "./CommandCenter.css";
 
-type WorkspaceView = "operations" | "memory" | "rocketride" | "settings";
+type WorkspaceView = "operations" | "review" | "memory" | "rocketride" | "settings";
 type ManualCommand = "hold" | "forward" | "reverse" | "left" | "right";
 
 const VIEW_LABELS: Record<WorkspaceView, string> = {
   operations: "Operations",
+  review: "Episode Review",
   memory: "Memory Graph",
   rocketride: "RocketRide",
   settings: "System Settings",
@@ -344,6 +350,7 @@ function Header({
                 onClick={() => { setView(item); setMenuOpen(false); }}
               >
                 {item === "operations" && <Bot size={17} />}
+                {item === "review" && <FileDown size={17} />}
                 {item === "memory" && <Network size={17} />}
                 {item === "rocketride" && <Workflow size={17} />}
                 {item === "settings" && <Settings size={17} />}
@@ -374,13 +381,13 @@ function DirectionPad({
   return (
     <div className={`cc-intervention ${enabled ? "is-enabled" : ""}`}>
       <div className="cc-intervention__heading">
-        <span>Human intervention</span>
+        <span>Intent preview</span>
         <button
           type="button"
           role="switch"
           aria-checked={enabled}
           onClick={onToggle}
-          aria-label={enabled ? "Hide human intervention joystick" : "Show human intervention joystick"}
+          aria-label={enabled ? "Hide movement intent preview" : "Show movement intent preview"}
           title={enabled ? "Hide joystick" : "Show joystick"}
         ><i /></button>
       </div>
@@ -519,14 +526,22 @@ function OperationsView({ data }: { data: OperatorData }) {
     <div className="cc-operations">
       <section className="cc-world-panel">
         <header className="cc-world-panel__header">
-          <div><Route size={15} /><strong>World</strong><span>Third-person view</span></div>
+          <div><Route size={15} /><h1>World</h1><span>Third-person view</span></div>
           <div className="cc-world-actions">
             <span><i className={`cc-dot cc-dot--${running ? "live" : "unconfigured"}`} />{isSyntheticDemo ? (running ? `Demo loop · ${routineLabel ?? "active"}` : "Demo loop paused") : running ? "Routine active" : data.isLocalRoutine ? "Local simulator" : "Visual staging"}</span>
-            <button
-              type="button"
-              className="cc-demo-loop"
-              onClick={data.startDemoLoop}
-            ><RotateCcw size={13} /> {isSyntheticDemo && running ? "Restart demo" : "Run demo loop"}</button>
+            {isSyntheticDemo ? (
+              <button
+                type="button"
+                className="cc-demo-loop"
+                onClick={() => void data.exitDemoLoop()}
+              ><Cloud size={13} /> Return to live data</button>
+            ) : (
+              <button
+                type="button"
+                className="cc-demo-loop"
+                onClick={data.startDemoLoop}
+              ><RotateCcw size={13} /> Run demo loop</button>
+            )}
             <button
               type="button"
               className="cc-start-routine"
@@ -601,6 +616,105 @@ function OperationsView({ data }: { data: OperatorData }) {
         </Panel>
       </aside>
       <SensorStrip record={latest} />
+    </div>
+  );
+}
+
+function ReviewView({ data }: { data: OperatorData }) {
+  const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState<"all" | EpisodeSummary["state"]>("all");
+  const [noteBody, setNoteBody] = useState("");
+  const [noteTags, setNoteTags] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleEpisodes = useMemo(
+    () => data.episodes.filter((episode) => {
+      if (stateFilter !== "all" && episode.state !== stateFilter) return false;
+      if (!normalizedQuery) return true;
+      return [episode.episode_id, episode.world_id, episode.policy_id, episode.state]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery);
+    }),
+    [data.episodes, normalizedQuery, stateFilter],
+  );
+  const selected = data.episodes.find((episode) => episode.episode_id === data.selectedEpisodeId);
+
+  const submitNote = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const body = noteBody.trim();
+    if (!body) return;
+    const tags = noteTags
+      .split(",")
+      .map((tag) => tag.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 12);
+    void data.createNote(body, tags).then(() => {
+      if (!data.mutationIssue) {
+        setNoteBody("");
+        setNoteTags("");
+      }
+    });
+  };
+
+  return (
+    <div className="cc-review-layout">
+      <section className="cc-review-ledger" aria-labelledby="episode-review-title">
+        <div className="cc-view-heading">
+          <div>
+            <h1 id="episode-review-title">Episode review</h1>
+            <p>Inspect recorded runs, preserve operator context, and export evidence without changing the journal.</p>
+          </div>
+          <span className="cc-provider-label is-configured"><i />{data.episodes.length} recorded</span>
+        </div>
+        <div className="cc-review-tools">
+          <label className="cc-search"><Search size={15} /><span className="cc-sr-only">Search episodes</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search episode, world, policy" /></label>
+          <label className="cc-review-filter"><span>Status</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as typeof stateFilter)}><option value="all">All states</option><option value="running">Running</option><option value="succeeded">Succeeded</option><option value="failed">Failed</option><option value="aborted">Aborted</option><option value="created">Created</option></select></label>
+        </div>
+        <div className="cc-review-list" role="list" aria-label="Recorded episodes">
+          {visibleEpisodes.map((episode) => (
+            <button
+              type="button"
+              role="listitem"
+              key={episode.episode_id}
+              className={`cc-review-row ${episode.episode_id === data.selectedEpisodeId ? "is-selected" : ""}`}
+              onClick={() => data.setSelectedEpisodeId(episode.episode_id)}
+              aria-pressed={episode.episode_id === data.selectedEpisodeId}
+            >
+              <span className={`cc-review-state is-${episode.state}`}><i />{readableState(episode.state)}</span>
+              <strong>{shortId(episode.episode_id, 24)}</strong>
+              <span>{shortId(episode.world_id, 20)}</span>
+              <small>{new Date(episode.opened_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</small>
+            </button>
+          ))}
+          {!visibleEpisodes.length && <EmptyState icon={<Search size={22} />} title="No matching episodes" detail={data.episodes.length ? "Adjust the search or status filter." : "No persisted operational episodes are available yet."} />}
+        </div>
+      </section>
+
+      <aside className="cc-review-inspector" aria-label="Selected episode review">
+        <section className="cc-review-identity">
+          <div className="cc-review-identity__eyebrow"><ClipboardList size={14} /> Selected evidence</div>
+          <h2>{selected ? shortId(selected.episode_id, 28) : "No episode selected"}</h2>
+          {selected ? <div className="cc-review-facts"><div><span>World</span><strong>{shortId(selected.world_id)}</strong></div><div><span>Policy</span><strong>{shortId(selected.policy_id)}</strong></div><div><span>Robot</span><strong>{shortId(selected.robot_checksum)}</strong></div><div><span>State</span><strong>{readableState(selected.state)}</strong></div></div> : <p>Select a persisted episode from the ledger.</p>}
+        </section>
+        <Panel title="Review notes" icon={<MessageSquarePlus size={14} />} meta={data.notesLoading ? "Loading" : `${data.notes.length} active`}>
+          {data.isLocalRoutine ? <p className="cc-muted-copy">Notes are disabled for the explicit synthetic preview. Return to live data to annotate persisted evidence.</p> : selected ? <>
+            <form className="cc-note-form" onSubmit={submitNote}>
+              <label><span>Observation</span><textarea value={noteBody} onChange={(event) => setNoteBody(event.target.value)} maxLength={4000} placeholder="Record a failure pattern, correction context, or follow-up." /></label>
+              <label><span>Tags</span><input value={noteTags} onChange={(event) => setNoteTags(event.target.value)} maxLength={512} placeholder="clearance, tray, curriculum" /></label>
+              <button type="submit" disabled={!noteBody.trim() || !data.token || Boolean(data.mutationBusy)}><MessageSquarePlus size={13} /> Add note</button>
+              {!data.token && <small>Operator access is required to write notes.</small>}
+            </form>
+            <div className="cc-note-list">
+              {data.notes.map((note) => <article className="cc-note" key={note.note_id}><header><span>{note.author_subject}</span><time dateTime={note.created_at}>{new Date(note.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time></header><p>{note.body}</p><footer><div>{note.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div><button type="button" disabled={!data.token || Boolean(data.mutationBusy)} onClick={() => void data.archiveNote(note.note_id)} aria-label={`Archive note from ${note.author_subject}`}><Archive size={13} /></button></footer></article>)}
+              {!data.notes.length && <p className="cc-muted-copy">No notes yet. Capture the first useful observation from this run.</p>}
+            </div>
+          </> : <p className="cc-muted-copy">Choose an episode to open its review workspace.</p>}
+        </Panel>
+        <Panel title="Evidence export" icon={<FileDown size={14} />} meta={data.detail ? `${data.records.length} records` : "Unavailable"}>
+          <p className="cc-muted-copy">Download the selected episode metadata, result, and currently loaded telemetry as a versioned JSON artifact.</p>
+          <button type="button" className="cc-secondary-action" disabled={!data.detail || data.isLocalRoutine} onClick={data.exportEpisode}><FileDown size={13} /> Export episode JSON</button>
+        </Panel>
+      </aside>
     </div>
   );
 }
@@ -932,6 +1046,7 @@ export function CommandCenter() {
       {data.mutationIssue && <div className="cc-alert cc-alert--error"><AlertTriangle size={14} /><span>{data.mutationIssue}</span></div>}
       <div className="cc-content">
         {view === "operations" && <OperationsView data={data} />}
+        {view === "review" && <ReviewView data={data} />}
         {view === "memory" && <GraphCanvas data={data} />}
         {view === "rocketride" && <RocketRideView data={data} goToSettings={() => setView("settings")} />}
         {view === "settings" && <SettingsView data={data} showOverlays={showOverlays} setShowOverlays={setShowOverlays} compactWindows={compactWindows} setCompactWindows={setCompactWindows} />}

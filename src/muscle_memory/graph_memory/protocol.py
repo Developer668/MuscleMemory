@@ -29,6 +29,21 @@ class GraphMemoryError(RuntimeError):
 class GraphMemoryIntegrityError(GraphMemoryError):
     """An immutable identity was missing or mapped to different content."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        record_kind: str | None = None,
+        record_id: str | None = None,
+        expected_hash: str | None = None,
+        actual_hash: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.record_kind = record_kind
+        self.record_id = record_id
+        self.expected_hash = expected_hash
+        self.actual_hash = actual_hash
+
 
 class GraphProviderUnavailableError(GraphMemoryError):
     """The configured FalkorDB provider could not complete an operation."""

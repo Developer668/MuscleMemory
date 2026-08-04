@@ -310,7 +310,12 @@ class AppendOnlyGraphCache:
             if existing is not None:
                 if existing.content_hash != record.content_hash:
                     raise GraphMemoryIntegrityError(
-                        f"{record_kind} {record_id!r} is immutable in the local graph cache"
+                        f"{record_kind} {record_id!r} is immutable in the local graph cache "
+                        f"(expected={record.content_hash}, actual={existing.content_hash})",
+                        record_kind=record_kind,
+                        record_id=record_id,
+                        expected_hash=record.content_hash,
+                        actual_hash=existing.content_hash,
                     )
                 return self._receipt(record_kind, record_id, record.content_hash, "already cached")
 

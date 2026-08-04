@@ -30,6 +30,10 @@ from muscle_memory.api.models import (
     EpisodeDetail,
     EpisodeKind,
     EpisodeList,
+    EpisodeReviewNote,
+    EpisodeReviewNoteCreateRequest,
+    EpisodeReviewNoteList,
+    EpisodeReviewNoteUpdateRequest,
     EpisodeState,
     EpisodeSummary,
     LiveMessageKind,
@@ -120,6 +124,7 @@ class FakeBackend:
         self.stopped = 0
         self.last_principal: AuthenticatedPrincipal | None = None
         self.live_publisher: LiveEventPublisher | None = None
+        self.notes: list[EpisodeReviewNote] = []
 
     def bind_live_publisher(self, publisher: LiveEventPublisher) -> None:
         self.live_publisher = publisher
@@ -183,6 +188,63 @@ class FakeBackend:
             telemetry_records=1,
             provider_delivery=ProviderOperationalState.END_TO_END_VERIFIED,
         )
+
+    async def list_episode_notes(
+        self,
+        episode_id: str,
+        *,
+        include_archived: bool,
+    ) -> EpisodeReviewNoteList | None:
+        if episode_id != "episode-1":
+            return None
+        return EpisodeReviewNoteList(
+            episode_id=episode_id,
+            items=tuple(note for note in self.notes if include_archived or not note.archived),
+        )
+
+    async def create_episode_note(
+        self,
+        episode_id: str,
+        request: EpisodeReviewNoteCreateRequest,
+        principal: AuthenticatedPrincipal,
+    ) -> EpisodeReviewNote:
+        self.last_principal = principal
+        note = EpisodeReviewNote(
+            note_id="note-" + "1" * 32,
+            episode_id=episode_id,
+            author_subject=principal.subject,
+            body=request.body,
+            tags=request.tags,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        self.notes.append(note)
+        return note
+
+    async def update_episode_note(
+        self,
+        episode_id: str,
+        note_id: str,
+        request: EpisodeReviewNoteUpdateRequest,
+        principal: AuthenticatedPrincipal,
+    ) -> EpisodeReviewNote | None:
+        self.last_principal = principal
+        for index, note in enumerate(self.notes):
+            if note.episode_id != episode_id or note.note_id != note_id:
+                continue
+            updated = EpisodeReviewNote(
+                note_id=note.note_id,
+                episode_id=note.episode_id,
+                author_subject=note.author_subject,
+                body=note.body if request.body is None else request.body,
+                tags=note.tags if request.tags is None else request.tags,
+                created_at=note.created_at,
+                updated_at=NOW,
+                archived=note.archived if request.archived is None else request.archived,
+            )
+            self.notes[index] = updated
+            return updated
+        return None
 
     async def telemetry(
         self,
@@ -354,6 +416,47 @@ def test_health_episode_telemetry_and_replay_are_typed_and_operational_only() ->
     assert backend.started == 1
     assert backend.stopped == 1
     assert backend.live_publisher is not None
+
+
+def test_episode_review_notes_are_scoped_authenticated_and_reversible() -> None:
+    backend = FakeBackend()
+    with _client(backend) as client:
+        initial = client.get("/api/v1/episodes/episode-1/notes")
+        unauthorized = client.post(
+            "/api/v1/episodes/episode-1/notes",
+            json={"body": "Should not be accepted"},
+        )
+        created = client.post(
+            "/api/v1/episodes/episode-1/notes",
+            json={"body": "Check the clearance trace", "tags": ["clearance", "review"]},
+            headers={"Authorization": "Bearer test-token"},
+        )
+        visible = client.get("/api/v1/episodes/episode-1/notes")
+        archived = client.patch(
+            f"/api/v1/episodes/episode-1/notes/{created.json()['note_id']}",
+            json={"archived": True},
+            headers={"Authorization": "Bearer test-token"},
+        )
+        after_archive = client.get("/api/v1/episodes/episode-1/notes")
+        including_archived = client.get(
+            "/api/v1/episodes/episode-1/notes?include_archived=true"
+        )
+        wrong_episode = client.patch(
+            "/api/v1/episodes/other/notes/" + created.json()["note_id"],
+            json={"archived": True},
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    assert initial.status_code == 200
+    assert initial.json()["items"] == []
+    assert unauthorized.status_code == 401
+    assert created.status_code == 201
+    assert created.json()["author_subject"] == "human-operator"
+    assert visible.json()["items"][0]["tags"] == ["clearance", "review"]
+    assert archived.status_code == 200
+    assert after_archive.json()["items"] == []
+    assert including_archived.json()["items"][0]["archived"] is True
+    assert wrong_episode.status_code == 404
 
 
 def test_built_operator_console_is_served_on_root_and_about(

@@ -340,7 +340,13 @@ class FalkorGraphMemory:
             "validation_hash": record.validation_hash,
             "recorded_at": record.recorded_at.isoformat(),
         }
-        self._write_and_verify(_RECORD_WORLD, params, record.content_hash, "world")
+        self._write_and_verify(
+            _RECORD_WORLD,
+            params,
+            record.content_hash,
+            "world",
+            record.world_id,
+        )
         return self._receipt("world", record.world_id, record.content_hash)
 
     def record_obstacle(self, record: ObstacleMemoryRecord) -> GraphWriteReceipt:
@@ -354,7 +360,13 @@ class FalkorGraphMemory:
             "physical_properties_approved": record.physical_properties_approved,
             "recorded_at": record.recorded_at.isoformat(),
         }
-        self._write_and_verify(_RECORD_OBSTACLE, params, record.content_hash, "obstacle")
+        self._write_and_verify(
+            _RECORD_OBSTACLE,
+            params,
+            record.content_hash,
+            "obstacle",
+            record.obstacle_id,
+        )
         return self._receipt("obstacle", record.obstacle_id, record.content_hash)
 
     def record_evaluated_policy(self, record: EvaluatedPolicyVersion) -> GraphWriteReceipt:
@@ -367,7 +379,13 @@ class FalkorGraphMemory:
             "metrics_json": record.metrics_json,
             "evaluated_at": record.evaluated_at.isoformat(),
         }
-        self._write_and_verify(_RECORD_POLICY, params, record.content_hash, "policy version")
+        self._write_and_verify(
+            _RECORD_POLICY,
+            params,
+            record.content_hash,
+            "policy version",
+            record.policy_id,
+        )
         return self._receipt("evaluated_policy", record.policy_id, record.content_hash)
 
     def record_episode(self, record: EpisodeMemoryRecord) -> GraphWriteReceipt:
@@ -389,7 +407,13 @@ class FalkorGraphMemory:
             "telemetry_digest": record.telemetry_digest,
             "ended_at": record.ended_at.isoformat(),
         }
-        self._write_and_verify(_RECORD_EPISODE, params, record.content_hash, "episode")
+        self._write_and_verify(
+            _RECORD_EPISODE,
+            params,
+            record.content_hash,
+            "episode",
+            record.episode_id,
+        )
         return self._receipt("episode", record.episode_id, record.content_hash)
 
     def record_failure(self, record: FailureMemoryRecord) -> GraphWriteReceipt:
@@ -406,7 +430,13 @@ class FalkorGraphMemory:
         if record.obstacle_id is not None:
             params["obstacle_id"] = record.obstacle_id
             query = _RECORD_FAILURE_NEAR_OBSTACLE
-        self._write_and_verify(query, params, record.content_hash, "failure")
+        self._write_and_verify(
+            query,
+            params,
+            record.content_hash,
+            "failure",
+            record.failure_id,
+        )
         return self._receipt("failure", record.failure_id, record.content_hash)
 
     def record_correction(self, record: CorrectionMemoryRecord) -> GraphWriteReceipt:
@@ -423,7 +453,13 @@ class FalkorGraphMemory:
             ),
             "created_at": record.created_at.isoformat(),
         }
-        self._write_and_verify(_RECORD_CORRECTION, params, record.content_hash, "correction")
+        self._write_and_verify(
+            _RECORD_CORRECTION,
+            params,
+            record.content_hash,
+            "correction",
+            record.correction_id,
+        )
         return self._receipt("correction", record.correction_id, record.content_hash)
 
     def record_lesson(self, record: LessonMemoryRecord) -> GraphWriteReceipt:
@@ -438,7 +474,13 @@ class FalkorGraphMemory:
             "created_at": record.created_at.isoformat(),
         }
         query = _RECORD_LESSON if record.trained_policy_id is None else _RECORD_TRAINED_LESSON
-        self._write_and_verify(query, params, record.content_hash, "lesson")
+        self._write_and_verify(
+            query,
+            params,
+            record.content_hash,
+            "lesson",
+            record.lesson_id,
+        )
         return self._receipt("lesson", record.lesson_id, record.content_hash)
 
     def record_policy_training(self, record: PolicyTrainingRecord) -> GraphWriteReceipt:
@@ -449,13 +491,14 @@ class FalkorGraphMemory:
             "content_hash": record.content_hash,
             "trained_at": record.trained_at.isoformat(),
         }
+        record_id = f"{record.lesson_id}:{record.policy_id}:{record.evidence_hash}"
         self._write_and_verify(
             _RECORD_POLICY_TRAINING,
             params,
             record.content_hash,
             "policy training lineage",
+            record_id,
         )
-        record_id = f"{record.lesson_id}:{record.policy_id}:{record.evidence_hash}"
         return self._receipt("policy_training", record_id, record.content_hash)
 
     def record_policy_evaluation(self, record: PolicyEvaluationRecord) -> GraphWriteReceipt:
@@ -470,14 +513,15 @@ class FalkorGraphMemory:
             "collision_rate_delta": record.collision_rate_delta,
             "measured_at": record.measured_at.isoformat(),
         }
+        record_id = (
+            f"{record.candidate_policy_id}:{record.baseline_policy_id}:{record.evidence_hash}"
+        )
         self._write_and_verify(
             _RECORD_POLICY_EVALUATION,
             params,
             record.content_hash,
             "policy evaluation",
-        )
-        record_id = (
-            f"{record.candidate_policy_id}:{record.baseline_policy_id}:{record.evidence_hash}"
+            record_id,
         )
         return self._receipt("policy_evaluation", record_id, record.content_hash)
 
@@ -492,14 +536,15 @@ class FalkorGraphMemory:
             "collision_rate_delta": record.collision_rate_delta,
             "measured_at": record.measured_at.isoformat(),
         }
+        record_id = (
+            f"{record.candidate_policy_id}:{record.baseline_policy_id}:{record.evidence_hash}"
+        )
         self._write_and_verify(
             _RECORD_OUTPERFORMANCE,
             params,
             record.content_hash,
             "policy comparison",
-        )
-        record_id = (
-            f"{record.candidate_policy_id}:{record.baseline_policy_id}:{record.evidence_hash}"
+            record_id,
         )
         return self._receipt("outperformance", record_id, record.content_hash)
 
@@ -538,6 +583,7 @@ class FalkorGraphMemory:
         params: dict[str, object],
         expected_hash: str,
         record_kind: str,
+        record_id: str,
     ) -> None:
         try:
             # FalkorDB returns the stored content hash so the adapter can distinguish
@@ -557,12 +603,27 @@ class FalkorGraphMemory:
         rows = result.result_set
         if len(rows) != 1 or len(rows[0]) != 1:
             raise GraphMemoryIntegrityError(
-                f"FalkorDB rejected {record_kind} references or returned no immutable identity"
+                f"FalkorDB rejected {record_kind} references or returned no immutable identity",
+                record_kind=record_kind,
+                record_id=record_id,
+                expected_hash=expected_hash,
             )
         actual_hash = rows[0][0]
+        if not isinstance(actual_hash, str) or len(actual_hash) != 64:
+            raise GraphMemoryIntegrityError(
+                f"FalkorDB returned an invalid immutable {record_kind} content hash",
+                record_kind=record_kind,
+                record_id=record_id,
+                expected_hash=expected_hash,
+            )
         if actual_hash != expected_hash:
             raise GraphMemoryIntegrityError(
-                f"{record_kind} identity already maps to different immutable content"
+                f"{record_kind} identity already maps to different immutable content "
+                f"(expected={expected_hash}, actual={actual_hash})",
+                record_kind=record_kind,
+                record_id=record_id,
+                expected_hash=expected_hash,
+                actual_hash=actual_hash,
             )
 
     def _receipt(self, record_kind: str, record_id: str, content_hash: str) -> GraphWriteReceipt:

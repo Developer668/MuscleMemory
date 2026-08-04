@@ -9,6 +9,7 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
+from ops.sponsors import run_production_evidence  # noqa: E402
 from ops.sponsors.run_daytona_production_evidence import (  # noqa: E402
     DaytonaEvidenceRun,
     DaytonaProductionEvidenceError,
@@ -114,3 +115,38 @@ def test_wrapper_source_has_signal_forwarding_and_mandatory_restart() -> None:
     assert "start_new_session=True" in source
     assert "repository_revision(repository)" in source
     assert "production sponsor evidence must use the persistent /data object volume" in source
+
+
+def test_evidence_waits_for_http_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Server:
+        started = False
+        should_exit = False
+
+    class Thread:
+        def is_alive(self) -> bool:
+            return True
+
+    class Response:
+        status = 200
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+    calls: list[tuple[str, float]] = []
+
+    def urlopen(url: str, timeout: float) -> Response:
+        calls.append((url, timeout))
+        return Response()
+
+    monkeypatch.setattr(run_production_evidence.urllib.request, "urlopen", urlopen)
+    run_production_evidence._wait_for_server(
+        Server(),
+        Thread(),
+        host="0.0.0.0",
+        port=8123,
+    )
+
+    assert calls == [("http://127.0.0.1:8123/api/v1/health", 1.0)]

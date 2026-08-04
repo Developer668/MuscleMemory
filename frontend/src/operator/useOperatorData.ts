@@ -6,6 +6,7 @@ import type {
   CorrectionPoint,
   CorrectionView,
   EpisodeDetail,
+  EpisodeReviewNote,
   EpisodeSummary,
   LiveEpisodeOptions,
   LiveEpisodeStatus,
@@ -51,6 +52,8 @@ export interface OperatorData {
   selectedEpisodeId: string;
   setSelectedEpisodeId: (episodeId: string) => void;
   detail: EpisodeDetail | null;
+  notes: EpisodeReviewNote[];
+  notesLoading: boolean;
   records: TelemetryRecord[];
   latestRecord: TelemetryRecord | null;
   approvals: PendingApproval[];
@@ -85,6 +88,7 @@ export interface OperatorData {
   isSyntheticDemo: boolean;
   refresh: () => Promise<void>;
   startDemoLoop: () => void;
+  exitDemoLoop: () => Promise<void>;
   startLiveEpisode: () => Promise<void>;
   startTrainingJob: () => Promise<void>;
   cancelLiveEpisode: () => Promise<void>;
@@ -94,6 +98,9 @@ export interface OperatorData {
     kind: "route" | "keep_out",
     points: CorrectionPoint[],
   ) => Promise<void>;
+  createNote: (body: string, tags: string[]) => Promise<void>;
+  archiveNote: (noteId: string) => Promise<void>;
+  exportEpisode: () => void;
 }
 
 export function useOperatorData(): OperatorData {
@@ -102,6 +109,8 @@ export function useOperatorData(): OperatorData {
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState("");
   const [detail, setDetail] = useState<EpisodeDetail | null>(null);
+  const [notes, setNotes] = useState<EpisodeReviewNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
   const [records, setRecords] = useState<TelemetryRecord[]>([]);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [policies, setPolicies] = useState<PolicySummary[]>([]);
@@ -156,6 +165,7 @@ export function useOperatorData(): OperatorData {
     if (episodeResult.status === "fulfilled") {
       const nextEpisodes = episodeResult.value.items;
       setEpisodes(nextEpisodes);
+      if (!nextEpisodes.length) setNotes([]);
       setSelectedEpisodeId((current) =>
         nextEpisodes.some((episode) => episode.episode_id === current)
           ? current
@@ -277,6 +287,25 @@ export function useOperatorData(): OperatorData {
       active = false;
     };
   }, [isLocalRoutine, liveStatus?.episode_id, liveStatus?.phase, selectedEpisodeId]);
+
+  useEffect(() => {
+    if (isLocalRoutine || !selectedEpisodeId) return;
+    let active = true;
+    void operatorApi
+      .episodeNotes(selectedEpisodeId)
+      .then((result) => {
+        if (active) setNotes(result.items);
+      })
+      .catch((error) => {
+        if (active) setMutationIssue(errorMessage(error));
+      })
+      .finally(() => {
+        if (active) setNotesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isLocalRoutine, selectedEpisodeId]);
 
   useEffect(() => {
     if (isLocalRoutine ||
@@ -413,6 +442,78 @@ export function useOperatorData(): OperatorData {
     [selectedEpisodeId, tokenValue],
   );
 
+  const createNote = useCallback(
+    async (body: string, tags: string[]) => {
+      if (!selectedEpisodeId || isLocalRoutine) {
+        setMutationIssue("Review notes require a persisted operational episode.");
+        return;
+      }
+      if (!tokenValue) {
+        setMutationIssue("Configure an operator credential before adding a review note.");
+        return;
+      }
+      setMutationBusy("note-create");
+      setMutationIssue(null);
+      try {
+        const note = await operatorApi.createEpisodeNote(
+          selectedEpisodeId,
+          body,
+          tags,
+          tokenValue,
+        );
+        setNotes((current) => [note, ...current]);
+      } catch (error) {
+        setMutationIssue(errorMessage(error));
+      } finally {
+        setMutationBusy(null);
+      }
+    },
+    [isLocalRoutine, selectedEpisodeId, tokenValue],
+  );
+
+  const archiveNote = useCallback(
+    async (noteId: string) => {
+      if (!selectedEpisodeId || isLocalRoutine || !tokenValue) {
+        setMutationIssue("Configure an operator credential to archive a review note.");
+        return;
+      }
+      setMutationBusy(`note-archive-${noteId}`);
+      setMutationIssue(null);
+      try {
+        await operatorApi.archiveEpisodeNote(selectedEpisodeId, noteId, tokenValue);
+        setNotes((current) => current.filter((note) => note.note_id !== noteId));
+      } catch (error) {
+        setMutationIssue(errorMessage(error));
+      } finally {
+        setMutationBusy(null);
+      }
+    },
+    [isLocalRoutine, selectedEpisodeId, tokenValue],
+  );
+
+  const exportEpisode = useCallback(() => {
+    if (!detail || isLocalRoutine) {
+      setMutationIssue("Episode export requires a persisted operational episode.");
+      return;
+    }
+    const payload = {
+      schema_version: "muscle-memory.episode-export.v1",
+      exported_at: new Date().toISOString(),
+      episode: detail.episode,
+      detail,
+      telemetry: records,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${detail.episode.episode_id}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [detail, isLocalRoutine, records]);
+
   const startLiveEpisode = useCallback(async () => {
     if (liveSeed === null || !livePolicyId) return;
     setMutationBusy("live-start");
@@ -454,6 +555,7 @@ export function useOperatorData(): OperatorData {
     setEpisodes([localEpisode]);
     setSelectedEpisodeId(localEpisode.episode_id);
     setDetail({ ...localDetail, episode: { ...localEpisode, state: "running" } });
+    setNotes([]);
     setRecords([localRoutineRecord(0)]);
     setLiveOptions(localLiveOptions);
     setLiveSeed(17);
@@ -463,6 +565,21 @@ export function useOperatorData(): OperatorData {
     setIssue(null);
     setMutationIssue(null);
   }, []);
+
+  const exitDemoLoop = useCallback(async () => {
+    syntheticDemoRef.current = false;
+    setIsSyntheticDemo(false);
+    setIsLocalRoutine(false);
+    setLiveStatus(null);
+    setDetail(null);
+    setNotes([]);
+    setRecords([]);
+    setCorrection(null);
+    setIssue(null);
+    setMutationIssue(null);
+    setLoading(true);
+    await refresh();
+  }, [refresh]);
 
   const cancelLiveEpisode = useCallback(async () => {
     if (!liveStatus) return;
@@ -535,6 +652,8 @@ export function useOperatorData(): OperatorData {
     selectedEpisodeId,
     setSelectedEpisodeId,
     detail,
+    notes,
+    notesLoading,
     records,
     latestRecord,
     approvals,
@@ -573,10 +692,14 @@ export function useOperatorData(): OperatorData {
     isSyntheticDemo,
     refresh,
     startDemoLoop,
+    exitDemoLoop,
     startLiveEpisode,
     startTrainingJob,
     cancelLiveEpisode,
     decideApproval,
     submitCorrection,
+    createNote,
+    archiveNote,
+    exportEpisode,
   };
 }

@@ -92,8 +92,28 @@ uv run python -m ops.api.verify_backend
 ```
 
 The verifier prints only redacted public health fields and closes all opened
-resources. An unconfigured sponsor remains `unconfigured`; a local cache or
-simulation does not change that state.
+resources. A failed composition or startup preflight prints a redacted JSON
+blocker with exit code `1` instead of a traceback. Immutable graph conflicts
+also identify the record and expected/actual content hashes. An unconfigured
+sponsor remains `unconfigured`; a local cache or simulation does not change
+that state.
+
+If the expected and actual hashes differ, do not delete the cache or overwrite
+the graph node. Restore the exact artifact and checkpoint that originally
+created that immutable identity, or provision a new FalkorDB graph namespace
+with a separately pinned cache path for the new evidence. Both the old graph
+and its recovery journal remain preserved until an explicit migration has been
+reviewed.
+
+For a deliberately new evidence namespace, pin both values in the deployment
+environment before running the verifier:
+
+```bash
+EVIDENCE_VERSION=2026-08-04-v2
+MUSCLE_MEMORY_FALKORDB_GRAPH="muscle_memory_${EVIDENCE_VERSION}" \
+MUSCLE_MEMORY_FALKORDB_CACHE_PATH="/home/daytona/mm-data/graph/falkordb-${EVIDENCE_VERSION}.jsonl" \
+uv run python -m ops.api.verify_backend
+```
 
 The RocketRide callback origin and bearer token are supplied through
 `ROCKETRIDE_MM_COORDINATOR_URL` and `ROCKETRIDE_MM_COORDINATOR_TOKEN`. The URL is

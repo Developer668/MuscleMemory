@@ -78,13 +78,25 @@ def _request(
     return cast(dict[str, Any], decoded)
 
 
-def _wait_for_server(server: uvicorn.Server, thread: threading.Thread) -> None:
+def _wait_for_server(
+    server: uvicorn.Server,
+    thread: threading.Thread,
+    *,
+    host: str,
+    port: int,
+) -> None:
+    probe_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    health_url = f"http://{probe_host}:{port}/api/v1/health"
     deadline = time.monotonic() + 60.0
     while time.monotonic() < deadline:
-        if server.started:
-            return
         if not thread.is_alive():
             break
+        try:
+            with urllib.request.urlopen(health_url, timeout=1.0) as response:
+                if response.status == 200:
+                    return
+        except (OSError, ValueError):
+            pass
         time.sleep(0.1)
     raise ProductionEvidenceError("embedded production API did not start")
 
@@ -357,7 +369,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             daemon=True,
         )
         thread.start()
-        _wait_for_server(server, thread)
+        _wait_for_server(server, thread, host=args.host, port=args.port)
         origin = f"http://127.0.0.1:{args.port}"
         started_at = datetime.now(UTC)
         health_before = _request(origin, "GET", "/api/v1/health")

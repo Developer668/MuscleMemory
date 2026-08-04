@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
-from muscle_memory.api import Sha256BearerAuthenticator, create_app
+from muscle_memory.api import HashedBearerCredential, Sha256BearerAuthenticator, create_app
 from muscle_memory.backend.policy_decisions import record_reviewed_numeric_decision
 from muscle_memory.backend.rocketride_callback import (
     MAX_CALLBACK_BODY_BYTES,
@@ -516,6 +516,63 @@ async def _close_callback_episode(backend: object, *, robot_checksum: str) -> No
         ),
         closed_at=datetime(2026, 8, 3, 12, 0, tzinfo=UTC),
     )
+
+
+def test_episode_review_notes_round_trip_through_production_backend(
+    tmp_path: Path,
+) -> None:
+    environment = _environment(tmp_path)
+    backend = build_api_backend(environment)
+    backend.episode_runtime.service._graph_prerequisites = None
+    identity = EpisodeIdentity(
+        episode_id="episode-review-001",
+        robot_checksum=verify_mm01_bundle().robot_checksum,
+        world_id="world-review-001",
+        world_hash="a" * 64,
+        world_split=WorldSplit.TRAINING,
+        policy_id="policy-review-001",
+        policy_hash="b" * 64,
+        opened_at=datetime(2026, 8, 3, 12, 0, tzinfo=UTC),
+    )
+    asyncio.run(backend.episode_runtime.open_episode(identity))
+    credential = HashedBearerCredential.from_plaintext(
+        subject="human-operator",
+        token="review-token",
+    )
+    app = create_app(
+        backend=backend,
+        authenticator=Sha256BearerAuthenticator((credential,)),
+    )
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/episodes/episode-review-001/notes",
+            headers={"Authorization": "Bearer review-token"},
+            json={"body": "Persisted backend review", "tags": ["handoff"]},
+        )
+        assert created.status_code == 201, created.text
+        note_id = created.json()["note_id"]
+        listed = client.get("/api/v1/episodes/episode-review-001/notes")
+        assert listed.status_code == 200
+        assert listed.json()["items"][0]["body"] == "Persisted backend review"
+        archived = client.patch(
+            f"/api/v1/episodes/episode-review-001/notes/{note_id}",
+            headers={"Authorization": "Bearer review-token"},
+            json={"archived": True},
+        )
+        assert archived.status_code == 200, archived.text
+
+    reopened = build_api_backend(environment)
+    reopened_app = create_app(
+        backend=reopened,
+        authenticator=Sha256BearerAuthenticator((credential,)),
+    )
+    with TestClient(reopened_app) as client:
+        restored = client.get(
+            "/api/v1/episodes/episode-review-001/notes?include_archived=true"
+        )
+    assert restored.status_code == 200
+    assert restored.json()["items"][0]["archived"] is True
 
 
 def _envelope(

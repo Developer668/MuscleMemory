@@ -4,6 +4,8 @@ import type {
   CorrectionView,
   EpisodeDetail,
   EpisodeList,
+  EpisodeReviewNote,
+  EpisodeReviewNoteList,
   LiveEpisodeOptions,
   LiveEpisodeStatus,
   MemoryGraphSnapshot,
@@ -62,6 +64,25 @@ export const operatorApi = {
   episodes: () => request<EpisodeList>("/episodes?limit=200"),
   episode: (episodeId: string) =>
     request<EpisodeDetail>(`/episodes/${encodeURIComponent(episodeId)}`),
+  episodeNotes: (episodeId: string) =>
+    request<EpisodeReviewNoteList>(`/episodes/${encodeURIComponent(episodeId)}/notes`),
+  createEpisodeNote: (
+    episodeId: string,
+    body: string,
+    tags: string[],
+    token: string,
+  ) =>
+    request<EpisodeReviewNote>(
+      `/episodes/${encodeURIComponent(episodeId)}/notes`,
+      { method: "POST", body: JSON.stringify({ body, tags }) },
+      token,
+    ),
+  archiveEpisodeNote: (episodeId: string, noteId: string, token: string) =>
+    request<EpisodeReviewNote>(
+      `/episodes/${encodeURIComponent(episodeId)}/notes/${encodeURIComponent(noteId)}`,
+      { method: "PATCH", body: JSON.stringify({ archived: true }) },
+      token,
+    ),
   telemetry: (episodeId: string) =>
     request<TelemetryPage>(`/episodes/${encodeURIComponent(episodeId)}/telemetry?limit=2000`),
   replay: (episodeId: string) =>

@@ -87,6 +87,22 @@ export interface EpisodeDetail {
   correction_ids: string[];
 }
 
+export interface EpisodeReviewNote {
+  note_id: string;
+  episode_id: string;
+  author_subject: string;
+  body: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  archived: boolean;
+}
+
+export interface EpisodeReviewNoteList {
+  episode_id: string;
+  items: EpisodeReviewNote[];
+}
+
 export interface SensorReading {
   category: string;
   signal_use: SignalUse;

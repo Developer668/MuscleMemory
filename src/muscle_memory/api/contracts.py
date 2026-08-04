@@ -14,6 +14,10 @@ from muscle_memory.api.models import (
     DecisionRequest,
     EpisodeDetail,
     EpisodeList,
+    EpisodeReviewNote,
+    EpisodeReviewNoteCreateRequest,
+    EpisodeReviewNoteList,
+    EpisodeReviewNoteUpdateRequest,
     MemoryGraphSnapshot,
     PendingApprovalList,
     PolicySummaryList,
@@ -77,6 +81,28 @@ class ApiBackend(Protocol):
     async def list_episodes(self, *, cursor: str | None, limit: int) -> EpisodeList: ...
 
     async def episode(self, episode_id: str) -> EpisodeDetail | None: ...
+
+    async def list_episode_notes(
+        self,
+        episode_id: str,
+        *,
+        include_archived: bool,
+    ) -> EpisodeReviewNoteList | None: ...
+
+    async def create_episode_note(
+        self,
+        episode_id: str,
+        request: EpisodeReviewNoteCreateRequest,
+        principal: AuthenticatedPrincipal,
+    ) -> EpisodeReviewNote: ...
+
+    async def update_episode_note(
+        self,
+        episode_id: str,
+        note_id: str,
+        request: EpisodeReviewNoteUpdateRequest,
+        principal: AuthenticatedPrincipal,
+    ) -> EpisodeReviewNote | None: ...
 
     async def telemetry(
         self,

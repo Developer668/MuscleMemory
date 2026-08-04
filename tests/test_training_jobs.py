@@ -123,6 +123,35 @@ def test_training_manager_rejects_overlap_and_bounds_inputs(tmp_path: Path) -> N
     manager.shutdown()
 
 
+def test_training_job_history_survives_restart_and_quarantines_interrupted_work(
+    tmp_path: Path,
+) -> None:
+    manager = TaskPolicyTrainingManager(
+        output_root=tmp_path,
+        training_function=_write_training_outputs,
+    )
+    job = manager.start(epochs=2, seed=17)
+    assert _await_terminal(manager, job.job_id) is TaskPolicyTrainingState.COMPLETED
+    manager.shutdown()
+
+    manifest = tmp_path / job.job_id / "job.json"
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["state"] = "running"
+    payload["started_at"] = payload["created_at"]
+    payload["completed_at"] = None
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    restored = TaskPolicyTrainingManager(
+        output_root=tmp_path,
+        training_function=_write_training_outputs,
+    )
+    recovered = restored.get(job.job_id)
+    assert recovered.state is TaskPolicyTrainingState.FAILED
+    assert recovered.error_type == "process_restart"
+    assert restored.list() == (recovered,)
+    restored.shutdown()
+
+
 def test_training_job_api_module_does_not_import_heldout_or_controller_code() -> None:
     audit = subprocess.run(
         (

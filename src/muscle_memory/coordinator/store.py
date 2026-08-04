@@ -16,6 +16,7 @@ from muscle_memory.coordinator.models import (
     CoordinatorIntegrityError,
     CoordinatorStateError,
     EpisodeKind,
+    EpisodeReviewNote,
     EpisodeState,
     EpisodeTransition,
     HeldOutEvaluationArtifact,
@@ -116,6 +117,20 @@ class CoordinatorStore:
                     created_at_utc TEXT NOT NULL,
                     content_hash TEXT NOT NULL UNIQUE
                 );
+
+                CREATE TABLE IF NOT EXISTS episode_review_notes (
+                    note_id TEXT PRIMARY KEY,
+                    episode_id TEXT NOT NULL REFERENCES episodes(episode_id),
+                    author_subject TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    tags_json TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL,
+                    archived INTEGER NOT NULL CHECK (archived IN (0, 1))
+                );
+
+                CREATE INDEX IF NOT EXISTS episode_review_notes_episode_idx
+                    ON episode_review_notes (episode_id, archived, updated_at_utc DESC);
 
                 CREATE TABLE IF NOT EXISTS held_out_episode_scopes (
                     episode_id TEXT PRIMARY KEY REFERENCES episodes(episode_id),
@@ -534,6 +549,109 @@ class CoordinatorStore:
                 (EpisodeKind.TRAINING.value,),
             ).fetchall()
         return tuple(self._training_episode_from_row(row) for row in rows)
+
+    def episode_review_notes(
+        self,
+        episode_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> tuple[EpisodeReviewNote, ...]:
+        """Read operator annotations without changing the immutable episode journal."""
+
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM episode_review_notes
+                WHERE episode_id = ? AND (? OR archived = 0)
+                ORDER BY updated_at_utc DESC, note_id DESC
+                """,
+                (episode_id, int(include_archived)),
+            ).fetchall()
+        return tuple(self._review_note_from_row(row) for row in rows)
+
+    def create_episode_review_note(
+        self,
+        *,
+        note_id: str,
+        episode_id: str,
+        author_subject: str,
+        body: str,
+        tags: tuple[str, ...],
+        created_at: datetime,
+    ) -> EpisodeReviewNote:
+        note = EpisodeReviewNote(
+            note_id=note_id,
+            episode_id=episode_id,
+            author_subject=author_subject,
+            body=body,
+            tags=tags,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+        with self._transaction() as connection:
+            self._require_training_episode(connection, episode_id)
+            connection.execute(
+                """
+                INSERT INTO episode_review_notes (
+                    note_id, episode_id, author_subject, body, tags_json,
+                    created_at_utc, updated_at_utc, archived
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    note.note_id,
+                    note.episode_id,
+                    note.author_subject,
+                    note.body,
+                    canonical_json(list(note.tags)),
+                    isoformat_utc(note.created_at),
+                    isoformat_utc(note.updated_at),
+                    int(note.archived),
+                ),
+            )
+        return note
+
+    def update_episode_review_note(
+        self,
+        note_id: str,
+        *,
+        body: str | None = None,
+        tags: tuple[str, ...] | None = None,
+        archived: bool | None = None,
+        updated_at: datetime,
+    ) -> EpisodeReviewNote | None:
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM episode_review_notes WHERE note_id = ?",
+                (note_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            current = self._review_note_from_row(row)
+            next_note = EpisodeReviewNote(
+                note_id=current.note_id,
+                episode_id=current.episode_id,
+                author_subject=current.author_subject,
+                body=current.body if body is None else body,
+                tags=current.tags if tags is None else tags,
+                created_at=current.created_at,
+                updated_at=updated_at,
+                archived=current.archived if archived is None else archived,
+            )
+            connection.execute(
+                """
+                UPDATE episode_review_notes
+                SET body = ?, tags_json = ?, updated_at_utc = ?, archived = ?
+                WHERE note_id = ?
+                """,
+                (
+                    next_note.body,
+                    canonical_json(list(next_note.tags)),
+                    isoformat_utc(next_note.updated_at),
+                    int(next_note.archived),
+                    next_note.note_id,
+                ),
+            )
+            return next_note
 
     def record_training_episode_session(
         self,
@@ -2013,6 +2131,25 @@ class CoordinatorStore:
         if metadata.content_hash != str(row["content_hash"]):
             raise CoordinatorIntegrityError("training episode content hash mismatch")
         return metadata
+
+    @staticmethod
+    def _review_note_from_row(row: sqlite3.Row) -> EpisodeReviewNote:
+        try:
+            raw_tags = json.loads(str(row["tags_json"]))
+        except json.JSONDecodeError as exc:
+            raise CoordinatorIntegrityError("review note tags are not valid JSON") from exc
+        if not isinstance(raw_tags, list) or any(not isinstance(tag, str) for tag in raw_tags):
+            raise CoordinatorIntegrityError("review note tags must be a JSON string list")
+        return EpisodeReviewNote(
+            note_id=str(row["note_id"]),
+            episode_id=str(row["episode_id"]),
+            author_subject=str(row["author_subject"]),
+            body=str(row["body"]),
+            tags=tuple(raw_tags),
+            created_at=datetime.fromisoformat(str(row["created_at_utc"])),
+            updated_at=datetime.fromisoformat(str(row["updated_at_utc"])),
+            archived=bool(row["archived"]),
+        )
 
     @staticmethod
     def _held_out_episode_from_row(

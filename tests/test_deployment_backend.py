@@ -543,6 +543,14 @@ def test_compose_resolves_hardened_persistent_local_stack() -> None:
     assert services["falkordb"]["ports"][0]["host_ip"] == "127.0.0.1"
     assert services["laserdata"]["ports"][0]["host_ip"] == "127.0.0.1"
     assert services["api"]["environment"]["MM_API_BACKEND_FACTORY"] == DEFAULT_BACKEND_FACTORY
+    for name in (
+        "MM_HELDOUT_EVALUATION_ARTIFACT",
+        "MM_HELDOUT_EVALUATION_ARTIFACT_SHA256",
+        "MM_HELDOUT_CANDIDATE_CHECKPOINT",
+        "MM_HELDOUT_EVALUATED_AT",
+    ):
+        assert name in services["api"]["environment"]
+    assert services["api"]["environment"]["MM_STABLE_POLICY_ALIAS"] == "stable"
     assert (
         services["api"]["environment"]["LASERDATA_CONNECTION_STRING"]
         == "iggy://cloud-user:cloud-pass@managed.example:8090"

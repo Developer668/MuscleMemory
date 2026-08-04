@@ -140,6 +140,59 @@ class EpisodeDetail(ApiModel):
     correction_ids: tuple[str, ...] = ()
 
 
+class EpisodeReviewNote(ApiModel):
+    """Operator-owned annotation; the referenced episode evidence stays immutable."""
+
+    note_id: str = Field(pattern=r"^note-[0-9a-f]{32}$")
+    episode_id: str = Field(min_length=1, max_length=128)
+    author_subject: str = Field(min_length=1, max_length=128)
+    body: str = Field(min_length=1, max_length=4_000)
+    tags: tuple[str, ...] = Field(default=(), max_length=12)
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+    archived: bool = False
+
+
+class EpisodeReviewNoteList(ApiModel):
+    episode_id: str = Field(min_length=1, max_length=128)
+    items: tuple[EpisodeReviewNote, ...]
+
+
+class EpisodeReviewNoteCreateRequest(ApiModel):
+    body: str = Field(min_length=1, max_length=4_000)
+    tags: tuple[str, ...] = Field(default=(), max_length=12)
+
+    @field_validator("body")
+    @classmethod
+    def non_blank_body(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("review note body must not be blank")
+        return value
+
+
+class EpisodeReviewNoteUpdateRequest(ApiModel):
+    body: str | None = Field(default=None, min_length=1, max_length=4_000)
+    tags: tuple[str, ...] | None = Field(default=None, max_length=12)
+    archived: bool | None = None
+
+    @field_validator("body")
+    @classmethod
+    def non_blank_update_body(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("review note body must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def has_update(self) -> Self:
+        if self.body is None and self.tags is None and self.archived is None:
+            raise ValueError("review note update must change at least one field")
+        return self
+
+
 class SensorReadingView(ApiModel):
     category: str = Field(min_length=1)
     signal_use: Literal["Used by policy", "Logged only", "Simulator ground truth"]

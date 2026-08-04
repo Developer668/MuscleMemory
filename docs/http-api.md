@@ -39,11 +39,13 @@ uv run python -m ops.api.validate_openapi
 
 Every POST route fails closed. The API accepts bearer tokens but stores only SHA-256
 digests from `MM_API_AUTH_CREDENTIALS_JSON`; authenticated subjects and scopes are derived
-server-side and cannot be supplied in request JSON. The three write scopes are:
+server-side and cannot be supplied in request JSON. The write scopes are:
 
 - `approvals:write`
 - `workflows:write`
 - `corrections:write`
+- `episodes:write` (live episodes and episode review notes)
+- `training:write` (bounded local task-policy training)
 
 Use [the service environment example](../config/services/http-api.env.example) as the
 shape reference. Provider URLs, API keys, and bearer values never appear in response
@@ -58,6 +60,9 @@ All HTTP routes use `/api/v1`:
 | `GET` | `/health` | Service and sponsor-provider state |
 | `GET` | `/episodes` | Operational episode list |
 | `GET` | `/episodes/{episode_id}` | Episode detail |
+| `GET` | `/episodes/{episode_id}/notes` | Active operator review notes |
+| `POST` | `/episodes/{episode_id}/notes` | Persist an authenticated review note |
+| `PATCH` | `/episodes/{episode_id}/notes/{note_id}` | Update or archive a review note |
 | `GET` | `/episodes/{episode_id}/telemetry` | Paginated append-only telemetry |
 | `GET` | `/episodes/{episode_id}/replay` | Ordered replay records |
 | `WS` | `/episodes/{episode_id}/live` | Bounded live telemetry and status |
@@ -71,7 +76,27 @@ All HTTP routes use `/api/v1`:
 | `POST` | `/corrections/{correction_id}/decision` | Correction verdict |
 | `GET` | `/policies` | Evaluation summaries |
 | `GET` | `/policies/promotion-eligibility` | Numeric gate evidence only |
+| `POST` | `/training/jobs` | Start one bounded task-policy training job |
+| `GET` | `/training/jobs` and `/training/jobs/{job_id}` | Read durable training history |
 | `GET` | `/assets` and `/assets/{asset_id}` | Asset generation and admission state |
+
+Review notes are workspace annotations. They reference a training episode, carry the authenticated
+subject, tags, and timestamps, and do not rewrite episode transitions, telemetry, policy hashes, or
+robot checksums. `PATCH .../notes/{note_id}` is scoped to the episode in the URL; archiving removes
+the note from the default list while retaining it for an explicit `include_archived=true` read.
+
+The frontend's Episode Review export is a client-side JSON artifact assembled from the typed episode
+detail and the currently loaded replay page. It is labeled as an export, not as a new provider
+receipt.
+
+## Durable training history
+
+The bounded local training manager writes `job.json` atomically inside each
+`task-policy-<id>/` output directory. Job manifests contain the dataset digest, policy identity,
+timestamps, terminal metrics, and artifact digests. On process restart, queued or running jobs are
+recovered as `failed` with `error_type=process_restart`; incomplete work is never promoted or
+reported as complete. The `/training/jobs` read surface therefore remains useful across a service
+restart while the actual checkpoint and evidence files stay immutable.
 
 `GET /episodes` has no scope selector and its response enum contains only training,
 development, and demo episodes. Held-out world identifiers and episode rows remain behind

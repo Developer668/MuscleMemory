@@ -54,6 +54,37 @@ TERMINAL_EPISODE_STATES = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class EpisodeReviewNote:
+    """Mutable operator annotation layered over immutable episode evidence."""
+
+    note_id: str
+    episode_id: str
+    author_subject: str
+    body: str
+    tags: tuple[str, ...]
+    created_at: datetime
+    updated_at: datetime
+    archived: bool = False
+
+    def __post_init__(self) -> None:
+        require_identifier(self.note_id, "note_id")
+        require_identifier(self.episode_id, "episode_id")
+        if not self.author_subject.strip():
+            raise ValueError("review note author must not be blank")
+        if not self.body.strip() or len(self.body) > 4_000:
+            raise ValueError("review note body must contain 1 to 4000 characters")
+        if len(self.tags) > 12:
+            raise ValueError("review note must contain at most 12 tags")
+        for tag in self.tags:
+            if not tag.strip() or len(tag) > 64:
+                raise ValueError("review note tags must contain 1 to 64 characters")
+        isoformat_utc(self.created_at)
+        isoformat_utc(self.updated_at)
+        if self.updated_at < self.created_at:
+            raise ValueError("review note updated_at cannot precede created_at")
+
+
 class WorkflowStepState(StrEnum):
     AWAITING_APPROVAL = "awaiting_approval"
     STARTED = "started"

@@ -306,7 +306,20 @@ def test_remote_writes_use_parameters_and_reject_identity_mutation() -> None:
     assert timeout == 750
 
     graph.returned_hash = "0" * 64
-    with pytest.raises(GraphMemoryIntegrityError, match="different immutable content"):
+    with pytest.raises(
+        GraphMemoryIntegrityError,
+        match=(
+            f"different immutable content.*expected={world.content_hash}"
+            f".*actual={graph.returned_hash}"
+        ),
+    ):
+        memory.record_world(world)
+
+    graph.returned_hash = "not-a-hash"
+    with pytest.raises(
+        GraphMemoryIntegrityError,
+        match="invalid immutable world content hash",
+    ):
         memory.record_world(world)
 
 
@@ -620,7 +633,10 @@ def test_append_only_cache_rejects_replacement_under_same_identity(tmp_path: Pat
     cache.record_world(world)
     changed = WorldMemoryRecord.model_validate({**world.model_dump(), "seed": 99})
 
-    with pytest.raises(GraphMemoryIntegrityError, match="immutable"):
+    with pytest.raises(
+        GraphMemoryIntegrityError,
+        match=f"immutable.*expected={changed.content_hash}.*actual={world.content_hash}",
+    ):
         cache.record_world(changed)
 
 
